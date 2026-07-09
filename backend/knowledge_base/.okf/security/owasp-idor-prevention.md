@@ -1,9 +1,9 @@
 ---
-source_url: https://cheatsheetseries.owasp.org/cheatsheets/Insecure_Direct_Object_Reference_Prevention_Cheat_Sheet.html
-category: security
-title: OWASP — IDOR Prevention Cheat Sheet
-slug: owasp-idor-prevention
-date_scraped: "2026-07-07 10:42:07 UTC"
+source_url: "https://cheatsheetseries.owasp.org/cheatsheets/Insecure_Direct_Object_Reference_Prevention_Cheat_Sheet.html"
+category: "security"
+title: "OWASP — IDOR Prevention Cheat Sheet"
+slug: "owasp-idor-prevention"
+date_scraped: "2026-07-09 13:34:33 UTC"
 description: "Object-level authorization patterns for backend queries — indirect references, access control checks"
 ---
 # Insecure Direct Object Reference Prevention Cheat Sheet¶

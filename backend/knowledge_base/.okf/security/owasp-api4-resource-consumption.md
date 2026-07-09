@@ -1,9 +1,9 @@
 ---
-source_url: https://github.com/OWASP/API-Security/blob/master/editions/2023/en/0xa4-unrestricted-resource-consumption.md
-category: security
-title: OWASP API4:2023 — Unrestricted Resource Consumption
-slug: owasp-api4-resource-consumption
-date_scraped: "2026-07-07 10:41:58 UTC"
+source_url: "https://github.com/OWASP/API-Security/blob/master/editions/2023/en/0xa4-unrestricted-resource-consumption.md"
+category: "security"
+title: "OWASP API4:2023 — Unrestricted Resource Consumption"
+slug: "owasp-api4-resource-consumption"
+date_scraped: "2026-07-09 13:34:27 UTC"
 description: "Rate limiting, payload size limits, and denial-of-service via API abuse"
 ---
 # API4:2023 Unrestricted Resource Consumption

@@ -1,9 +1,9 @@
 ---
-source_url: https://www.postgresql.org/docs/current/ddl-constraints.html
-category: standards
-title: PostgreSQL Constraints — Foreign Keys, Check, Exclusion
-slug: postgres-constraints
-date_scraped: "2026-07-07 10:41:20 UTC"
+source_url: "https://www.postgresql.org/docs/current/ddl-constraints.html"
+category: "standards"
+title: "PostgreSQL Constraints — Foreign Keys, Check, Exclusion"
+slug: "postgres-constraints"
+date_scraped: "2026-07-09 13:34:02 UTC"
 description: "Foreign keys, check constraints, ON DELETE/UPDATE actions, exclusion constraints"
 ---
 ## 5.5. Constraints#

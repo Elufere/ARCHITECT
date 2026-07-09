@@ -1,9 +1,9 @@
 ---
-source_url: https://datatracker.ietf.org/doc/html/rfc6749
-category: security
-title: RFC 6749 — OAuth 2.0 Authorization Framework
-slug: rfc-6749-oauth2
-date_scraped: "2026-07-07 10:42:14 UTC"
+source_url: "https://datatracker.ietf.org/doc/html/rfc6749"
+category: "security"
+title: "RFC 6749 — OAuth 2.0 Authorization Framework"
+slug: "rfc-6749-oauth2"
+date_scraped: "2026-07-09 13:34:39 UTC"
 description: "The core OAuth 2.0 specification — grant types, access tokens, refresh tokens"
 ---
 [html-validate-disable-block attr-quotes, void-style, element-permitted-content, heading-level -- FIXME: rfcmarkup/rfc2html generates HTML with issues]

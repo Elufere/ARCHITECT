@@ -31,7 +31,6 @@ logger = logging.getLogger(__name__)
 # Output root: backend/knowledge_base/.okf/
 OUTPUT_ROOT = Path(__file__).resolve().parent.parent / "knowledge_base" / ".okf"
 
-
 def _build_frontmatter(source: dict) -> str:
     """Build YAML frontmatter string for a source."""
     now = datetime.now(timezone.utc)
@@ -39,17 +38,17 @@ def _build_frontmatter(source: dict) -> str:
 
     lines = [
         "---",
-        f"source_url: {source['url']}",
-        f"category: {source['category']}",
-        f"title: {source['title']}",
-        f"slug: {source['slug']}",
-        f"date_scraped: \"{date_str}\"",
+        f'source_url: "{source["url"]}"',
+        f'category: "{source["category"]}"',
+        f'title: "{source["title"]}"',
+        f'slug: "{source["slug"]}"',
+        f'date_scraped: "{date_str}"',
     ]
 
     if "description" in source:
-        # Escape any colons in description to avoid YAML parsing issues
-        desc = source["description"].replace(":", "\\:")
-        lines.append(f"description: \"{desc}\"")
+        # Escape internal double quotes for valid YAML
+        desc = source["description"].replace('"', '\\"')
+        lines.append(f'description: "{desc}"')
 
     lines.append("---")
     lines.append("")  # blank line after frontmatter

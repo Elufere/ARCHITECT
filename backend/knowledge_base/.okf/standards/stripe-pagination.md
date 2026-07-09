@@ -1,9 +1,9 @@
 ---
-source_url: https://docs.stripe.com/pagination
-category: standards
-title: Stripe — Cursor-Based Pagination
-slug: stripe-pagination
-date_scraped: "2026-07-07 10:41:49 UTC"
+source_url: "https://docs.stripe.com/pagination"
+category: "standards"
+title: "Stripe — Cursor-Based Pagination"
+slug: "stripe-pagination"
+date_scraped: "2026-07-09 13:34:20 UTC"
 description: "Cursor-based pagination with limit, has_more, and auto-pagination patterns"
 ---
 # How paginationworks

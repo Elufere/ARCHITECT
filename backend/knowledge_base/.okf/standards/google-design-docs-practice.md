@@ -1,9 +1,9 @@
 ---
-source_url: https://www.industrialempathy.com/posts/design-docs-at-google/
-category: standards
-title: Design Docs at Google — Structure and Process
-slug: google-design-docs-practice
-date_scraped: "2026-07-07 10:40:43 UTC"
+source_url: "https://www.industrialempathy.com/posts/design-docs-at-google/"
+category: "standards"
+title: "Design Docs at Google — Structure and Process"
+slug: "google-design-docs-practice"
+date_scraped: "2026-07-09 13:33:40 UTC"
 description: "Widely-cited breakdown of Google's design-doc practice — structure, review process, when a design doc is warranted"
 ---
 One of the key elements of Google's software engineering culture is the use of design docs for defining software designs. These are relatively informal documents that the primary author or authors of a software system or application create before they embark on the coding project. The design doc documents the high level implementation strategy and key design decisions with emphasis on the trade-offs that were considered during those decisions.

@@ -1,9 +1,9 @@
 ---
-source_url: https://google.aip.dev/158
-category: standards
-title: Google AIP-158 — Pagination
-slug: google-aip-158-pagination
-date_scraped: "2026-07-07 10:41:39 UTC"
+source_url: "https://google.aip.dev/158"
+category: "standards"
+title: "Google AIP-158 — Pagination"
+slug: "google-aip-158-pagination"
+date_scraped: "2026-07-09 13:34:14 UTC"
 description: "Page tokens, opaque cursors, backward-compatibility rules for paginated APIs"
 ---
 #### AIP-158

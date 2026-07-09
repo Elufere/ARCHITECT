@@ -1,9 +1,9 @@
 ---
-source_url: https://gds-way.digital.cabinet-office.gov.uk/standards/architecture-decisions.html
-category: standards
-title: GDS — Documenting Architecture Decisions
-slug: gds-architecture-decisions
-date_scraped: "2026-07-07 10:40:52 UTC"
+source_url: "https://gds-way.digital.cabinet-office.gov.uk/standards/architecture-decisions.html"
+category: "standards"
+title: "GDS — Documenting Architecture Decisions"
+slug: "gds-architecture-decisions"
+date_scraped: "2026-07-09 13:33:47 UTC"
 description: "UK government engineering standard on ADR format, status lifecycle, and when to write one"
 ---
 # Documenting architecture decisions

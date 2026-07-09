@@ -1,10 +1,10 @@
 ---
-source_url: https://wiki.postgresql.org/wiki/Don't_Do_This
-category: standards
-title: PostgreSQL Anti-Patterns — Don't Do This
-slug: postgres-dont-do-this
-date_scraped: "2026-07-07 10:41:25 UTC"
-description: "Community-maintained list of common PostgreSQL anti-patterns\: NOT IN pitfalls, char(n), serial types"
+source_url: "https://wiki.postgresql.org/wiki/Don't_Do_This"
+category: "standards"
+title: "PostgreSQL Anti-Patterns — Don't Do This"
+slug: "postgres-dont-do-this"
+date_scraped: "2026-07-09 13:34:06 UTC"
+description: "Community-maintained list of common PostgreSQL anti-patterns: NOT IN pitfalls, char(n), serial types"
 ---
 Want to edit, but don't see an edit button when logged in?  Click here.
 

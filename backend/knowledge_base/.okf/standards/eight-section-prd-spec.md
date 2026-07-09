@@ -1,10 +1,10 @@
 ---
-source_url: https://raw.githubusercontent.com/phuryn/pm-skills/main/pm-execution/skills/create-prd/SKILL.md
-category: standards
-title: Comprehensive 8-Section PRD Engineering Spec
-slug: eight-section-prd-spec
-date_scraped: "2026-07-07 10:41:02 UTC"
-description: "Structural guide\: background, SMART OKR objectives, solution architecture, and scoping constraints"
+source_url: "https://raw.githubusercontent.com/phuryn/pm-skills/main/pm-execution/skills/create-prd/SKILL.md"
+category: "standards"
+title: "Comprehensive 8-Section PRD Engineering Spec"
+slug: "eight-section-prd-spec"
+date_scraped: "2026-07-09 13:33:50 UTC"
+description: "Structural guide: background, SMART OKR objectives, solution architecture, and scoping constraints"
 ---
 ---
 name: create-prd

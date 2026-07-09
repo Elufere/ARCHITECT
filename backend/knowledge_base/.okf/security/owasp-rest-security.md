@@ -1,9 +1,9 @@
 ---
-source_url: https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html
-category: security
-title: OWASP — REST Security Cheat Sheet
-slug: owasp-rest-security
-date_scraped: "2026-07-07 10:42:06 UTC"
+source_url: "https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html"
+category: "security"
+title: "OWASP — REST Security Cheat Sheet"
+slug: "owasp-rest-security"
+date_scraped: "2026-07-09 13:34:32 UTC"
 description: "HTTPS enforcement, JWT denylisting, API key handling, CORS policies"
 ---
 # REST Security Cheat Sheet¶

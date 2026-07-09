@@ -1,9 +1,9 @@
 ---
-source_url: https://raw.githubusercontent.com/jamesrochabrun/skills/main/skills/prd-generator/SKILL.md
-category: standards
-title: Automated Functional PRD Generator Protocol
-slug: functional-prd-generator-protocol
-date_scraped: "2026-07-07 10:41:06 UTC"
+source_url: "https://raw.githubusercontent.com/jamesrochabrun/skills/main/skills/prd-generator/SKILL.md"
+category: "standards"
+title: "Automated Functional PRD Generator Protocol"
+slug: "functional-prd-generator-protocol"
+date_scraped: "2026-07-09 13:33:53 UTC"
 description: "Step-by-step constraint logic for user stories, acceptance criteria, metric frameworks (HEART/AARRR), and edge cases"
 ---
 ---

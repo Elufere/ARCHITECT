@@ -1,10 +1,10 @@
 ---
-source_url: https://google.aip.dev/132
-category: standards
-title: Google AIP-132 — Standard List Method
-slug: google-aip-132-list-method
-date_scraped: "2026-07-07 10:41:41 UTC"
-description: "List method conventions\: page_size, page_token, filtering semantics"
+source_url: "https://google.aip.dev/132"
+category: "standards"
+title: "Google AIP-132 — Standard List Method"
+slug: "google-aip-132-list-method"
+date_scraped: "2026-07-09 13:34:15 UTC"
+description: "List method conventions: page_size, page_token, filtering semantics"
 ---
 #### AIP-132
 

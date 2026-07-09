@@ -1,9 +1,9 @@
 ---
-source_url: https://use-the-index-luke.com/
-category: standards
-title: Use The Index, Luke — Indexing Deep Dive
-slug: use-the-index-luke
-date_scraped: "2026-07-07 10:41:29 UTC"
+source_url: "https://use-the-index-luke.com/"
+category: "standards"
+title: "Use The Index, Luke — Indexing Deep Dive"
+slug: "use-the-index-luke"
+date_scraped: "2026-07-09 13:34:07 UTC"
 description: "Markus Winand's vendor-agnostic guide to B-tree internals, index scans, and query optimization"
 ---
 # SQL Indexing and Tuning e-Book

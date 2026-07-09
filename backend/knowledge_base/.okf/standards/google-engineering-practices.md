@@ -1,9 +1,9 @@
 ---
-source_url: https://google.github.io/eng-practices/
-category: standards
-title: Google Engineering Practices
-slug: google-engineering-practices
-date_scraped: "2026-07-07 10:41:10 UTC"
+source_url: "https://google.github.io/eng-practices/"
+category: "standards"
+title: "Google Engineering Practices"
+slug: "google-engineering-practices"
+date_scraped: "2026-07-09 13:33:56 UTC"
 description: "Google's public engineering practices — code review, documentation, and spec review culture"
 ---
 # eng-practices

@@ -1,9 +1,9 @@
 ---
-source_url: https://www.rfc-editor.org/rfc/rfc2119.html
-category: standards
-title: RFC 2119 — Key Words for Use in RFCs
-slug: rfc-2119-keywords
-date_scraped: "2026-07-07 10:40:40 UTC"
+source_url: "https://www.rfc-editor.org/rfc/rfc2119.html"
+category: "standards"
+title: "RFC 2119 — Key Words for Use in RFCs"
+slug: "rfc-2119-keywords"
+date_scraped: "2026-07-09 13:33:37 UTC"
 description: "Canonical MUST/SHOULD/MAY/SHOULD NOT/MUST NOT requirement-level keywords for unambiguous spec language"
 ---
 ```

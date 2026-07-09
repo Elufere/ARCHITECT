@@ -1,0 +1,5 @@
+# Introduction
+
+> Source: [amazon-working-backwards-pr-faq](https://www.aboutamazon.com/news/workplace/an-insider-look-at-amazons-culture-and-processes)
+
+Amazon culture has many unique ways of operating that help the company move fast and innovate while keeping the customer at the center of everything we do. So when two former Amazon employees, Colin Bryar and Bill Carr, wrote a book about Amazon's culture, we couldn't wait to share their perspective on how we do what we do best. In this excerpt from "WORKING BACKWARDS: Insights, Stories, and Secrets from Inside Amazon," Bryar and Carr share their experience with the concept of working backwards, going from an idea about how to improve a customer experience all the way through the process that leads only the best ideas to get the green light.

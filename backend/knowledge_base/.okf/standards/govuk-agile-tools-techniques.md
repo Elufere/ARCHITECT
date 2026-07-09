@@ -1,9 +1,9 @@
 ---
-source_url: https://www.gov.uk/service-manual/agile-delivery/agile-tools-techniques
-category: standards
-title: Gov.uk — Agile Tools and Techniques
-slug: govuk-agile-tools-techniques
-date_scraped: "2026-07-07 10:40:49 UTC"
+source_url: "https://www.gov.uk/service-manual/agile-delivery/agile-tools-techniques"
+category: "standards"
+title: "Gov.uk — Agile Tools and Techniques"
+slug: "govuk-agile-tools-techniques"
+date_scraped: "2026-07-09 13:33:45 UTC"
 description: "GDS manual on backlog, sprint planning, and related artifacts that surround requirement documents"
 ---
 # Agile tools and techniques

@@ -1,9 +1,9 @@
 ---
-source_url: https://www.postgresql.org/docs/current/transaction-iso.html
-category: standards
-title: PostgreSQL Transaction Isolation Levels
-slug: postgres-transaction-isolation
-date_scraped: "2026-07-07 10:41:22 UTC"
+source_url: "https://www.postgresql.org/docs/current/transaction-iso.html"
+category: "standards"
+title: "PostgreSQL Transaction Isolation Levels"
+slug: "postgres-transaction-isolation"
+date_scraped: "2026-07-09 13:34:03 UTC"
 description: "Read committed through serializable — concurrency anomalies and what each level prevents"
 ---
 ## 13.2. Transaction Isolation#

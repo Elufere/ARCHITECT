@@ -1,9 +1,9 @@
 ---
-source_url: https://abseil.io/resources/swe-book/html/ch10.html
-category: standards
-title: Software Engineering at Google — Chapter 10: Documentation
-slug: google-swe-book-documentation
-date_scraped: "2026-07-07 10:40:45 UTC"
+source_url: "https://abseil.io/resources/swe-book/html/ch10.html"
+category: "standards"
+title: "Software Engineering at Google — Chapter 10: Documentation"
+slug: "google-swe-book-documentation"
+date_scraped: "2026-07-09 13:33:42 UTC"
 description: "Documentation types, design docs, audience-separation principles from the O'Reilly book hosted free by Abseil"
 ---
 # Documentation

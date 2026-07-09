@@ -1,9 +1,9 @@
 ---
-source_url: https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/
-category: security
-title: OWASP API3:2023 — Broken Object Property Level Authorization
-slug: owasp-api3-bopla
-date_scraped: "2026-07-07 10:41:57 UTC"
+source_url: "https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/"
+category: "security"
+title: "OWASP API3:2023 — Broken Object Property Level Authorization"
+slug: "owasp-api3-bopla"
+date_scraped: "2026-07-09 13:34:26 UTC"
 description: "Mass assignment and excessive data exposure — returning or writing fields the user shouldn't access"
 ---
 # API3:2023 Broken Object Property Level Authorization

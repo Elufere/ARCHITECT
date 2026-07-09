@@ -1,9 +1,9 @@
 ---
-source_url: https://docs.stripe.com/error-low-level
-category: standards
-title: Stripe — Error Handling and Retries
-slug: stripe-error-handling
-date_scraped: "2026-07-07 10:41:52 UTC"
+source_url: "https://docs.stripe.com/error-low-level"
+category: "standards"
+title: "Stripe — Error Handling and Retries"
+slug: "stripe-error-handling"
+date_scraped: "2026-07-09 13:34:22 UTC"
 description: "Error handling and retry semantics for 4xx/5xx/network errors"
 ---
 # Advanced errorhandling

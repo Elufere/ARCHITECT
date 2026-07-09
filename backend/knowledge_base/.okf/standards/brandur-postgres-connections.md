@@ -1,9 +1,9 @@
 ---
-source_url: https://brandur.org/postgres-connections
-category: standards
-title: Postgres Connection Pooling and Limits
-slug: brandur-postgres-connections
-date_scraped: "2026-07-07 10:41:36 UTC"
+source_url: "https://brandur.org/postgres-connections"
+category: "standards"
+title: "Postgres Connection Pooling and Limits"
+slug: "brandur-postgres-connections"
+date_scraped: "2026-07-09 13:34:13 UTC"
 description: "Connection pooling patterns, performance boundaries, and transaction overhead in Postgres"
 ---
 # How to Manage Connections Efficiently in Postgres, or Any Database

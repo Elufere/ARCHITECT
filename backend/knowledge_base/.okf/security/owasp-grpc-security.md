@@ -1,9 +1,9 @@
 ---
-source_url: https://cheatsheetseries.owasp.org/cheatsheets/gRPC_Security_Cheat_Sheet.html
-category: security
-title: OWASP — gRPC Security Cheat Sheet
-slug: owasp-grpc-security
-date_scraped: "2026-07-07 10:42:11 UTC"
+source_url: "https://cheatsheetseries.owasp.org/cheatsheets/gRPC_Security_Cheat_Sheet.html"
+category: "security"
+title: "OWASP — gRPC Security Cheat Sheet"
+slug: "owasp-grpc-security"
+date_scraped: "2026-07-09 13:34:36 UTC"
 description: "TLS config, message size limits, streaming limits, rate limiting interceptors"
 ---
 # gRPC Security Cheat Sheet¶

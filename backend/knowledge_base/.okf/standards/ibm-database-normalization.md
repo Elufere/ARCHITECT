@@ -1,9 +1,9 @@
 ---
-source_url: https://www.ibm.com/think/topics/database-normalization
-category: standards
-title: IBM Database Normalization — 1NF through 4NF
-slug: ibm-database-normalization
-date_scraped: "2026-07-07 10:41:35 UTC"
+source_url: "https://www.ibm.com/think/topics/database-normalization"
+category: "standards"
+title: "IBM Database Normalization — 1NF through 4NF"
+slug: "ibm-database-normalization"
+date_scraped: "2026-07-09 13:34:12 UTC"
 description: "Formal normalization forms with functional dependency definitions and worked examples"
 ---
 # What is database normalization?

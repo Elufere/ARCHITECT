@@ -1,9 +1,9 @@
 ---
-source_url: https://brandur.org/idempotency-keys
-category: standards
-title: Implementing Idempotency Keys in Postgres
-slug: brandur-idempotency-keys
-date_scraped: "2026-07-07 10:41:32 UTC"
+source_url: "https://brandur.org/idempotency-keys"
+category: "standards"
+title: "Implementing Idempotency Keys in Postgres"
+slug: "brandur-idempotency-keys"
+date_scraped: "2026-07-09 13:34:09 UTC"
 description: "Stripe-style idempotency keys — schema design and race-condition handling"
 ---
 # Implementing Stripe-like Idempotency Keys in Postgres

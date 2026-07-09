@@ -1,9 +1,9 @@
 ---
-source_url: https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_Cheat_Sheet.html
-category: security
-title: OWASP — JSON Web Token Cheat Sheet
-slug: owasp-jwt-validation
-date_scraped: "2026-07-07 10:42:13 UTC"
+source_url: "https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_Cheat_Sheet.html"
+category: "security"
+title: "OWASP — JSON Web Token Cheat Sheet"
+slug: "owasp-jwt-validation"
+date_scraped: "2026-07-09 13:34:38 UTC"
 description: "Securely verifying, signing, and invalidating stateless JWT tokens"
 ---
 # JSON Web Token Cheat Sheet¶

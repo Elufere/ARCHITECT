@@ -1,9 +1,9 @@
 ---
-source_url: https://adr.github.io/
-category: standards
-title: Architecture Decision Records — Canonical Reference
-slug: adr-canonical-reference
-date_scraped: "2026-07-07 10:40:50 UTC"
+source_url: "https://adr.github.io/"
+category: "standards"
+title: "Architecture Decision Records — Canonical Reference"
+slug: "adr-canonical-reference"
+date_scraped: "2026-07-09 13:33:46 UTC"
 description: "ADR reference site — formats, templates, history, and how ADRs relate to specs and RFCs"
 ---
 ## Motivation and Definitions

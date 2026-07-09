@@ -1,9 +1,9 @@
 ---
-source_url: https://www.aboutamazon.com/news/workplace/an-insider-look-at-amazons-culture-and-processes
-category: standards
-title: Amazon — Working Backwards / PR-FAQ Method
-slug: amazon-working-backwards-pr-faq
-date_scraped: "2026-07-07 10:41:08 UTC"
+source_url: "https://www.aboutamazon.com/news/workplace/an-insider-look-at-amazons-culture-and-processes"
+category: "standards"
+title: "Amazon — Working Backwards / PR-FAQ Method"
+slug: "amazon-working-backwards-pr-faq"
+date_scraped: "2026-07-09 13:33:54 UTC"
 description: "Amazon's official explanation of the PR/FAQ narrative spec process — writing the press release before building"
 ---
 Amazon culture has many unique ways of operating that help the company move fast and innovate while keeping the customer at the center of everything we do. So when two former Amazon employees, Colin Bryar and Bill Carr, wrote a book about Amazon's culture, we couldn't wait to share their perspective on how we do what we do best. In this excerpt from "WORKING BACKWARDS: Insights, Stories, and Secrets from Inside Amazon," Bryar and Carr share their experience with the concept of working backwards, going from an idea about how to improve a customer experience all the way through the process that leads only the best ideas to get the green light.
@@ -46,8 +46,8 @@ Trending news and stories
 
 1. Anthropic's Claude Fable 5 model back on Amazon Bedrock
 2. Amazon Leo mission updates: 375+ satellites now in orbit after successful Atlas V launch
-3. Claude Fable 5 from Anthropic now available on AWS
-4. Anthropic's Sonnet 5 now available on AWS
+3. Discover Kindle features that make reading easier and more enjoyable
+4. Claude Fable 5 from Anthropic now available on AWS
 
 ---
 

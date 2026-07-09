@@ -1,9 +1,9 @@
 ---
-source_url: https://www.postgresql.org/docs/current/indexes.html
-category: standards
-title: PostgreSQL Index Types and When to Use Them
-slug: postgres-index-types
-date_scraped: "2026-07-07 10:41:14 UTC"
+source_url: "https://www.postgresql.org/docs/current/indexes.html"
+category: "standards"
+title: "PostgreSQL Index Types and When to Use Them"
+slug: "postgres-index-types"
+date_scraped: "2026-07-09 13:33:57 UTC"
 description: "B-tree, GiST, GIN, BRIN, hash indexes — when each helps or hurts query performance"
 ---
 ## Chapter 11. Indexes

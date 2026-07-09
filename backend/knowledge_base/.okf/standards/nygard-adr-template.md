@@ -1,9 +1,9 @@
 ---
-source_url: https://github.com/joelparkerhenderson/architecture-decision-record/blob/main/locales/en/templates/decision-record-template-by-michael-nygard/index.md
-category: standards
-title: Michael Nygard's Original ADR Template
-slug: nygard-adr-template
-date_scraped: "2026-07-07 10:40:57 UTC"
+source_url: "https://github.com/joelparkerhenderson/architecture-decision-record/blob/main/locales/en/templates/decision-record-template-by-michael-nygard/index.md"
+category: "standards"
+title: "Michael Nygard's Original ADR Template"
+slug: "nygard-adr-template"
+date_scraped: "2026-07-09 13:33:48 UTC"
 description: "The template that started the ADR practice — title, context, decision, status, consequences"
 ---
 # Decision record template by Michael Nygard

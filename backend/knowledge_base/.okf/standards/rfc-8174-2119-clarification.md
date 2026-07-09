@@ -1,9 +1,9 @@
 ---
-source_url: https://www.rfc-editor.org/rfc/rfc8174.html
-category: standards
-title: RFC 8174 — Clarifying RFC 2119 Keywords
-slug: rfc-8174-2119-clarification
-date_scraped: "2026-07-07 10:40:42 UTC"
+source_url: "https://www.rfc-editor.org/rfc/rfc8174.html"
+category: "standards"
+title: "RFC 8174 — Clarifying RFC 2119 Keywords"
+slug: "rfc-8174-2119-clarification"
+date_scraped: "2026-07-09 13:33:39 UTC"
 description: "Clarifies that RFC 2119 keywords only carry requirement force when in ALL CAPS; closes a real ambiguity"
 ---
 ```

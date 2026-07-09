@@ -1,9 +1,9 @@
 ---
-source_url: https://www.postgresql.org/docs/current/indexes-partial.html
-category: standards
-title: PostgreSQL Partial Indexes
-slug: postgres-partial-indexes
-date_scraped: "2026-07-07 10:41:18 UTC"
+source_url: "https://www.postgresql.org/docs/current/indexes-partial.html"
+category: "standards"
+title: "PostgreSQL Partial Indexes"
+slug: "postgres-partial-indexes"
+date_scraped: "2026-07-09 13:34:00 UTC"
 description: "Partial index design patterns — excluding common or uninteresting values to shrink index size"
 ---
 ## 11.8. Partial Indexes#

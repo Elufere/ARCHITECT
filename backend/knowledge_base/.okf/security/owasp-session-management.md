@@ -1,9 +1,9 @@
 ---
-source_url: https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html
-category: security
-title: OWASP — Session Management Cheat Sheet
-slug: owasp-session-management
-date_scraped: "2026-07-07 10:42:04 UTC"
+source_url: "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"
+category: "security"
+title: "OWASP — Session Management Cheat Sheet"
+slug: "owasp-session-management"
+date_scraped: "2026-07-09 13:34:31 UTC"
 description: "Session ID generation, cookie flags, timeouts, and token rotation"
 ---
 # Session Management Cheat Sheet¶

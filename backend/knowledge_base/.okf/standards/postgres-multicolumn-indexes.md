@@ -1,9 +1,9 @@
 ---
-source_url: https://www.postgresql.org/docs/current/indexes-multicolumn.html
-category: standards
-title: PostgreSQL Multicolumn Indexes
-slug: postgres-multicolumn-indexes
-date_scraped: "2026-07-07 10:41:16 UTC"
+source_url: "https://www.postgresql.org/docs/current/indexes-multicolumn.html"
+category: "standards"
+title: "PostgreSQL Multicolumn Indexes"
+slug: "postgres-multicolumn-indexes"
+date_scraped: "2026-07-09 13:33:58 UTC"
 description: "Composite index behavior, leading-column rules, and column order selection"
 ---
 ## 11.3. Multicolumn Indexes#

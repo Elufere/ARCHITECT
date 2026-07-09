@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 import logging
+import yaml
 from pathlib import Path
 from typing import TypedDict
 
@@ -28,7 +29,7 @@ CHROMA_ROOT = Path(__file__).resolve().parent / "chroma_store"
 
 RULE_KEYWORDS = [
     "must", "shall", "required", "must not", "shall not", "mandatory",
-    "syntax", "ddl", "create table", "alter table",
+    "syntax", "ddl", "alter table",
     "openapi", "json schema", "rfc 2119", "standard format",
     "constraint", "unique", "not null", "foreign key",
 ]
@@ -40,6 +41,12 @@ PATTERN_KEYWORDS = [
     "example", "scenario", "use case",
 ]
 
+CODE_FENCE_RULE_MARKERS = [
+    "create table", "alter table", "openapi:", "swagger:",
+    "paths:", "components:", "type: object", "not null",
+    "foreign key", "primary key", "unique constraint",
+]
+
 
 def classify_chunk(text: str) -> str:
     """
@@ -47,19 +54,24 @@ def classify_chunk(text: str) -> str:
     Returns 'rule' or 'pattern'.
     """
     lower_text = text.lower()
-    
-    # Count occurrences
+
+    # Extract fenced code blocks separately — strict syntax usually lives here
+    code_blocks = re.findall(r"```.*?```", text, flags=re.DOTALL)
+    code_text = " ".join(code_blocks).lower()
+
+    # Strong signal: structural syntax markers inside actual code blocks
+    if any(marker in code_text for marker in CODE_FENCE_RULE_MARKERS):
+        return "rule"
+
     rule_score = sum(1 for kw in RULE_KEYWORDS if kw in lower_text)
     pattern_score = sum(1 for kw in PATTERN_KEYWORDS if kw in lower_text)
-    
-    # Make it HARD to be a rule. 
-    # It must have significantly more rule keywords than pattern keywords.
-    # This prevents situational advice (that happens to use "must" once) from being locked into the system prompt.
-    if rule_score > pattern_score + 2:
-        return "rule"
-        
-    return "pattern"
 
+    # With the code-fence override catching DDL/OpenAPI, we can safely
+    # keep the prose threshold strict to avoid locking conversational advice.
+    if rule_score > pattern_score:
+        return "rule"
+
+    return "pattern"
 
 # --- Chunking Logic ---
 
@@ -123,15 +135,13 @@ def extract_frontmatter(markdown_text: str) -> dict:
     match = re.match(r"^---\s*\n(.*?)\n---", markdown_text, re.DOTALL)
     if not match:
         return {}
-    
-    fm = {}
-    for line in match.group(1).split("\n"):
-        if ":" in line:
-            key, val = line.split(":", 1)
-            # Clean up YAML quotes
-            val = val.strip().strip('"').strip("'")
-            fm[key.strip()] = val
-    return fm
+
+    try:
+        parsed = yaml.safe_load(match.group(1))
+        return parsed if isinstance(parsed, dict) else {}
+    except yaml.YAMLError as e:
+        logger.warning(f"Failed to parse frontmatter: {e}")
+        return {}
 
 
 # --- Storage Logic ---

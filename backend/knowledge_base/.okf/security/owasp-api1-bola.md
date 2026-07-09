@@ -1,9 +1,9 @@
 ---
-source_url: https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/
-category: security
-title: OWASP API1:2023 — Broken Object Level Authorization
-slug: owasp-api1-bola
-date_scraped: "2026-07-07 10:41:55 UTC"
+source_url: "https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/"
+category: "security"
+title: "OWASP API1:2023 — Broken Object Level Authorization"
+slug: "owasp-api1-bola"
+date_scraped: "2026-07-09 13:34:24 UTC"
 description: "BOLA (IDOR) — accessing other users' resources by manipulating object IDs"
 ---
 # API1:2023 Broken Object Level Authorization

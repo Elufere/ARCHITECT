@@ -1,9 +1,9 @@
 ---
-source_url: https://www.gov.uk/service-manual/agile-delivery/writing-user-stories
-category: standards
-title: Gov.uk — Writing User Stories
-slug: govuk-writing-user-stories
-date_scraped: "2026-07-07 10:40:47 UTC"
+source_url: "https://www.gov.uk/service-manual/agile-delivery/writing-user-stories"
+category: "standards"
+title: "Gov.uk — Writing User Stories"
+slug: "govuk-writing-user-stories"
+date_scraped: "2026-07-09 13:33:43 UTC"
 description: "UK Government Digital Service formal standard for user stories, acceptance criteria, epics vs. stories"
 ---
 # Writing user stories

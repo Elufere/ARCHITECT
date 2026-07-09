@@ -1,9 +1,9 @@
 ---
-source_url: https://www.rfc-editor.org/rfc/rfc9457.html
-category: standards
-title: RFC 9457 — Problem Details for HTTP APIs
-slug: rfc-9457-problem-details
-date_scraped: "2026-07-07 10:41:53 UTC"
+source_url: "https://www.rfc-editor.org/rfc/rfc9457.html"
+category: "standards"
+title: "RFC 9457 — Problem Details for HTTP APIs"
+slug: "rfc-9457-problem-details"
+date_scraped: "2026-07-09 13:34:23 UTC"
 description: "Standardized machine-readable error format for HTTP APIs"
 ---
 # RFC 9457

@@ -1,9 +1,9 @@
 ---
-source_url: https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html
-category: security
-title: OWASP — Authentication Cheat Sheet
-slug: owasp-authentication
-date_scraped: "2026-07-07 10:42:02 UTC"
+source_url: "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html"
+category: "security"
+title: "OWASP — Authentication Cheat Sheet"
+slug: "owasp-authentication"
+date_scraped: "2026-07-09 13:34:29 UTC"
 description: "Session binding, MFA, reauthentication, and credential handling"
 ---
 # Authentication Cheat Sheet¶

@@ -1,9 +1,9 @@
 ---
-source_url: https://docs.stripe.com/api/idempotent_requests
-category: standards
-title: Stripe — Idempotent Requests
-slug: stripe-idempotent-requests
-date_scraped: "2026-07-07 10:41:46 UTC"
+source_url: "https://docs.stripe.com/api/idempotent_requests"
+category: "standards"
+title: "Stripe — Idempotent Requests"
+slug: "stripe-idempotent-requests"
+date_scraped: "2026-07-09 13:34:19 UTC"
 description: "Idempotency key specification for POST requests — error propagation and response caching"
 ---
 # Idempotent requests

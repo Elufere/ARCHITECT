@@ -1,9 +1,9 @@
 ---
-source_url: https://cheatsheetseries.owasp.org/cheatsheets/GraphQL_Cheat_Sheet.html
-category: security
-title: OWASP — GraphQL Security Cheat Sheet
-slug: owasp-graphql-security
-date_scraped: "2026-07-07 10:42:09 UTC"
+source_url: "https://cheatsheetseries.owasp.org/cheatsheets/GraphQL_Cheat_Sheet.html"
+category: "security"
+title: "OWASP — GraphQL Security Cheat Sheet"
+slug: "owasp-graphql-security"
+date_scraped: "2026-07-09 13:34:35 UTC"
 description: "Query depth/cost limiting, batching attacks, access control, disabling introspection in prod"
 ---
 # GraphQL Cheat Sheet¶

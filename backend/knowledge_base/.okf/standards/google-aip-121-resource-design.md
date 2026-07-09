@@ -1,9 +1,9 @@
 ---
-source_url: https://google.aip.dev/121
-category: standards
-title: Google AIP-121 — Resource-Oriented Design
-slug: google-aip-121-resource-design
-date_scraped: "2026-07-07 10:41:43 UTC"
+source_url: "https://google.aip.dev/121"
+category: "standards"
+title: "Google AIP-121 — Resource-Oriented Design"
+slug: "google-aip-121-resource-design"
+date_scraped: "2026-07-09 13:34:17 UTC"
 description: "Resource-oriented API design principles — nouns over verbs, standard methods"
 ---
 #### AIP-121

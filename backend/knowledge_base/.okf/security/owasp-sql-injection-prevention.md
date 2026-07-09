@@ -1,9 +1,9 @@
 ---
-source_url: https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html
-category: security
-title: OWASP — SQL Injection Prevention
-slug: owasp-sql-injection-prevention
-date_scraped: "2026-07-07 10:42:00 UTC"
+source_url: "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html"
+category: "security"
+title: "OWASP — SQL Injection Prevention"
+slug: "owasp-sql-injection-prevention"
+date_scraped: "2026-07-09 13:34:28 UTC"
 description: "Parameterized queries, stored procedures, and defensive SQL escaping"
 ---
 # SQL Injection Prevention Cheat Sheet¶
