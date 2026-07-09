@@ -1,0 +1,9 @@
+requests
+beautifulsoup4
+pyyaml
+chromadb
+pydantic
+python-dotenv
+langchain-core
+langchain-openai
+langgraph
