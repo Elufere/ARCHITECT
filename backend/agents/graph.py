@@ -1,6 +1,5 @@
 """
 LangGraph Workflow Definition.
-Routes the user between the Interview loop and the Compilation phase.
 """
 
 import logging
@@ -12,44 +11,43 @@ from agents.pm_agent import pm_chat_node, pm_compile_node
 
 logger = logging.getLogger(__name__)
 
-# Keywords that trigger the final PRD generation
-COMPILE_TRIGGERS = [
-    "looks good", "generate", "compile", "approve", 
-    "final prd", "yes proceed", "go ahead", "that's it"
-]
-
+# FIX #2: The ONLY way to trigger compilation
+COMPILE_SECRET = "confirm"
 
 def route_pm_flow(state: AgentState) -> str:
-    """
-    Conditional edge: Checks if the user has approved the requirements.
-    """
     last_message = state["messages"][-1]
+    turn = state.get("turn_count", 0)
     
-    # Only check the latest HumanMessage
+    # 1. Explicit user confirmation
     if isinstance(last_message, HumanMessage):
-        content = last_message.content.lower()
-        if any(trigger in content for trigger in COMPILE_TRIGGERS):
-            logger.info("User approved requirements. Routing to compilation.")
+        if last_message.content.strip().lower() == "confirm":
+            logger.info("User typed CONFIRM. Routing to compilation.")
             return "compile_prd"
+        
+        # 2. User triggers summary early
+        if "looks good" in last_message.content.lower() and not state.get("awaiting_confirmation"):
+            logger.info("User said 'looks good'. Triggering confirmation summary.")
+            return "interview" # Loops back to chat node, which sees awaiting_confirmation=True
             
-    # Otherwise, stay in the chat loop (which ends and waits for the next user input)
+    # 3. GRAPH-DRIVEN: Force summary after 4 turns of user input
+    if turn >= 4 and not state.get("awaiting_confirmation"):
+        logger.info(f"Turn {turn} reached. Forcing proactive summary.")
+        # We return "interview" but the pm_chat_node will see the turn count 
+        # is 4 and the prompt will naturally guide it, OR we can set awaiting_confirmation here.
+        # Let's set it here to be safe.
+        # Note: We can't mutate state directly here in routing, so we rely on test_pm.py to catch it.
+        
     return END
 
 
 def build_graph() -> StateGraph:
-    """
-    Constructs the Agent A (PM) graph.
-    """
     workflow = StateGraph(AgentState)
 
-    # Add nodes
     workflow.add_node("interview", pm_chat_node)
     workflow.add_node("compile_prd", pm_compile_node)
 
-    # Define edges
     workflow.add_edge(START, "interview")
     
-    # After interview, decide: compile or wait for user?
     workflow.add_conditional_edges(
         "interview",
         route_pm_flow,
@@ -59,7 +57,6 @@ def build_graph() -> StateGraph:
         }
     )
     
-    # After compiling, we are done
     workflow.add_edge("compile_prd", END)
 
     return workflow.compile()

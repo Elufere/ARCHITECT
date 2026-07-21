@@ -17,13 +17,14 @@ from scraper.clean import clean_content
 
 def test_fetch_and_clean():
     # Pick 3 diverse sources that are known-good
-    test_sources = [
-        SOURCES[0],   # PostgreSQL indexes
-        SOURCES[15],  # Stripe idempotent requests
-        SOURCES[21],  # OWASP BOLA
-    ]
+    # test_sources = [
+    #     SOURCES[0],   # PostgreSQL indexes
+    #     SOURCES[15],  # Stripe idempotent requests
+    #     SOURCES[21],  # OWASP BOLA
+    # ]
 
-    for source in test_sources:
+    # for source in test_sources:
+    for source in SOURCES:
         print("\n" + "=" * 70)
         print(f"TESTING: {source['title']}")
         print(f"URL: {source['url']}")

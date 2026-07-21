@@ -333,7 +333,6 @@ def get_sources_by_category(category: str) -> list[dict]:
     """Return all sources for a given category."""
     return [s for s in SOURCES if s["category"] == category]
 
-
 def get_all_categories() -> list[str]:
     """Return unique category names."""
     return sorted(set(s["category"] for s in SOURCES))
