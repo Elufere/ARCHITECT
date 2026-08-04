@@ -22,7 +22,10 @@ class TopicStatus(str, Enum):
     IN_PROGRESS = "IN_PROGRESS"
     PARTIAL = "PARTIAL"
     COMPLETED = "COMPLETED"
-    
+
+class DiscoveryScope(str, Enum):
+    USER_APP = "USER_APP"
+    ADMIN_DASHBOARD = "ADMIN_DASHBOARD"
 
 # --- canonical keys, one Literal per topic ---
 USER_ROLES_KEYS = Literal[
@@ -33,8 +36,9 @@ USER_GOALS_KEYS = Literal[
     "primary_user_goals", "secondary_user_goals",
     "success_criteria", "motivations",
 ]
+
 CORE_WORKFLOW_KEYS = Literal[
-    "trigger", "workflow_steps", "completion_condition",
+    "trigger", "workflow_steps", "completion_condition", "downstream_dependency",
 ]
 BUSINESS_RULES_KEYS = Literal[
     "validations", "conditions", "policies",
@@ -66,12 +70,15 @@ TOPIC_KEY_MAP = {
 
 class KnowledgeItem(BaseModel):
     topic: DiscoveryTopic
+    scope: DiscoveryScope  
     key: Union[
         USER_ROLES_KEYS, USER_GOALS_KEYS, CORE_WORKFLOW_KEYS,
         BUSINESS_RULES_KEYS, CONSTRAINTS_KEYS, MVP_SCOPE_KEYS,
         EXCEPTIONS_KEYS, EDGE_CASES_KEYS,
     ]
     value: str
+    evidence: str
+    roles: Optional[List[str]] = None
     role: Optional[str] = None
     confidence: float
     source_turn: int = 0
@@ -81,7 +88,12 @@ class KnowledgeItem(BaseModel):
         allowed = TOPIC_KEY_MAP[self.topic]
         if self.key not in allowed:
             raise ValueError(f"key '{self.key}' not valid for topic '{self.topic}'")
+        if self.roles:
+            for r in self.roles:
+                if len(r.split()) > 3 or len(r) < 2:
+                    raise ValueError(f"'{r}' does not look like a valid role name")
         return self
+
 
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
@@ -94,7 +106,6 @@ class AgentState(TypedDict):
     current_topic: Optional[DiscoveryTopic]
     topic_dependencies: Dict[DiscoveryTopic, List[DiscoveryTopic]]
 
-   # Planner output
     current_gap: Optional[str]
     current_objective: Optional[str]
     question_hint: Optional[str]
@@ -103,17 +114,5 @@ class AgentState(TypedDict):
 
     turn_count: int
     awaiting_confirmation: bool
-    messages: Annotated[list, add_messages]
-    raw_idea: str
-    prd_contract: Optional[PRDContract]
-    pm_is_complete: bool
-    
-    # --- NEW: Explicit Knowledge & Topic Tracking ---
-    discovered_knowledge: List[KnowledgeItem]
-    topic_status: Dict[DiscoveryTopic, TopicStatus]
-    current_topic: Optional[DiscoveryTopic]
-    topic_dependencies: Dict[DiscoveryTopic, List[DiscoveryTopic]]
-    
-    # --- Legacy (kept for compatibility, but graph handles progression now) ---
-    turn_count: int             
-    awaiting_confirmation: bool  
+    current_role: Optional[str]
+    discovery_scope: DiscoveryScope

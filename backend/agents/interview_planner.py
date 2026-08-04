@@ -1,4 +1,4 @@
-from agents.state import AgentState, DiscoveryTopic, TopicStatus
+from agents.state import AgentState, DiscoveryScope, DiscoveryTopic, TopicStatus
 
 # Topic ordering
 TOPIC_PREREQUISITES = {
@@ -42,13 +42,13 @@ DISCOVERY_TASKS = {
     },
 
     DiscoveryTopic.USER_GOALS: {
-        "buyer_goals": {
-            "objective": "Understand what buyers are trying to achieve.",
-            "question_hint": "Ask what buyers want to accomplish."
+        "primary_user_goals": {
+            "objective": "Understand what the primary users are trying to achieve.",
+            "question_hint": "Ask what the primary users want to accomplish when using the product."
         },
-        "seller_goals": {
-            "objective": "Understand what sellers are trying to achieve.",
-            "question_hint": "Ask what sellers want to accomplish."
+        "secondary_user_goals": {
+            "objective": "Understand what secondary users (if any) are trying to achieve.",
+            "question_hint": "Ask what secondary users, if any exist, want to accomplish when using the product."
         },
         "success_criteria": {
             "objective": "Understand what successful completion means.",
@@ -69,13 +69,17 @@ DISCOVERY_TASKS = {
             "objective": "Understand the complete happy path.",
             "question_hint": "Ask the user to describe the workflow from start to finish."
         },
-        "system_responses": {
-            "objective": "Understand how the system responds after each major action.",
-            "question_hint": "Ask what the system does after users perform actions."
-        },
-        "completion_conditions": {
+        "completion_condition": {  
             "objective": "Determine when the workflow is considered complete.",
             "question_hint": "Ask what conditions mark successful completion."
+        },
+        "downstream_dependency": {
+            "objective": "Determine whether this workflow depends on something happening outside "
+                        "the current app/phase before it can be considered complete (e.g. an "
+                        "approval, review, or action taken elsewhere in the system).",
+            "question_hint": "Ask whether anything needs to happen outside of what the user "
+                            "controls — such as a review or approval — before this workflow is "
+                            "considered fully complete."
         },
         "end_state": {
             "objective": "Understand the final outcome after completion.",
@@ -196,23 +200,28 @@ PER_ROLE_TASKS = {
 }
 
 def get_known_roles(state: AgentState, topic: DiscoveryTopic) -> set[str]:
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
     roles = set()
     for item in state.get("discovered_knowledge", []):
-        if item.topic == topic and item.key in ("primary_users", "secondary_users"):
-            for r in item.value.split(","):
-                r = r.strip().lower()
-                if r:
-                    roles.add(r)
+        if item.topic == topic and item.scope == scope and item.key in ("primary_users", "secondary_users"):
+            if item.roles:
+                for r in item.roles:
+                    r = r.strip().lower()
+                    if r:
+                        roles.add(r)
     return roles
 
+
 def get_known_keys(state: AgentState, topic: DiscoveryTopic):
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
     return {
         item.key
         for item in state.get("discovered_knowledge", [])
-        if item.topic == topic
+        if item.topic == topic and item.scope == scope
     }
 
 def build_gap_info(state: AgentState, topic: DiscoveryTopic):
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
     known_keys = get_known_keys(state, topic)
     required = DISCOVERY_TASKS[topic]
     per_role_tasks = PER_ROLE_TASKS.get(topic, set())
@@ -223,14 +232,13 @@ def build_gap_info(state: AgentState, topic: DiscoveryTopic):
     for key in required.keys():
         if key in per_role_tasks:
             if not roles:
-                # roles not identified yet — surface as a normal gap once,
-                # will expand per-role once roles exist
                 missing_keys.append(key)
                 continue
             known_roles_for_key = {
                 item.role
                 for item in state.get("discovered_knowledge", [])
-                if item.topic == topic and item.key == key and item.role
+                if item.topic == topic and item.key == key
+                and item.role and item.scope == scope   
             }
             for role in sorted(roles - known_roles_for_key):
                 missing_keys.append(f"{key}::{role}")
@@ -271,12 +279,14 @@ def build_gap_info(state: AgentState, topic: DiscoveryTopic):
 def interview_planner_node(state: AgentState) -> dict:
     topic_status = dict(state.get("topic_status", {}))
     current_topic = state.get("current_topic")
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
 
     print("\n=== INTERVIEW PLANNER ===")
+    print("Scope:", scope.value)
     print("Current topic:", current_topic)
 
     # --------------------------------------------------------
-    # Stay on current topic
+    # Stay on current topic, but only if it still has a real gap
     # --------------------------------------------------------
     if (
         current_topic is not None
@@ -288,33 +298,35 @@ def interview_planner_node(state: AgentState) -> dict:
         print("Missing:", gap["missing_keys"])
         print("Current gap:", gap["current_gap"])
 
-        return {
-            "current_topic": current_topic,
-            **gap,
-        }
+        if gap["current_gap"] is not None:
+            return {
+                "current_topic": current_topic,
+                **gap,
+            }
+
+        # No gaps left — mark complete and fall through to pick the next topic
+        # instead of returning a null objective/hint to the generator.
+        topic_status[current_topic] = TopicStatus.COMPLETED
+        current_topic = None
 
     # --------------------------------------------------------
     # Find next topic
     # --------------------------------------------------------
     for topic in DiscoveryTopic:
-
         status = topic_status.get(topic)
 
         if status == TopicStatus.COMPLETED:
             continue
 
         deps = TOPIC_PREREQUISITES.get(topic, [])
-
         deps_met = all(
             topic_status.get(dep) == TopicStatus.COMPLETED
             for dep in deps
         )
-
         if not deps_met:
             continue
 
         updated = dict(topic_status)
-
         if status is None:
             updated[topic] = TopicStatus.IN_PROGRESS
 
@@ -331,6 +343,9 @@ def interview_planner_node(state: AgentState) -> dict:
             **gap,
         }
 
+    # All topics exhausted — persist the completion we just marked above
     return {
-        "awaiting_confirmation": True
+        "current_topic": None,
+        "topic_status": topic_status,
+        "awaiting_confirmation": True,
     }
