@@ -62,7 +62,20 @@ def run_cli():
         awaiting_confirmation=False,
         discovered_knowledge=[],
         topic_status={},
+        topic_maturity={},
+        product_model={},
         current_topic=None,
+        current_gap=None,
+        current_objective=None,
+        question_hint=None,
+        known_keys=[],
+        missing_keys=[],
+        inferred_gap_evidence=[],
+        relevant_context=[],
+        next_discovery_move=None,
+        conversation_intent=None,
+        is_correction=False,
+        current_role=None,
     )
 
     graph = build_graph()
@@ -82,6 +95,8 @@ def run_cli():
         state["discovery_scope"] = DiscoveryScope.ADMIN_DASHBOARD
         state["pm_is_complete"] = False
         state["topic_status"] = {}
+        state["topic_maturity"] = {}
+        state["product_model"] = {}
         state["current_topic"] = None
         # discovered_knowledge is intentionally NOT cleared —
         # Phase 1 facts stay, but scope filtering keeps the

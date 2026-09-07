@@ -2,6 +2,7 @@
 from langchain_ollama import ChatOllama
 
 from agents.state import AgentState, DiscoveryScope
+from agents.product_model import format_product_model
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 
@@ -9,10 +10,11 @@ SCOPE_RULES = {
     DiscoveryScope.USER_APP: """
 CURRENT SCOPE: USER APP (Customer-facing application)
 You are ONLY discovering the customer-facing journey.
-- Do NOT proactively ask about administrators, internal staff, support agents,
+- Do NOT proactively invent administrators, internal staff, support agents,
   moderators, or dashboards as separate user types.
-- Do NOT name any internal/staff role as an example of "other user types" —
-  not even as a suggestion or hypothetical.
+- If the user explicitly identifies one of those roles, it is a confirmed
+  product role: you may ask the planner-selected question about it. Do not use
+  an internal role as a speculative example.
 - EXCEPTION: if the user's own workflow naturally hands off to someone outside
   this app (e.g. "then it needs to be approved" or "then it gets reviewed"),
   it is fine to ask what marks that handoff point — but do NOT ask how that
@@ -47,6 +49,71 @@ def format_recent_messages(messages: list) -> str:
     return "\n".join(formatted_strings)
 
 
+def _same_role(first: str | None, second: str | None) -> bool:
+    """Compare role labels without treating their wording as product knowledge."""
+    if not first or not second:
+        return False
+    return first.lower().strip().rstrip("s") == second.lower().strip().rstrip("s")
+
+
+def permission_discovery_guidance(state: AgentState, current_role: str | None) -> str:
+    """Give the generator evidence and a semantic decision rule for permissions.
+
+    Responsibilities deliberately do not satisfy the permissions schema key.
+    They only determine whether the permission question should first discover
+    capabilities or should deepen into the boundaries of known capabilities.
+    """
+    responsibilities = [
+        item.value
+        for item in state.get("discovered_knowledge", [])
+        if item.topic.value == "USER_ROLES"
+        and item.key == "responsibilities"
+        and _same_role(item.role, current_role)
+    ]
+    evidence = "\n".join(f"- {value}" for value in responsibilities) or "None recorded."
+    return f"""
+PERMISSION DISCOVERY — EVIDENCE-AWARE MODE
+Responsibility evidence already recorded for '{current_role}':
+{evidence}
+
+Responsibilities describe the role's duties in the business workflow.
+Permissions describe what the system authorizes that role to access or do,
+including scope, restrictions, conditions, transaction-state limitations,
+approval requirements, and actions reserved for another role.
+
+First, SEMANTICALLY assess the responsibility evidence above. Do not use a
+keyword checklist. Decide whether it establishes concrete in-app actions, or
+only a high-level purpose/duty.
+
+- If it is high-level or vague, ask which concrete actions the role is allowed
+  to perform in the product.
+- If it already establishes concrete actions, do NOT ask the user to list
+  those actions again. Briefly ground the question in the known actions and
+  ask instead about their authorization boundaries: who/what the role can act
+  on, when an action is available, restrictions, reversibility, approval, or
+  actions the role cannot perform.
+
+The responsibility evidence is context only. It does NOT complete the
+permissions gap, and your question must still discover new permission details.
+"""
+
+
+def inference_confirmation_guidance(state: AgentState) -> str:
+    """Tell the generator to refine incidental evidence rather than rediscover it."""
+    evidence = state.get("inferred_gap_evidence", [])
+    return f"""
+CONFIRMATION / REFINEMENT MODE
+The following grounded information was provided incidentally while the user
+answered a different question:
+{chr(10).join(f'- {item}' for item in evidence)}
+
+Do not ask the normal discovery question from scratch. Reference this evidence
+in one natural question and ask the user to confirm, correct, qualify, or add
+important restrictions/details. Do not ask only "Is that correct?". This fact
+remains unconfirmed until the user responds to this question.
+"""
+
+
 def question_generator_node(state: AgentState) -> dict:
     """Generates contextually appropriate questions for the current topic."""
     print(">>> GENERATE")
@@ -55,8 +122,10 @@ def question_generator_node(state: AgentState) -> dict:
 
     current_objective = state.get("current_objective")
     question_hint = state.get("question_hint")
+    current_gap = state.get("current_gap")
     current_role = state.get("current_role")
-    discovery_scope = state.get("discovery_scope", DiscoveryScope.USER_APP)  # NEW
+    discovery_move = state.get("next_discovery_move") or "deepen_understanding"
+    discovery_scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
 
     if not current_topic:
         return {"messages": [SystemMessage(content="I need to understand your product better. Could you start by telling me who the primary users will be?")]}
@@ -81,6 +150,16 @@ def question_generator_node(state: AgentState) -> dict:
     )
 
     scope_rules = SCOPE_RULES.get(discovery_scope, "")
+    permission_guidance = (
+        permission_discovery_guidance(state, current_role)
+        if current_gap and current_gap.startswith("permissions::")
+        else ""
+    )
+    confirmation_guidance = (
+        inference_confirmation_guidance(state)
+        if discovery_move == "confirm_inference" else ""
+    )
+    relevant_context = state.get("relevant_context", [])
 
     # When in ADMIN_DASHBOARD phase, surface what was learned about the
     # customer-facing roles in Phase 1, so the LLM has something concrete
@@ -104,41 +183,99 @@ You are an experienced Product Manager conducting a structured product discovery
 {scope_rules}
 {other_phase_knowledge}
 
-The Interview Planner has already determined exactly what information is missing.
+The Interview Planner has selected the next eligible discovery move. Follow
+its topic and objective, but reuse product knowledge learned in any topic.
 
 Your ONLY job is to write ONE natural question that discovers that missing information.
 
-Current topic:
-{current_topic.value}
+========================================
+WHAT YOU ARE ASKING ABOUT (MEMORIZE THIS)
+========================================
 
-Current objective:
-{current_objective}
+Current topic: {current_topic.value}
+Current gap: {current_gap}
+Current objective: {current_objective}
+Question guidance: {question_hint}
+Discovery move: {discovery_move}
 
-Question guidance:
-{question_hint}
+========================================
+WHAT YOU MUST DO
+========================================
 
-Already known:
-{chr(10).join(topic_knowledge) if topic_knowledge else "Nothing yet"}
+Write a question that discovers: "{current_objective}"
 
-Recent conversation:
-{format_recent_messages(state["messages"][-6:])}
+Use this guidance for HOW to phrase it: "{question_hint}"
 
-Rules:
+Your question MUST directly ask about the objective above.
+Your question MUST use vocabulary related to the objective.
+Your question MUST NOT drift to any other topic or field.
 
-- Ask EXACTLY ONE question.
-- Discover ONLY the current objective.
-- Use the Question guidance as the intent of the question.
-- Do NOT ask about any other missing fields.
+========================================
+WHAT YOU MUST NOT DO
+========================================
+
+- Do NOT ask about exceptions, errors, disputes, failures, or edge cases
+  when the objective is about goals, motivations, or workflow steps.
+- Do NOT ask about the happy path when the objective is about exceptions or edge cases.
+- Do NOT ask about a different field within the same topic.
 - Do NOT ask about future discovery topics.
 - Do NOT ask for definitions.
 - Do NOT ask "what do you mean by..." unless the user explicitly used an ambiguous term.
 - Do NOT ask hypothetical scenarios.
 - Do NOT ask implementation questions.
-- Follow the CURRENT SCOPE rules above strictly — they override any instinct to
-  mention roles outside the current scope, even as examples.
-- Phrase the question naturally as if speaking to a founder.{role_constraint}
+- Do NOT ask architecture questions.
+- Do NOT ask roadmap questions.
+- Do NOT ask technical design questions.
+- Do NOT ask the user whether any part of the workflow is unclear.
+- Do NOT ask the user to identify gaps, ambiguities, or areas needing clarification.
+- You must identify the gap yourself from the existing knowledge.
+- Follow the CURRENT SCOPE rules above strictly.{role_constraint}
 
-Return ONLY the question.
+========================================
+CONTEXT
+========================================
+
+Already known about this topic:
+{chr(10).join(topic_knowledge) if topic_knowledge else "Nothing yet"}
+
+Confirmed context selected for this question (do not ask the user to
+re-establish any of these facts):
+{chr(10).join(f"- {fact}" for fact in relevant_context) if relevant_context else "None"}
+
+Product knowledge learned across all topics:
+{format_product_model(state.get("product_model", {}))}
+
+Recent conversation (background only — may be from a previous topic; it does
+NOT tell you what to ask next, only the "WHAT YOU ARE ASKING ABOUT" section above does):
+{format_recent_messages(state["messages"][-6:])}
+
+========================================
+USE EXISTING KNOWLEDGE
+========================================
+
+Existing knowledge is authoritative context.
+
+Before asking a question, review all known information about the current
+topic. Do not ask the user to provide information that is already clearly
+established in the known knowledge.
+
+If some information is already known but important details remain unclear,
+ask about the missing or unclear part rather than asking the original broad
+question again.
+
+Existing knowledge does NOT mean the topic or field is complete. It means
+you should build on what is already known and use it to make the next
+question more specific and useful.
+
+{permission_guidance}
+{confirmation_guidance}
+{confirmation_guidance}
+
+========================================
+OUTPUT
+========================================
+
+Return ONLY the question. No preamble. No explanation.
 """
     if not current_objective or not question_hint:
         raise ValueError(

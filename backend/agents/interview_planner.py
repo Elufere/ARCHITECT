@@ -1,4 +1,5 @@
-from agents.state import AgentState, DiscoveryScope, DiscoveryTopic, TopicStatus
+from agents.state import AgentState, DiscoveryScope, DiscoveryTopic, KnowledgeState, TopicMaturity, TopicStatus
+from agents.role_utils import role_identity, roles_match, split_role_labels
 
 # Topic ordering
 TOPIC_PREREQUISITES = {
@@ -25,11 +26,13 @@ DISCOVERY_TASKS = {
         },
         "responsibilities": {
             "objective": "Understand what responsibilities each user has.",
-            "question_hint": "Ask what each user is responsible for."
+            "question_hint": "Ask what each user is responsible for.",
+            "role_source": "all_confirmed_roles",
         },
         "permissions": {
             "objective": "Understand what actions each role is allowed to perform.",
-            "question_hint": "Ask what each user is allowed to do."
+            "question_hint": "Ask what each user is allowed to do.",
+            "role_source": "all_confirmed_roles",
         },
         "multiple_roles": {
             "objective": "Determine whether one person can have multiple roles.",
@@ -44,11 +47,13 @@ DISCOVERY_TASKS = {
     DiscoveryTopic.USER_GOALS: {
         "primary_user_goals": {
             "objective": "Understand what the primary users are trying to achieve.",
-            "question_hint": "Ask what the primary users want to accomplish when using the product."
+            "question_hint": "Ask what the primary users want to accomplish when using the product.",
+            "role_source": "primary_users",
         },
         "secondary_user_goals": {
             "objective": "Understand what secondary users (if any) are trying to achieve.",
-            "question_hint": "Ask what secondary users, if any exist, want to accomplish when using the product."
+            "question_hint": "Ask what secondary users, if any exist, want to accomplish when using the product.",
+            "role_source": "secondary_users",
         },
         "success_criteria": {
             "objective": "Understand what successful completion means.",
@@ -197,51 +202,194 @@ DISCOVERY_TASKS = {
 
 PER_ROLE_TASKS = {
     DiscoveryTopic.USER_ROLES: {"responsibilities", "permissions"},
+    DiscoveryTopic.USER_GOALS: {"primary_user_goals", "secondary_user_goals"},
 }
 
-def get_known_roles(state: AgentState, topic: DiscoveryTopic) -> set[str]:
-    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
-    roles = set()
-    for item in state.get("discovered_knowledge", []):
-        if item.topic == topic and item.scope == scope and item.key in ("primary_users", "secondary_users"):
-            if item.roles:
-                for r in item.roles:
-                    r = r.strip().lower()
-                    if r:
-                        roles.add(r)
-    return roles
+INTERNAL_ROLE_TERMS = {
+    "admin", "administrator", "administrators", "support", "moderator",
+    "moderators", "back office", "back-office", "internal staff",
+}
 
+
+
+def assess_topic_maturity(state: AgentState, topic: DiscoveryTopic) -> TopicMaturity:
+    """Assess whether a concept can safely unlock dependent discovery."""
+    known = get_known_keys(state, topic)
+    if not known:
+        return TopicMaturity.UNSEEN
+
+    if topic == DiscoveryTopic.CORE_WORKFLOW:
+        required = {"workflow_steps", "completion_condition"}
+        return TopicMaturity.COHERENT if required.issubset(known) else TopicMaturity.SKETCHED
+
+    coherence_requirements = {
+        DiscoveryTopic.USER_ROLES: {"primary_users", "responsibilities"},
+        DiscoveryTopic.USER_GOALS: {"primary_user_goals", "success_criteria"},
+        DiscoveryTopic.BUSINESS_RULES: {"validation_rules", "approval_rules"},
+        DiscoveryTopic.CONSTRAINTS: {"legal_constraints"},
+        DiscoveryTopic.MVP_SCOPE: {"must_have_features"},
+        DiscoveryTopic.EXCEPTIONS: {"user_cancellations", "recovery"},
+        DiscoveryTopic.EDGE_CASES: {"boundary_conditions"},
+    }
+    required = coherence_requirements.get(topic, set())
+    if required and required.issubset(known):
+        return TopicMaturity.COHERENT
+    return TopicMaturity.MENTIONED if len(known) == 1 else TopicMaturity.SKETCHED
+
+def get_roles_in_discovery_order(state: AgentState, topic: DiscoveryTopic) -> list[str]:
+    """Keep the founder's role order and defer confirmed internal roles.
+
+    A set plus ``sorted()`` made an administrator the first role solely because
+    "administrator" alphabetically precedes "buyer".  Product discovery should
+    first understand the customer journey, in the order the founder described
+    its users; internal operations follow afterward.
+    """
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    customer_roles = []
+    internal_roles = []
+    seen = set()
+    for item in state.get("discovered_knowledge", []):
+        if (
+            item.topic == topic and item.scope == scope
+            and item.knowledge_state == KnowledgeState.CONFIRMED
+            and item.key in ("primary_users", "secondary_users")
+        ):
+            extracted_roles = split_role_labels(item.roles or item.value.split(","))
+            for role in extracted_roles:
+                role = role.strip().lower()
+                if role in {"none", "none specified", "n/a"}:
+                    continue
+                identity = role_identity(role)
+                if not role or identity in seen:
+                    continue
+                seen.add(identity)
+                if role in INTERNAL_ROLE_TERMS or identity in INTERNAL_ROLE_TERMS:
+                    internal_roles.append(role)
+                else:
+                    customer_roles.append(role)
+    return customer_roles + internal_roles
+
+
+def get_known_roles(state: AgentState, topic: DiscoveryTopic) -> set[str]:
+    """Compatibility helper for callers that only need membership."""
+    return set(get_roles_in_discovery_order(state, topic))
+
+
+def get_confirmed_roles_for_source(state: AgentState, source_key: str) -> list[str]:
+    """Return atomic confirmed USER_ROLES labels from one source key."""
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    roles, seen = [], set()
+    for item in state.get("discovered_knowledge", []):
+        if (
+            item.topic != DiscoveryTopic.USER_ROLES or item.scope != scope
+            or item.knowledge_state != KnowledgeState.CONFIRMED or item.key != source_key
+        ):
+            continue
+        for role in split_role_labels(item.roles or item.value.split(",")):
+            if role in {"none", "none specified", "n/a"}:
+                continue
+            identity = role_identity(role)
+            if identity and identity not in seen:
+                seen.add(identity)
+                roles.append(role)
+    return roles
 
 def get_known_keys(state: AgentState, topic: DiscoveryTopic):
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
-    return {
+    keys = {
         item.key
         for item in state.get("discovered_knowledge", [])
         if item.topic == topic and item.scope == scope
+        and item.knowledge_state == KnowledgeState.CONFIRMED
     }
+    # "Only buyers and sellers" is explicit evidence that no additional
+    # direct user role has been identified; do not ask it again as a blank field.
+    if topic == DiscoveryTopic.USER_ROLES:
+        primary_facts = [
+            f"{item.value} {item.evidence}".lower()
+            for item in state.get("discovered_knowledge", [])
+            if item.topic == topic and item.scope == scope
+            and item.knowledge_state == KnowledgeState.CONFIRMED
+            and item.key == "primary_users"
+        ]
+        if any("only" in fact or "no other" in fact for fact in primary_facts):
+            keys.add("secondary_users")
+    return keys
+
+
+def inferred_evidence_for_gap(state: AgentState, topic: DiscoveryTopic, gap: str) -> list[str]:
+    """Evidence that supports a gap but was not gathered as its direct answer."""
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    if "::" in gap:
+        key, role = gap.split("::", 1)
+        matches = lambda item: item.key == key and roles_match(item.role, role)
+    else:
+        matches = lambda item: item.key == gap
+    return [
+        item.value for item in state.get("discovered_knowledge", [])
+        if item.topic == topic and item.scope == scope
+        and item.knowledge_state == KnowledgeState.INFERRED
+        and matches(item)
+    ]
+
+
+def relevant_confirmed_context(state: AgentState, topic: DiscoveryTopic, gap: str) -> list[str]:
+    """Select concise confirmed context without including the target itself."""
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    if "::" in gap:
+        target_key, target_role = gap.split("::", 1)
+    else:
+        target_key, target_role = gap, None
+    context = []
+    for item in state.get("discovered_knowledge", []):
+        if item.scope != scope or item.knowledge_state != KnowledgeState.CONFIRMED:
+            continue
+        if item.topic == topic and item.key == target_key and (
+            target_role is None or roles_match(item.role, target_role)
+        ):
+            continue
+        is_actor_fact = item.topic == DiscoveryTopic.USER_ROLES and item.key in {"primary_users", "secondary_users"}
+        is_current_topic = item.topic == topic
+        is_active_role_fact = target_role is not None and roles_match(item.role, target_role)
+        if is_actor_fact or is_current_topic or is_active_role_fact:
+            label = f"{item.topic.value}.{item.key}"
+            if item.role:
+                label += f"[{item.role}]"
+            context.append(f"{label}: {item.value}")
+    return context[:12]
+
 
 def build_gap_info(state: AgentState, topic: DiscoveryTopic):
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
     known_keys = get_known_keys(state, topic)
     required = DISCOVERY_TASKS[topic]
     per_role_tasks = PER_ROLE_TASKS.get(topic, set())
-    roles = get_known_roles(state, topic) if per_role_tasks else set()
 
     missing_keys = []
 
     for key in required.keys():
         if key in per_role_tasks:
+            source_key = required[key].get("role_source")
+            roles = (
+                get_roles_in_discovery_order(state, DiscoveryTopic.USER_ROLES)
+                if source_key == "all_confirmed_roles"
+                else get_confirmed_roles_for_source(state, source_key)
+            )
             if not roles:
+                if source_key and source_key in get_known_keys(state, DiscoveryTopic.USER_ROLES):
+                    continue
                 missing_keys.append(key)
                 continue
             known_roles_for_key = {
-                item.role
+                role_identity(item.role)
                 for item in state.get("discovered_knowledge", [])
                 if item.topic == topic and item.key == key
+                and item.knowledge_state == KnowledgeState.CONFIRMED
                 and item.role and item.scope == scope   
             }
-            for role in sorted(roles - known_roles_for_key):
-                missing_keys.append(f"{key}::{role}")
+            for role in roles:
+                if role_identity(role) not in known_roles_for_key:
+                    missing_keys.append(f"{key}::{role}")
         elif key not in known_keys:
             missing_keys.append(key)
 
@@ -249,10 +397,13 @@ def build_gap_info(state: AgentState, topic: DiscoveryTopic):
         return {
             "current_gap": None, "current_objective": None,
             "question_hint": None, "current_role": None,
-            "known_keys": known_keys, "missing_keys": [],
+            "known_keys": known_keys, "missing_keys": [], "inferred_gap_evidence": [],
+            "relevant_context": [],
         }
 
     gap = missing_keys[0]
+    inferred_evidence = inferred_evidence_for_gap(state, topic, gap)
+    context = relevant_confirmed_context(state, topic, gap)
 
     if "::" in gap:
         base_key, role = gap.split("::", 1)
@@ -264,6 +415,8 @@ def build_gap_info(state: AgentState, topic: DiscoveryTopic):
             "current_role": role,
             "known_keys": known_keys,
             "missing_keys": missing_keys,
+            "inferred_gap_evidence": inferred_evidence,
+            "relevant_context": context,
         }
 
     task = required[gap]
@@ -274,10 +427,13 @@ def build_gap_info(state: AgentState, topic: DiscoveryTopic):
         "current_role": None,
         "known_keys": known_keys,
         "missing_keys": missing_keys,
+        "inferred_gap_evidence": inferred_evidence,
+        "relevant_context": context,
     }
 
 def interview_planner_node(state: AgentState) -> dict:
     topic_status = dict(state.get("topic_status", {}))
+    topic_maturity = dict(state.get("topic_maturity", {}))
     current_topic = state.get("current_topic")
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
 
@@ -292,15 +448,26 @@ def interview_planner_node(state: AgentState) -> dict:
         current_topic is not None
         and topic_status.get(current_topic) != TopicStatus.COMPLETED
     ):
+        maturity = assess_topic_maturity(state, current_topic)
+        topic_maturity[current_topic] = maturity
         gap = build_gap_info(state, current_topic)
 
         print("Known:", gap["known_keys"])
         print("Missing:", gap["missing_keys"])
         print("Current gap:", gap["current_gap"])
 
+        # Maturity unlocks dependent topics; it is not permission to discard
+        # unanswered fields.  The old condition marked a topic COMPLETE as
+        # soon as it became merely coherent, which silently skipped fields
+        # such as role_transitions and permissions.
         if gap["current_gap"] is not None:
             return {
                 "current_topic": current_topic,
+                "topic_maturity": topic_maturity,
+                "next_discovery_move": (
+                    "confirm_inference" if gap["inferred_gap_evidence"]
+                    else "deepen_understanding"
+                ),
                 **gap,
             }
 
@@ -320,7 +487,8 @@ def interview_planner_node(state: AgentState) -> dict:
 
         deps = TOPIC_PREREQUISITES.get(topic, [])
         deps_met = all(
-            topic_status.get(dep) == TopicStatus.COMPLETED
+            topic_maturity.get(dep, TopicMaturity.UNSEEN)
+            in {TopicMaturity.COHERENT, TopicMaturity.DECISION_READY}
             for dep in deps
         )
         if not deps_met:
@@ -331,6 +499,15 @@ def interview_planner_node(state: AgentState) -> dict:
             updated[topic] = TopicStatus.IN_PROGRESS
 
         gap = build_gap_info(state, topic)
+        maturity = assess_topic_maturity(state, topic)
+        topic_maturity[topic] = maturity
+
+        # A topic can be coherent yet still contain required discovery gaps.
+        # Only skip it when every schema-backed gap has been resolved.
+        if gap["current_gap"] is None:
+            topic_status = updated
+            topic_status[topic] = TopicStatus.COMPLETED
+            continue
 
         print(f"\nSelected topic: {topic.value}")
         print("Known:", gap["known_keys"])
@@ -340,6 +517,11 @@ def interview_planner_node(state: AgentState) -> dict:
         return {
             "current_topic": topic,
             "topic_status": updated,
+            "topic_maturity": topic_maturity,
+            "next_discovery_move": (
+                "confirm_inference" if gap["inferred_gap_evidence"]
+                else "establish_foundation"
+            ),
             **gap,
         }
 
@@ -347,5 +529,6 @@ def interview_planner_node(state: AgentState) -> dict:
     return {
         "current_topic": None,
         "topic_status": topic_status,
+        "topic_maturity": topic_maturity,
         "awaiting_confirmation": True,
     }

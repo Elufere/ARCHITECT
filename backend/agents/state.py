@@ -23,6 +23,22 @@ class TopicStatus(str, Enum):
     PARTIAL = "PARTIAL"
     COMPLETED = "COMPLETED"
 
+
+class TopicMaturity(str, Enum):
+    """Quality of understanding for a topic, independent of field storage."""
+
+    UNSEEN = "UNSEEN"
+    MENTIONED = "MENTIONED"
+    SKETCHED = "SKETCHED"
+    COHERENT = "COHERENT"
+    DECISION_READY = "DECISION_READY"
+
+
+class KnowledgeState(str, Enum):
+    """How strongly a discovered fact has been established with the user."""
+    INFERRED = "INFERRED"
+    CONFIRMED = "CONFIRMED"
+
 class DiscoveryScope(str, Enum):
     USER_APP = "USER_APP"
     ADMIN_DASHBOARD = "ADMIN_DASHBOARD"
@@ -38,23 +54,24 @@ USER_GOALS_KEYS = Literal[
 ]
 
 CORE_WORKFLOW_KEYS = Literal[
-    "trigger", "workflow_steps", "completion_condition", "downstream_dependency",
+    "trigger", "workflow_steps", "completion_condition", "downstream_dependency", "end_state",
 ]
 BUSINESS_RULES_KEYS = Literal[
-    "validations", "conditions", "policies",
+    "validation_rules", "approval_rules", "eligibility_rules", "limits",
+    "ownership_rules", "visibility_rules",
 ]
 CONSTRAINTS_KEYS = Literal[
-    "legal", "technical", "operational", "cost", "performance",
+    "legal_constraints", "business_constraints", "operational_constraints",
+    "geographic_constraints", "time_constraints",
 ]
 MVP_SCOPE_KEYS = Literal[
-    "required_mvp_functionality", "out_of_scope_functionality",
+    "must_have_features", "nice_to_have_features", "out_of_scope", "success_metrics",
 ]
 EXCEPTIONS_KEYS = Literal[
-    "expected_error_scenarios", "failure_handling", "recovery_behavior",
+    "user_cancellations", "timeouts", "invalid_actions", "recovery",
 ]
 EDGE_CASES_KEYS = Literal[
-    "rare_scenarios", "unusual_inputs", "boundary_conditions",
-    "duplicates", "empty_states",
+    "duplicate_actions", "boundary_conditions", "simultaneous_actions", "rare_scenarios",
 ]
 
 TOPIC_KEY_MAP = {
@@ -81,6 +98,7 @@ class KnowledgeItem(BaseModel):
     roles: Optional[List[str]] = None
     role: Optional[str] = None
     confidence: float
+    knowledge_state: KnowledgeState = KnowledgeState.CONFIRMED
     source_turn: int = 0
 
     @model_validator(mode="after")
@@ -105,12 +123,19 @@ class AgentState(TypedDict):
     topic_status: Dict[DiscoveryTopic, TopicStatus]
     current_topic: Optional[DiscoveryTopic]
     topic_dependencies: Dict[DiscoveryTopic, List[DiscoveryTopic]]
+    topic_maturity: Dict[DiscoveryTopic, TopicMaturity]
+    product_model: Dict[str, List[str]]
 
     current_gap: Optional[str]
     current_objective: Optional[str]
     question_hint: Optional[str]
     known_keys: List[str]
     missing_keys: List[str]
+    next_discovery_move: Optional[str]
+    inferred_gap_evidence: List[str]
+    relevant_context: List[str]
+    conversation_intent: Optional[str]
+    is_correction: bool
 
     turn_count: int
     awaiting_confirmation: bool
