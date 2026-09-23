@@ -1,49 +1,88 @@
-"""
-Pydantic schemas for the Product Manager Agent output.
-"""
+"""Source-linked compiler drafts and the application-verified PRD artifact."""
+from typing import Literal
 
-from pydantic import BaseModel, Field
-
-class ScopeBoundary(BaseModel):
-    in_scope: list[str] = Field(description="Explicit features included in the MVP.")
-    out_of_scope: list[str] = Field(description="Explicit features deferred to future versions.")
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 
-class UserPersona(BaseModel):
-    name: str = Field(description="e.g., 'End Customer', 'Admin'.")
-    description: str = Field(description="Brief description of who they are and their goal.")
-    key_behaviors: list[str] = Field(description="Core interactions they will perform.")
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
-class FunctionalRequirement(BaseModel):
-    id: str = Field(description="Unique identifier, e.g., 'FR-01'.")
-    description: str = Field(description="The system SHALL [do something]...")
-    category: str = Field(description="e.g., 'Authentication', 'Data Management'.")
-    validation: str = Field(description="How do we know this is met? If unknown, write 'TBD'.")
+class SourceReference(StrictModel):
+    source_fact_ids: list[str] = Field(min_length=1, description="IDs from the supplied confirmed fact snapshot. Never invent IDs.")
+    category: str = Field(description="Exact canonical TOPIC.key, e.g. BUSINESS_RULES.approval_rules. Preserve source meaning.")
+    actor_ids: list[str] = Field(description="Actors involved, preserving ownership and capacity-specific restrictions; [] for product-wide claims.")
+    conditions: list[str] = Field(description="All relevant source conditions, thresholds, exceptions and negations; [] when unconditional.")
 
 
-class PRDContract(BaseModel):
-    """The final, validated output of the PM Agent."""
-    product_name: str = Field(description="Concise internal name for the product.")
-    elevator_pitch: str = Field(description="2-3 sentence summary of the product.")
-    
-    scope: ScopeBoundary = Field(description="Strict boundaries of the MVP.")
-    personas: list[UserPersona] = Field(description="Primary users of the system.")
-    
-    functional_requirements: list[FunctionalRequirement] = Field(
-        description="Detailed, testable system behaviors."
-    )
-    
-    non_functional_constraints: list[str] = Field(
-        description="Performance, security, or compliance notes."
-    )
-    
-    # NEW: Structural fixes for unconfirmed items
-    deferred_items: list[str] = Field(
-        default_factory=list,
-        description="Features raised by user or AI but explicitly marked as 'future/v2/out of scope'."
-    )
-    open_questions: list[str] = Field(
-        default_factory=list,
-        description="Critical questions that remain unanswered. Architect Agent must note these."
-    )
+class SourcedClaim(SourceReference):
+    text: str = Field(min_length=1)
+
+
+class ScopeBoundary(StrictModel):
+    in_scope: list[SourcedClaim]
+    out_of_scope: list[SourcedClaim]
+
+
+class UserPersona(SourceReference):
+    name: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    key_behaviors: list[SourcedClaim]
+
+
+class FunctionalRequirement(SourceReference):
+    id: str = Field(min_length=1, description="Unique requirement ID such as FR-01.")
+    description: str = Field(min_length=1)
+    validation: str = Field(min_length=1, description="An acceptance criterion entailed by the cited sources, or TBD. Do not add new behavior.")
+
+
+class PRDDraft(StrictModel):
+    product_name: SourcedClaim | None = None
+    elevator_pitch: list[SourcedClaim]
+    scope: ScopeBoundary
+    personas: list[UserPersona]
+    functional_requirements: list[FunctionalRequirement]
+    non_functional_constraints: list[SourcedClaim]
+    deferred_items: list[SourcedClaim] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list, description="Unresolved questions only, never requirements or promises.")
+
+
+class SourceFact(StrictModel):
+    fact_id: str
+    topic: str
+    scope: Literal["USER_APP", "ADMIN_DASHBOARD"]
+    key: str
+    value: str
+    evidence: str
+    source_question: str | None = None
+    roles: list[str] | None = None
+    aliases: dict[str, list[str]] | None = None
+    role: str | None = None
+    confidence: float
+    knowledge_state: Literal["CONFIRMED"]
+    source_turn: int
+    absence: Literal["none", "not_applicable"] | None = None
+
+
+class ClaimVerdict(StrictModel):
+    claim_id: str
+    source_evidence_supports_facts: StrictBool
+    claim_supported: StrictBool
+    category_preserved: StrictBool
+    actors_preserved: StrictBool
+    conditions_preserved: StrictBool
+    validation_supported: StrictBool
+    no_conflict_with_confirmed_facts: StrictBool
+    explanation: str = Field(min_length=1)
+
+
+class SemanticCategories(StrictModel):
+    categories: list[str] = Field(description="Canonical TOPIC.key categories explicitly supported by the text; [] for a fragment without an assertion.")
+    explanation: str = Field(min_length=1)
+
+
+class PRDContract(PRDDraft):
+    schema_version: Literal["2.0"] = "2.0"
+    discovery_scope: Literal["USER_APP", "ADMIN_DASHBOARD"]
+    source_facts: list[SourceFact]
+    validation_report: list[ClaimVerdict]

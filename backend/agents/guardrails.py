@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from agents.state import DiscoveryScope
 from agents.role_utils import role_identity, split_role_labels
+from agents.conversation_language import clarification_question
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +150,8 @@ Reject if the question:
 - asks multiple objectives
 - asks implementation
 - asks architecture
-- asks roadmap
+- asks roadmap planning unrelated to the selected gap (MVP_SCOPE questions about
+  launch inclusion, optional/deferred features, and exclusions are valid scope discovery)
 - asks technical design
 - asks about exceptions/errors when the gap is about goals or workflow
 - asks about the happy path when the gap is about exceptions or edge cases
@@ -247,7 +249,7 @@ def question_mentions_other_roles(question: str, current_role: str, all_roles: s
     return leaked
 
 
-def guardrail_node(state: dict) -> dict:
+def evaluate_question(state: dict) -> dict:
     """Validates the AI's output. If it fails, appends a rejection to force a retry."""
     print(">>> GUARDRAIL")
     messages = state["messages"]
@@ -368,3 +370,22 @@ def guardrail_node(state: dict) -> dict:
     except Exception as e:
         logger.error(f"Evaluator failed: {e}")
         return state
+
+
+MAX_QUESTION_RETRIES = 2
+
+
+def guardrail_node(state: dict) -> dict:
+    """Bound regeneration per user turn; never return a rejected draft as safe."""
+    result = evaluate_question(state)
+    messages = result.get("messages", [])
+    if not messages or not isinstance(messages[-1], SystemMessage):
+        return {**result, "question_retry_count": 0}
+    retries = state.get("question_retry_count", 0)
+    if retries >= MAX_QUESTION_RETRIES:
+        logger.warning("Question retry limit reached; returning a gap clarification.")
+        return {"question_retry_count": 0, "messages": [AIMessage(content=(
+            "I'm having trouble resolving this part of your answer. "
+            + clarification_question(state)
+        ))]}
+    return {**result, "question_retry_count": retries + 1}

@@ -95,17 +95,26 @@ class KnowledgeItem(BaseModel):
     ]
     value: str
     evidence: str
+    source_question: Optional[str] = None
     roles: Optional[List[str]] = None
+    aliases: Optional[Dict[str, List[str]]] = None
     role: Optional[str] = None
     confidence: float
     knowledge_state: KnowledgeState = KnowledgeState.CONFIRMED
     source_turn: int = 0
+    absence: Optional[Literal["none", "not_applicable"]] = None
 
     @model_validator(mode="after")
     def check_key_belongs_to_topic(self):
         allowed = TOPIC_KEY_MAP[self.topic]
         if self.key not in allowed:
             raise ValueError(f"key '{self.key}' not valid for topic '{self.topic}'")
+        if self.absence:
+            expected = "none" if self.absence == "none" else "not applicable"
+            if self.value != expected or self.knowledge_state != KnowledgeState.CONFIRMED:
+                raise ValueError("Absence requires a canonical value and confirmed knowledge")
+            if self.roles or self.aliases:
+                raise ValueError("Whole-gap absence cannot declare actors or aliases")
         if self.roles:
             for r in self.roles:
                 if len(r.split()) > 3 or len(r) < 2:
@@ -117,6 +126,7 @@ class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
     raw_idea: str
     prd_contract: Optional[PRDContract]
+    compilation_errors: List[str]
     pm_is_complete: bool
 
     discovered_knowledge: List[KnowledgeItem]
@@ -138,6 +148,8 @@ class AgentState(TypedDict):
     is_correction: bool
 
     turn_count: int
+    question_retry_count: int
+    answer_followup: Optional[dict]
     awaiting_confirmation: bool
     current_role: Optional[str]
     discovery_scope: DiscoveryScope

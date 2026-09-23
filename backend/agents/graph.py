@@ -32,11 +32,11 @@ def route_after_conversation_manager(state: AgentState) -> str:
     """Only knowledge and corrections should flow into the extraction pipeline."""
     if state.get("conversation_intent") in {"product_information", "correction", "objection"}:
         return "extract"
-    # A confirmation contains no standalone evidence.  The planner can still
-    # use the already-grounded facts to advance instead of asking again.
+    # A short confirmation can itself answer a discovery question. Never drop
+    # it just because the intent classifier recognized the word "yes".
     if (
         state.get("conversation_intent") == "confirmation"
-        and state.get("next_discovery_move") == "confirm_inference"
+        and (state.get("current_gap") or state.get("next_discovery_move") == "confirm_inference")
     ):
         return "extract"
     if state.get("conversation_intent") == "confirmation":

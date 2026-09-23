@@ -1,0 +1,8 @@
+{
+  "CareConnect": {
+    "GOAL": "{\n  \"items\": [\n    {\n      \"key\": \"primary_user_goals\",\n      \"value\": \"find and book appointments\",\n      \"evidence\": \"helps patients find and book appointments with healthcare professionals such as general doctors, dermatologists, dentists, physiotherapists, and nutritionists. Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.\",\n      \"confidence\": 1,\n      \"knowledge_state\": \"CONFIRMED\",\n      \"role\": \"patient\"\n    }\n  ]\n}"
+  },
+  "FixMate": {
+    "GOAL": "{\n  \"items\": [\n    {\n      \"key\": \"primary_user_goals\",\n      \"value\": \"the platform helps people find and book trusted local artisans\",\n      \"evidence\": \"I want to build FixMate, a platform that helps people find and book trusted local artisans like electricians, plumbers, cleaners, painters, and appliance repair technicians. Users should be able to describe what they need, find suitable service providers nearby, compare them, book a service, communicate with the provider, and pay through the platform.\",\n      \"confidence\": 1,\n      \"knowledge_state\": \"CONFIRMED\",\n      \"role\": \"customer\"\n    }\n  ]\n}"
+  }
+}

@@ -1,0 +1,60 @@
+[
+  {
+    "name": "WORKFLOW",
+    "parsed": {
+      "items": [
+        {
+          "key": "CORE_WORKFLOW.trigger",
+          "value": "Patients describe their health concern",
+          "evidence": "Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.",
+          "confidence": 1.0
+        },
+        {
+          "key": "CORE_WORKFLOW.workflow_steps",
+          "value": "describe need, search, compare, book, communicate, receive reminders, pay",
+          "evidence": "Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.",
+          "confidence": 1.0
+        },
+        {
+          "key": "CORE_WORKFLOW.completion_condition",
+          "value": "Patients pay for the appointment",
+          "evidence": "Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.",
+          "confidence": 1.0
+        },
+        {
+          "key": "CORE_WORKFLOW.end_state",
+          "value": "Patients have completed their appointment",
+          "evidence": "Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.",
+          "confidence": 1.0
+        },
+        {
+          "key": "CORE_WORKFLOW.downstream_dependency",
+          "value": "none",
+          "evidence": "none",
+          "confidence": 1.0
+        }
+      ]
+    }
+  },
+  {
+    "name": "GOAL",
+    "parsed": {
+      "items": [
+        {
+          "key": "primary_user_goals",
+          "value": "patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform",
+          "evidence": "Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.",
+          "confidence": 1.0,
+          "role": null
+        },
+        {
+          "key": "primary_user_goals",
+          "value": "healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments",
+          "evidence": "Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.",
+          "confidence": 1.0,
+          "role": null
+        }
+      ]
+    }
+  }
+]

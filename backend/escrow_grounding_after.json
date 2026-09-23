@@ -1,0 +1,33 @@
+{
+  "accepted": [
+    {
+      "topic": "USER_ROLES",
+      "scope": "USER_APP",
+      "key": "responsibilities",
+      "value": "creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released",
+      "evidence": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.",
+      "roles": null,
+      "aliases": null,
+      "role": "customer",
+      "confidence": 1.0,
+      "knowledge_state": "CONFIRMED",
+      "source_turn": 3,
+      "absence": null
+    },
+    {
+      "topic": "USER_ROLES",
+      "scope": "USER_APP",
+      "key": "responsibilities",
+      "value": "creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds",
+      "evidence": "The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.",
+      "roles": null,
+      "aliases": null,
+      "role": "customer",
+      "confidence": 1.0,
+      "knowledge_state": "CONFIRMED",
+      "source_turn": 3,
+      "absence": null
+    }
+  ],
+  "next_gap": "permissions::customer"
+}

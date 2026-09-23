@@ -5,10 +5,11 @@ import re
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agents.state import AgentState
+from agents.conversation_language import clarification_reply, clarification_question
 
 
 PATTERNS = {
-    "clarification": re.compile(r"\b(what do you mean|can you explain|clarify|rephrase|i don't understand)\b", re.I),
+    "clarification": re.compile(r"\b(what do you mean|what are you asking|can you explain|clarify|rephrase|i (?:don't|do not) understand)\b", re.I),
     "rationale_request": re.compile(r"\b(why are you asking|why do you need|why does that matter)\b", re.I),
     "summary_request": re.compile(r"\b(summarize|summary|recap|where are we)\b", re.I),
     "correction": re.compile(
@@ -29,7 +30,7 @@ PATTERNS = {
 
 def classify_turn(content: str) -> str:
     for intent, pattern in PATTERNS.items():
-        if pattern.search(content):
+        if pattern.search(content.replace("’", "'")):
             return intent
     return "product_information"
 
@@ -40,16 +41,13 @@ def conversation_manager_node(state: AgentState) -> dict:
         return {"conversation_intent": None, "is_correction": False}
 
     intent = classify_turn(messages[-1].content)
-    update = {"conversation_intent": intent, "is_correction": intent == "correction"}
-    objective = state.get("current_objective") or "this part of the product"
-
+    update = {"conversation_intent": intent, "is_correction": intent == "correction",
+              "question_retry_count": 0}
     if intent == "clarification":
-        return {**update, "messages": [AIMessage(content=(
-            f"I mean {objective.lower()}. Please describe it in the way that makes most sense for your product."
-        ))]}
+        return {**update, "messages": [AIMessage(content=clarification_reply(state))]}
     if intent == "rationale_request":
         return {**update, "messages": [AIMessage(content=(
-            f"It helps me understand {objective.lower()} before moving to dependent parts of the product."
+            "It helps us agree how this part of the app should work. " + clarification_question(state)
         ))]}
     if intent == "summary_request":
         facts = [fact for values in state.get("product_model", {}).values() for fact in values]

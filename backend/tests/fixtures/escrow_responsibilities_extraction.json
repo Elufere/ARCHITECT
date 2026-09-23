@@ -1,0 +1,147 @@
+{
+  "ACTOR": [
+    {
+      "key": "primary_users",
+      "value": "buyer",
+      "evidence": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.",
+      "confidence": 1,
+      "knowledge_state": "CONFIRMED",
+      "roles": [
+        "customer"
+      ],
+      "aliases": []
+    },
+    {
+      "key": "primary_users",
+      "value": "seller",
+      "evidence": "The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.",
+      "confidence": 1,
+      "knowledge_state": "CONFIRMED",
+      "roles": [
+        "customer"
+      ],
+      "aliases": []
+    }
+  ],
+  "RESPONSIBILITY": [
+    {
+      "key": "responsibilities",
+      "value": "creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released",
+      "evidence": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.",
+      "confidence": 1,
+      "knowledge_state": "CONFIRMED",
+      "absence": null,
+      "role": "customer"
+    },
+    {
+      "key": "responsibilities",
+      "value": "creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds",
+      "evidence": "The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.",
+      "confidence": 1,
+      "knowledge_state": "CONFIRMED",
+      "absence": null,
+      "role": "customer"
+    }
+  ],
+  "PERMISSION": [
+    {
+      "key": "permissions",
+      "value": "create or join the transaction",
+      "evidence": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.",
+      "confidence": 1,
+      "role": "customer",
+      "knowledge_state": "CONFIRMED",
+      "absence": null
+    },
+    {
+      "key": "permissions",
+      "value": "agree to the terms",
+      "evidence": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.",
+      "confidence": 1,
+      "role": "customer",
+      "knowledge_state": "CONFIRMED",
+      "absence": null
+    },
+    {
+      "key": "permissions",
+      "value": "fund the escrow",
+      "evidence": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.",
+      "confidence": 1,
+      "role": "customer",
+      "knowledge_state": "CONFIRMED",
+      "absence": null
+    },
+    {
+      "key": "permissions",
+      "value": "review whether the seller has fulfilled the agreement",
+      "evidence": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.",
+      "confidence": 1,
+      "role": "customer",
+      "knowledge_state": "CONFIRMED",
+      "absence": null
+    },
+    {
+      "key": "permissions",
+      "value": "confirm completion",
+      "evidence": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.",
+      "confidence": 1,
+      "role": "customer",
+      "knowledge_state": "CONFIRMED",
+      "absence": null
+    },
+    {
+      "key": "permissions",
+      "value": "raise a dispute",
+      "evidence": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released. The buyer can also raise a dispute if the seller does not fulfill the agreed terms.",
+      "confidence": 1,
+      "role": "customer",
+      "knowledge_state": "CONFIRMED",
+      "absence": null
+    },
+    {
+      "key": "permissions",
+      "value": "create or join the transaction",
+      "evidence": "The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.",
+      "confidence": 1,
+      "role": "customer",
+      "knowledge_state": "CONFIRMED",
+      "absence": null
+    },
+    {
+      "key": "permissions",
+      "value": "agree to the terms",
+      "evidence": "The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.",
+      "confidence": 1,
+      "role": "customer",
+      "knowledge_state": "CONFIRMED",
+      "absence": null
+    },
+    {
+      "key": "permissions",
+      "value": "fulfill the agreed goods or services",
+      "evidence": "The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.",
+      "confidence": 1,
+      "role": "customer",
+      "knowledge_state": "CONFIRMED",
+      "absence": null
+    },
+    {
+      "key": "permissions",
+      "value": "provide any required proof of fulfillment",
+      "evidence": "The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.",
+      "confidence": 1,
+      "role": "customer",
+      "knowledge_state": "CONFIRMED",
+      "absence": null
+    },
+    {
+      "key": "permissions",
+      "value": "respond to a dispute",
+      "evidence": "The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds. The seller can also raise or respond to a dispute if there is a problem with the transaction.",
+      "confidence": 1,
+      "role": "customer",
+      "knowledge_state": "CONFIRMED",
+      "absence": null
+    }
+  ]
+}

@@ -114,6 +114,12 @@ def test_coherent_topic_is_not_completed_while_schema_gaps_remain():
 
 
 def test_negative_phrase_marks_the_current_gap_known(monkeypatch):
+    from agents import knowledge_tracker as tracker
+    from agents.semantic_validation import GapAnswer, GroundingResult
+    monkeypatch.setattr(tracker, "extract_passes", lambda *_: [])
+    monkeypatch.setattr(tracker, "semantic_decision", lambda name, *_:
+        GapAnswer(resolution="none", evidence="None I can think of", confidence=1)
+        if name == "GAP_ANSWER" else GroundingResult(evidence_categories={"0": ["USER_ROLES.role_transitions"]}, supported_ids=[0], confirmed_absence_ids=[0]))
     state = {
         "messages": [],
         "current_gap": "role_transitions",
@@ -127,7 +133,8 @@ def test_negative_phrase_marks_the_current_gap_known(monkeypatch):
     state["messages"] = [HumanMessage(content="None I can think of")]
     result = knowledge_tracker_node(state)
     assert result["discovered_knowledge"][0].key == "role_transitions"
-    assert result["discovered_knowledge"][0].value == "None specified"
+    assert result["discovered_knowledge"][0].value == "none"
+    assert result["discovered_knowledge"][0].absence == "none"
 
 
 def test_customer_roles_are_discovered_before_confirmed_admin_role():

@@ -1,0 +1,50 @@
+[
+  {
+    "name": "GAP_ANSWER",
+    "parsed": {
+      "resolution": "none",
+      "evidence": "No.",
+      "confidence": 1.0
+    }
+  },
+  {
+    "name": "GROUNDING",
+    "parsed": {
+      "evidence_categories": [
+        {
+          "evidence_id": 0,
+          "categories": [
+            "USER_ROLES.secondary_users"
+          ]
+        }
+      ],
+      "supported_ids": [
+        0
+      ],
+      "confirmed_absence_ids": [
+        0
+      ],
+      "rejection_reasons": {}
+    }
+  },
+  {
+    "name": "GROUNDING",
+    "parsed": {
+      "evidence_categories": [
+        {
+          "evidence_id": 0,
+          "categories": [
+            "USER_ROLES.secondary_users"
+          ]
+        }
+      ],
+      "supported_ids": [
+        1
+      ],
+      "confirmed_absence_ids": [
+        1
+      ],
+      "rejection_reasons": {}
+    }
+  }
+]

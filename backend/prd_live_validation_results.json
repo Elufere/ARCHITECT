@@ -1,0 +1,20 @@
+[
+  {
+    "case": "valid_approval",
+    "accepted": false,
+    "reason": "fact_0c3d91174a0a2b0a6f6b638f: source evidence does not independently support BUSINESS_RULES.approval_rules; observed categories: ['USER_ROLES.permissions'].",
+    "expected": true
+  },
+  {
+    "case": "disguised_visibility",
+    "accepted": false,
+    "reason": "fact_0c3d91174a0a2b0a6f6b638f: source evidence does not independently support BUSINESS_RULES.approval_rules; observed categories: ['USER_ROLES.permissions'].",
+    "expected": false
+  },
+  {
+    "case": "incomplete_evidence",
+    "accepted": false,
+    "reason": "fact_5f48023195f896892611a687: source evidence does not independently support BUSINESS_RULES.approval_rules; observed categories: ['BUSINESS_RULES.eligibility_rules'].",
+    "expected": false
+  }
+]

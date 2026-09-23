@@ -1,10 +1,10 @@
 import re
-from difflib import SequenceMatcher
-from typing import List, Tuple
+import json
+from typing import Tuple, get_args
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
-from pydantic import BaseModel
+from pydantic import ValidationError, create_model
 
 from agents.state import (
     AgentState,
@@ -15,17 +15,16 @@ from agents.state import (
     TOPIC_KEY_MAP,
     TopicStatus,
 )
+from agents.semantic_validation import GapAnswer, GroundingResult, GroundingResponse, GAP_INSTRUCTION, ROLE_POLICY_INSTRUCTION, GROUNDING_INSTRUCTION, category_contradiction
+from agents.discovery_fields import OVERLAP_RULES, field_contract
 from agents.product_model import build_product_model
+from agents.answer_contract import interpret_closed_answer
 from agents.role_utils import roles_match, split_role_labels
+from agents.extraction_passes import PASSES, RawPass, OwnedFact, GoalFact, normalize_fact, canonical_role, absence_label
 
 # ──────────────────────────────────────────────
 # Evidence Validation
 # ──────────────────────────────────────────────
-
-GENERIC_VALUES = {
-    "user", "users", "the user", "app", "the app",
-    "system", "admin", "administrator", "they", "them",
-}
 
 STOP_WORDS = {
     "a", "an", "the", "is", "are", "was", "were", "and", "or",
@@ -36,55 +35,10 @@ STOP_WORDS = {
     "can", "not", "no", "yes", "so", "if", "as", "just", "also",
 }
 
-ADMIN_KEYWORDS = ["admin", "customer care", "customer support", "moderator"]
-
-# A model often normalizes a user-written role ("administrators") to its
-# singular shorthand ("admin").  This is a safe role-name normalization, not
-# an inference about product behaviour.
-ROLE_ALIASES = {
-    "admin": {"admin", "administrator"},
-    "administrator": {"admin", "administrator"},
-    "moderator": {"moderator"},
-}
-
-
 def get_content_words(text: str) -> set:
     """Extracts meaningful words, ignoring tiny stop words."""
     words = re.findall(r'\b[a-z]{3,}\b', text.lower())
     return {w for w in words if w not in STOP_WORDS}
-
-
-def _normalise_token(token: str) -> str:
-    """Small, deterministic normalization for inflection and common typos."""
-    token = re.sub(r"[^a-z]", "", token.lower())
-    for suffix in ("ing", "ied", "ed", "es", "s"):
-        if len(token) > len(suffix) + 3 and token.endswith(suffix):
-            return token[:-len(suffix)] + ("y" if suffix == "ied" else "")
-    return token
-
-
-def _value_word_is_grounded(word: str, message_words: set[str]) -> bool:
-    """Allow harmless normalization without accepting unrelated concepts."""
-    normalized = _normalise_token(word)
-    aliases = ROLE_ALIASES.get(normalized, {normalized})
-    normalized_message_words = {_normalise_token(candidate) for candidate in message_words}
-    if any(alias in normalized_message_words for alias in aliases):
-        return True
-    # Typo tolerance is deliberately limited to longer words and a high
-    # similarity threshold. Evidence still has to be a verbatim source quote.
-    return len(word) >= 5 and any(
-        SequenceMatcher(None, normalized, _normalise_token(candidate)).ratio() >= 0.80
-        for candidate in message_words
-    )
-
-
-def _role_is_grounded(role: str, message_words: set[str]) -> bool:
-    # Multi-word labels such as "support staff" must be grounded word by
-    # word; normalising the whole phrase to "supportstaff" loses evidence.
-    return all(
-        _value_word_is_grounded(word, message_words)
-        for word in get_content_words(role)
-    )
 
 
 def validate_extraction(
@@ -92,119 +46,24 @@ def validate_extraction(
     user_message: str,
     current_gap: str = None
 ) -> Tuple[bool, str]:
-    if not item.evidence:
+    if not item.evidence or not item.evidence.strip():
         return False, "Missing evidence field"
-
-    normalized_msg = user_message.lower().strip()
-    normalized_evidence = item.evidence.lower().strip()
-
-    # ---------------------------------------------------------
-    # HEURISTIC 1: Gap-Aware Key & Role Repair
-    # ---------------------------------------------------------
-    if current_gap and "::" in current_gap:
-        gap_key, gap_role = current_gap.split("::", 1)
-        gap_role_lower = gap_role.lower()
-        active_roles = split_role_labels([gap_role])
-        role_is_grounded = any(
-            _role_is_grounded(role, get_content_words(normalized_msg))
-            for role in active_roles
-        )
-
-        # Every role-scoped gap—not only responsibilities and permissions—must
-        # persist the active role. Without this, a direct answer to e.g.
-        # ``primary_user_goals::buyer`` is stored with no role, classified as
-        # incidental knowledge, and never satisfies the buyer-specific gap.
-        if item.key == gap_key:
-            if item.role and any(roles_match(item.role, role) for role in active_roles):
-                item.role = next(role for role in active_roles if roles_match(item.role, role))
-            elif not item.role and role_is_grounded:
-                item.role = active_roles[0]
-
-        if item.key in ("responsibilities", "permissions") and gap_key in ("responsibilities", "permissions"):
-            role_match = False
-            if item.role and any(roles_match(item.role, role) for role in active_roles):
-                role_match = True
-            elif role_is_grounded or gap_role_lower in normalized_msg:
-                role_match = True
-                if not item.role:
-                    item.role = active_roles[0]
-
-            if role_match and item.key != gap_key:
-                item.key = gap_key
-
-        # A response to a role-responsibility/permission question may be
-        # mislabelled by the model as a repeated secondary-user fact.  If that
-        # fact names the role currently being discussed, preserve its grounded
-        # content under the active gap instead of leaving the gap unresolved.
-        if (
-            item.key in ("primary_users", "secondary_users")
-            and gap_key in ("responsibilities", "permissions")
-            and any(
-                roles_match(role, active_role)
-                for role in split_role_labels(item.roles)
-                for active_role in active_roles
-            )
-        ):
-            item.key = gap_key
-            item.role = next(
-                active_role
-                for active_role in active_roles
-                if any(roles_match(role, active_role) for role in split_role_labels(item.roles))
-            )
-            item.roles = None
-    elif item.key == "permissions" and "responsibilit" in normalized_msg:
-        item.key = "responsibilities"
-
-    # Evidence is the grounding anchor. It must remain a verbatim span from
-    # the user, while the extracted value may be a normalized paraphrase.
-    if normalized_evidence not in normalized_msg:
-        return False, "Evidence is not a verbatim substring of the user message"
-
-    evidence_content_words = get_content_words(normalized_evidence)
-    if not evidence_content_words:
+    if item.evidence not in user_message:
+        return False, "Evidence is not an exact substring of the user message"
+    if not get_content_words(item.evidence) and not item.absence and not item_directly_answers_gap(item, current_gap):
         return False, "Evidence lacks meaningful content words"
-
-    # ---------------------------------------------------------
-    # Layer 4: Value Grounding (Substring Method - Bulletproof)
-    # ---------------------------------------------------------
-    value_words = get_content_words(item.value)
-
-    if not value_words:
-        return False, "Value contains no content words after removing stop words"
-
-    message_words = get_content_words(normalized_msg)
-    for word in value_words:
-        if not _value_word_is_grounded(word, message_words):
-            return False, f"Value contains word not in user message: '{word}'"
-
-    # ---------------------------------------------------------
-    # Layer 5: Block generic values
-    # ---------------------------------------------------------
-    if item.value.lower().strip() in GENERIC_VALUES:
-        return False, f"Generic value '{item.value}' blocked"
-
-    # ---------------------------------------------------------
-    # Layer 6: Role grounding
-    # ---------------------------------------------------------
-    if item.key in ("primary_users", "secondary_users") and item.roles:
-        for role in item.roles:
-            # Preserve separators while grounding.  ``get_content_words``
-            # correctly compares a compound label such as "super-admin" as
-            # the grounded words "super" and "admin"; stripping the hyphen
-            # first turned it into the nonexistent token "superadmin".
-            if not _role_is_grounded(role, message_words):
-                return False, f"Role '{role}' not found in user message"
-
-    # ---------------------------------------------------------
-    # HEURISTIC 3: Prevent Admin -> Primary role mapping
-    # ---------------------------------------------------------
-    if item.key == "primary_users" and item.roles:
-        for role in item.roles:
-            if any(kw in role.lower() for kw in ADMIN_KEYWORDS):
-                return False, f"Admin role '{role}' cannot be mapped to primary_users"
-
+    if item.confidence < 0.75:
+        return False, "Confidence below threshold"
+    if not item.value or not item.value.strip():
+        return False, "Missing value"
+    generic_roles = {"user", "users", "people", "person", "demand_side", "supply_side"}
+    if item.key in ("primary_users", "secondary_users"):
+        if not item.absence and (not item.roles or any(role.strip().lower() in generic_roles for role in item.roles)):
+            return False, "Actor requires a functional canonical role"
+    if item.key in ("responsibilities", "permissions", "primary_user_goals", "secondary_user_goals"):
+        if not item.role or item.role.strip().lower() in generic_roles:
+            return False, "Fact requires a functional role owner"
     return True, ""
-
 
 def item_directly_answers_gap(item: KnowledgeItem, current_gap: str | None) -> bool:
     """Whether an item answers the exact field the PM asked about this turn."""
@@ -238,358 +97,408 @@ def normalize_role(role: str) -> str:
 # Schema & LLM
 # ──────────────────────────────────────────────
 
-class ExtractedKnowledge(BaseModel):
-    items: List[KnowledgeItem]
-
-
-# ──────────────────────────────────────────────
-# Prompt
-# ──────────────────────────────────────────────
-
-KNOWLEDGE_EXTRACTION_PROMPT = """
-You are an expert Product Discovery Analyst.
-
-Your job is to extract structured product knowledge from a user's latest response
-and determine the progress of the CURRENT discovery topic.
-
-Current topic being explored:
-{current_topic}
-
-The specific piece of information currently being asked about:
-{current_gap}
-
-If the user's response answers that specific gap, classify it under that
-exact key — do not default to a different key in the same topic just
-because the wording overlaps with another key's theme.
-
-If the Current gap is written as key::role, set the item's "role" to that
-one atomic role for a direct answer. Never merge several entities into one
-role-specific item.
-
-Topics and what they represent:
-{topic_definitions}
-
-Previously discovered knowledge:
-{existing_knowledge}
-
-Latest user response:
-{user_response}
-
-Correction of an earlier statement: {is_correction}
-
-Follow these instructions carefully.
-
-========================================
-STEP 1 — Extract Knowledge
-========================================
-
-Extract ONLY facts the user EXPLICITLY stated in their latest response.
-
-Do NOT infer facts from general domain knowledge, even if they seem
-obviously true for this type of product. For example, if the user says
-"I want to build an escrow app" without naming any roles, do NOT extract
-primary_users as "buyer, seller" — that is a guess, not something the
-user said. Wait for the user to state it.
-
-If the user's response does not explicitly state a fact for a given key,
-DO NOT include that key in your output at all. Do not write hedged,
-speculative, or placeholder values like "likely X", "probably Y", or
-"we'll say Z for now". Omitting the key entirely is correct and expected
-when information is genuinely not yet known. An empty items list is a
-valid and often correct output.
-
-A "value" field must be a direct, concrete statement of what the user
-said — never a note about uncertainty, confidence, or what might be
-assumed later.
-
-Do NOT repeat, paraphrase, or slightly reword facts that already exist in
-Previously discovered knowledge.
-
-If this is a correction, extract the corrected fact. It will replace the
-previous fact with the same topic, key, and role.
-
-Each extracted fact must contain:
-- topic
-- key
-- value
-- confidence (0.5–1.0)
-
-A single response may contain knowledge belonging to multiple topics.
-Extract all relevant facts.
-
-Do not limit extraction to the Current gap. Extract grounded facts for other
-valid keys too. Those incidental facts will be marked unconfirmed by the
-system and revisited later; never omit them merely because they were not the
-question asked this turn.
-
-CRITICAL RULES FOR ROLES:
-- 'admins', 'super admins', and 'customer support' are ALWAYS secondary_users.
-  NEVER extract them as primary_users.
-- If the user explicitly states a role or entity does NOT exist (e.g., "No,
-  there are no other users"), extract the missing key with the value
-  "None specified". Do not omit it.
-
-========================================
-STEP 2 — Assign Topics
-========================================
-
-Assign each fact according to its PRIMARY meaning.
-
-Use these principles:
-
-USER_ROLES
-Answers:
-"Who participates?"
-
-You MUST use ONLY the following keys:
-
-- primary_users
-- secondary_users
-- responsibilities
-- permissions
-- multiple_roles
-- role_transitions
-
-Do not invent any other key names.
-
-SPECIAL RULE for primary_users and secondary_users:
-In addition to "value" (a natural-language sentence), you MUST also
-populate a "roles" field: a list of short role names, lowercase, each
-1-2 words (e.g. ["buyer", "seller"], ["admin", "customer support"]).
-Only include a role in "roles" if the user explicitly named it.
-Each list entry MUST be exactly one role. For example, use
-["administrator", "support staff"], never ["administrator and support staff"].
-
-SPECIAL RULE for responsibilities and permissions:
-You MUST populate a "role" field (singular) naming exactly which role
-this specific fact concerns (e.g. "buyer"). If the user describes
-responsibilities or permissions for multiple roles in one response,
-emit ONE separate item per role — do not merge multiple roles into a
-single item's value.
-
-USER_GOALS
-Answers:
-"Why are they participating?"
-
-You MUST use ONLY the following keys:
-
-- primary_user_goals: the concrete outcome the primary user wants (WHAT they
-  want to achieve — e.g. "receive the goods as agreed").
-- secondary_user_goals: same, for secondary users, if any exist.
-- success_criteria: the signal or condition that tells the user THEY GOT what
-  they wanted (HOW they know it worked — e.g. "delivery is confirmed in the app").
-- motivations: WHY they'd pick this product over alternatives — a comparative,
-  competitive reason (e.g. "because it protects their money, unlike paying
-  upfront with no protection").
-
-If the user's answer explains why the product is better/safer/preferable
-compared to not using it or using something else, that is motivations, even
-if it also mentions security, protection, or trust.
-
-Do not invent other key names.
-
-CORE_WORKFLOW
-Answers:
-"What happens?"
-
-You MUST use ONLY the following keys:
-
-- trigger
-- workflow_steps
-- completion_condition
-- downstream_dependency
-- end_state
-
-Do not invent other key names.
-
-BUSINESS_RULES
-Answers:
-"What governs what happens?"
-
-You MUST use ONLY the following keys:
-
-- validation_rules
-- approval_rules
-- eligibility_rules
-- limits
-- ownership_rules
-- visibility_rules
-
-Do not invent other key names.
-
-CONSTRAINTS
-Answers:
-"What limits the solution?"
-
-You MUST use ONLY the following keys:
-
-- legal_constraints
-- business_constraints
-- operational_constraints
-- geographic_constraints
-- time_constraints
-
-Do not invent other key names.
-
-MVP_SCOPE
-Answers:
-"What must exist first?"
-
-You MUST use ONLY the following keys:
-
-- must_have_features
-- nice_to_have_features
-- out_of_scope
-- success_metrics
-
-Do not invent other key names.
-
-EXCEPTIONS
-Answers:
-"How should expected failures be handled?"
-
-You MUST use ONLY the following keys:
-
-- user_cancellations
-- timeouts
-- invalid_actions
-- recovery
-
-Do not invent other key names.
-
-EDGE_CASES
-Answers:
-"What unusual situations should be considered?"
-
-You MUST use ONLY the following keys:
-
-- duplicate_actions
-- boundary_conditions
-- simultaneous_actions
-- rare_scenarios
-
-Do not invent other key names.
-
-Key names are STRICT.
-
-Never create new key names.
-
-Always choose one of the allowed keys for the topic.
-
-If none fit perfectly, choose the closest allowed key.
-
-Example:
-User response: "I want to build an escrow app."
-
-Valid extraction:
-
-{{
-  "items": []
-}}
-
-(Nothing extracted — the user described a product category but did not
-explicitly state who the users are, what the workflow is, or any other
-fact yet.)
-
-Example:
-User response: "Buyers deposit funds, and sellers receive them after delivery is confirmed."
-
-Valid extraction:
-
-{{
-  "items": [
-    {{
-      "topic": "USER_ROLES",
-      "key": "primary_users",
-      "value": "buyer, seller",
-      "roles": ["buyer", "seller"]
-    }},
-    {{
-      "topic": "CORE_WORKFLOW",
-      "key": "workflow_steps",
-      "value": "buyer deposits funds; funds released after delivery confirmed"
-    }}
-  ]
-}}
-
-Example:
-User response: "Buyers can deposit funds and raise disputes. Sellers can deliver goods and withdraw funds."
-
-Valid extraction:
-
-{{
-  "items": [
-    {{
-      "topic": "USER_ROLES",
-      "key": "permissions",
-      "value": "deposit funds, raise disputes",
-      "role": "buyer"
-    }},
-    {{
-      "topic": "USER_ROLES",
-      "key": "permissions",
-      "value": "deliver goods, withdraw funds",
-      "role": "seller"
-    }}
-  ]
-}}
-
-========================================
-STEP 3 — Important
-========================================
-
-Your only job is to extract new knowledge.
-
-Do NOT determine whether a topic is none,
-partial, or complete.
-
-Do NOT return topic progress.
-
-Only return the extracted knowledge items.
-
-========================================
-EVIDENCE REQUIREMENT (MANDATORY)
-========================================
-
-For EACH extracted item, you MUST include an "evidence" field containing
-a VERBATIM, WORD-FOR-WORD quote from the user's message that supports
-this extraction.
-
-Rules:
-1. The evidence must be an EXACT substring of the user's message
-2. The evidence must actually contain the information you're extracting
-3. Do NOT paraphrase, summarize, or modify the quote in any way
-4. The value may normalize spelling, grammar, or tense only when the
-   evidence clearly supports the same meaning.
-5. If you cannot find a supporting quote, DO NOT extract that item
-
-Example of VALID evidence:
-User: "The buyers will deposit money and sellers will receive it"
-Evidence for primary_users: "buyers will deposit money and sellers will receive it"
-
-Example of INVALID evidence:
-User: "I want to build an escrow app"
-Evidence for primary_users: "I"  ← TOO SHORT, DOESN'T SUPPORT THE CLAIM
-Evidence for primary_users: "escrow app"  ← DOESN'T NAME ANY USERS
-
-========================================
-OUTPUT
-========================================
-
-Return ONLY valid JSON matching the ExtractedKnowledge schema.
-
-Do not include explanations.
-
-Do not include markdown.
-
-Do not return any text outside the JSON.
+_extraction_models = None
+
+
+def extraction_models():
+    """Create one structured model per pass and reuse it across turns."""
+    global _extraction_models
+    if _extraction_models is None:
+        # Definitions, structured schema and overlapping evidence must fit together.
+        base = ChatOllama(model="qwen2.5:7b", temperature=0.0, timeout=60, num_ctx=8192)
+        _extraction_models = {
+            name: base.with_structured_output(
+                create_model(f"{name.title()}RawPass", __base__=RawPass),
+                include_raw=True)
+            for name, *_ in PASSES
+        }
+        _extraction_models.update({
+            "GAP_ANSWER": base.with_structured_output(GapAnswer, include_raw=True),
+            "GROUNDING": base.with_structured_output(GroundingResponse, include_raw=True),
+        })
+    return _extraction_models
+
+
+def group_audit_evidence(payload):
+    """Put each candidate beside its own source; avoid model-side quote lookups."""
+    quotes = payload["evidence_quotes"]
+    candidates = payload["candidates"]
+    return {**{key: value for key, value in payload.items() if key not in ("evidence_quotes", "candidates")},
+            "evidence_groups": [dict(evidence_id=quote_id, evidence=quote,
+          candidates=[{**{key: value for key, value in candidate.items() if key != "evidence_id"},
+                       "field_definition": field_contract([(DiscoveryTopic(candidate["topic"]), candidate["key"])])}
+                            for candidate in candidates if str(candidate["evidence_id"]) == quote_id])
+                for quote_id, quote in quotes.items()]}
+
+
+def semantic_decision(name, schema, instruction, payload, allow_repair=True):
+    original_payload = payload
+    original_instruction = instruction
+    if name == "GROUNDING":
+        instruction += "\nReturn a JSON object matching this schema:\n" + json.dumps(GroundingResponse.model_json_schema())
+        if payload.get("active_gap_review"):
+            instruction += (
+                "\nThe active_gap_review is a separate semantic interpretation of the exact question/answer. "
+                "Verify it against the question and quoted response. A short answer can negate the whole "
+                "asked field without repeating its name. It supplies no evidence for OTHER fields. "
+                "For a supported absence, include the candidate ID in BOTH supported_ids and confirmed_absence_ids. "
+                "The evidence_categories entries must use the numeric evidence IDs "
+                + json.dumps(list(payload["evidence_quotes"]))
+                + "; TOPIC.key names belong only in each entry's categories list."
+            )
+        payload = group_audit_evidence(payload)
+    result = extraction_models()[name].invoke([
+        SystemMessage(content=instruction),
+        HumanMessage(content=json.dumps(payload, default=str)),
+    ])
+    raw = result.get("parsed") if isinstance(result, dict) and "parsed" in result else result
+    if name == "GROUNDING" and isinstance(raw, GroundingResponse):
+        raw = raw.decision()
+    elif name == "GROUNDING" and isinstance(raw, dict) and isinstance(raw.get("evidence_categories"), list):
+        raw = GroundingResponse.model_validate(raw).decision()
+    decision = raw if isinstance(raw, schema) else schema.model_validate(raw)
+    if name == "GROUNDING" and allow_repair:
+        # A support ID alone is not a complete verdict: its quote category and,
+        # for absence, the independent polarity verdict must also be present.
+        reviewed = {candidate["id"] for candidate in original_payload["candidates"]
+                    if candidate["id"] in decision.supported_ids
+                    and f'{candidate["topic"]}.{candidate["key"]}' in decision.evidence_categories.get(str(candidate["evidence_id"]), [])
+                    and (not candidate.get("absence") or candidate["id"] in decision.confirmed_absence_ids)}
+        reviewed.update(int(key) for key in decision.rejection_reasons if key.isdigit())
+        missing = [candidate for candidate in original_payload["candidates"] if candidate["id"] not in reviewed]
+        if missing:
+            # Repair an incomplete protocol response once, not an explicit rejection.
+            # Use local IDs so the repair cannot repeat the omitted/global index error.
+            mapping = {index: candidate["id"] for index, candidate in enumerate(missing)}
+            quote_ids = {str(candidate["evidence_id"]) for candidate in missing}
+            repair_payload = {**original_payload,
+                "candidates": [{**candidate, "id": index} for index, candidate in enumerate(missing)],
+                "evidence_quotes": {key: value for key, value in original_payload["evidence_quotes"].items() if key in quote_ids}}
+            try:
+                repaired = semantic_decision(name, schema,
+                    original_instruction + "\nThe previous audit omitted a complete verdict for these candidates. "
+                    "Return either support or a rejection reason for EVERY supplied ID. "
+                    "Supported facts need their evidence_id category; supported absences also need confirmed_absence_ids. Do not invent IDs.",
+                    repair_payload, allow_repair=False)
+            except Exception as exc:
+                print(f"GROUNDING REPAIR FAILED: {exc}")
+                return decision
+            decision.supported_ids = [index for index in decision.supported_ids if index not in mapping.values()]
+            decision.supported_ids.extend(mapping[index] for index in repaired.supported_ids if index in mapping)
+            decision.confirmed_absence_ids.extend(mapping[index] for index in repaired.confirmed_absence_ids if index in mapping)
+            for key, reason in repaired.rejection_reasons.items():
+                if key.isdigit() and int(key) in mapping:
+                    decision.rejection_reasons[str(mapping[int(key)])] = reason
+            # A repair only supplements categories for quotes it actually reviewed.
+            for quote_id, categories in repaired.evidence_categories.items():
+                if quote_id in quote_ids:
+                    decision.evidence_categories[quote_id] = list(dict.fromkeys(
+                        decision.evidence_categories.get(quote_id, []) + categories))
+    return decision
+
+def answer_context(state):
+    question = next((message.content for message in reversed(state.get("messages", [])[:-1])
+                     if isinstance(message, AIMessage)), "")
+    return dict(question=question, topic=state.get("current_topic"),
+                gap=state.get("current_gap"), scope=state.get("discovery_scope"))
+
+
+def extract_gap_absence(user_response, state, scope):
+    gap = state.get("current_gap")
+    topic = state.get("current_topic")
+    if not gap or not topic:
+        return None
+    key, _, role = gap.partition("::")
+    if key not in TOPIC_KEY_MAP.get(topic, set()):
+        return None
+    # Owner-specific answers must never become unowned blanket denials.
+    from agents.interview_planner import PER_ROLE_TASKS, get_roles_in_discovery_order
+    if key in PER_ROLE_TASKS.get(topic, set()) and not role:
+        return None
+    if role and key not in PER_ROLE_TASKS.get(topic, set()):
+        return None
+    if role and role not in get_roles_in_discovery_order(state, DiscoveryTopic.USER_ROLES):
+        return None
+    existing = [item.model_dump() for item in state.get("discovered_knowledge", [])
+                if item.scope == scope and item.topic == topic and item.key == key
+                and item.role == (role or None)]
+    policy_field = topic == DiscoveryTopic.USER_ROLES and key in ("multiple_roles", "role_transitions")
+    try:
+        decision = semantic_decision("GAP_ANSWER", GapAnswer,
+            (ROLE_POLICY_INSTRUCTION if policy_field else GAP_INSTRUCTION)
+            + "\nActive field definition:\n" + field_contract([(topic, key)]),
+            dict(**answer_context(state), latest_response=user_response, existing=existing))
+        if (decision.resolution == "unresolved" or decision.confidence < 0.75
+                or not decision.evidence.strip() or decision.evidence not in user_response):
+            return None
+        if decision.resolution == "policy":
+            if not policy_field or not decision.value or not decision.value.strip() or absence_label(decision.value):
+                return None
+            return KnowledgeItem(topic=topic, scope=scope, key=key,
+                value=decision.value.strip(), evidence=decision.evidence,
+                confidence=decision.confidence, knowledge_state=KnowledgeState.CONFIRMED,
+                source_turn=state.get("turn_count", 0))
+        if policy_field and decision.resolution == "none":
+            # A denied role combination is a rule, not missing policy.
+            return None
+        return KnowledgeItem(topic=topic, scope=scope, key=key, role=role or None,
+            roles=[] if key in ("primary_users", "secondary_users") else None,
+            value="none" if decision.resolution == "none" else "not applicable",
+            absence=decision.resolution, evidence=decision.evidence,
+            confidence=decision.confidence, knowledge_state=KnowledgeState.CONFIRMED,
+            source_turn=state.get("turn_count", 0))
+    except Exception as exc:
+        print(f"GAP ANSWER FAILED: {exc}")
+        return None
+
+
+def confirmed_actor_context(state, scope):
+    """Retain the source of actor identities, not just their canonical IDs.
+
+    Descriptions can explain that several names are capacities of one actor.
+    They are identity context only, never evidence of this turn's new actions.
+    """
+    return [dict(key=item.key, roles=item.roles, aliases=item.aliases,
+                 value=item.value, evidence=item.evidence, source_turn=item.source_turn)
+            for item in state.get("discovered_knowledge", [])
+            if item.scope == scope and item.topic == DiscoveryTopic.USER_ROLES
+            and item.key in ("primary_users", "secondary_users", "multiple_roles", "role_transitions")
+            and item.knowledge_state == KnowledgeState.CONFIRMED and not item.absence]
+
+
+def ground_items(items, user_response, state, active_gap_review=None):
+    """Audit the asked-for answer independently of incidental extracted claims.
+
+    A malformed/omitted verdict in a large cross-topic batch must not erase a
+    valid answer to the current question. Both batches still need grounding.
+    """
+    focused = [item for item in items if item.topic == state.get("current_topic")
+               and item_directly_answers_gap(item, state.get("current_gap"))]
+    remaining = [item for item in items if item not in focused]
+    if not focused or not remaining:
+        return ground_batch(items, user_response, state, active_gap_review)
+    print(f"GROUNDING BATCHES: active_gap={state.get('current_gap')} "
+          f"direct_candidates={len(focused)} incidental_candidates={len(remaining)}")
+    accepted = ground_batch(focused, user_response, state, active_gap_review)
+    # Only grounded actor declarations may provide new identity context to the
+    # remaining batch. A rejected actor proposal is not an established owner.
+    context_state = {**state, "discovered_knowledge": [
+        *state.get("discovered_knowledge", []),
+        *(item for item in accepted if item.topic == DiscoveryTopic.USER_ROLES
+          and item.key in ("primary_users", "secondary_users"))]}
+    accepted += ground_batch(remaining, user_response, context_state)
+    return [item for item in items if item in accepted]
+
+
+def ground_batch(items, user_response, state, active_gap_review=None):
+    eligible = []
+    for item in items:
+        reason = category_contradiction(item.key, item.evidence)
+        if item.key in ("multiple_roles", "role_transitions") and item.absence == "none":
+            reason = "A negative role policy must preserve its rule and conditions, not use absence"
+        if reason:
+            print(f"CATEGORY REJECTED: {item.topic.value}.{item.key} owner={item.role} | {reason}")
+        else:
+            eligible.append(item)
+    items = eligible
+    if not items:
+        return []
+    # Intern repeated quotes instead of serializing the entire source sentence
+    # in every candidate. Long overlap batches otherwise crowd out audit rules.
+    # Preserve source order independently of which extractor emitted a quote first.
+    # Actor declarations may quote later capability sentences; that must not reorder
+    # the source narrative presented to the semantic audit.
+    quotes = sorted({item.evidence for item in items}, key=lambda quote: (user_response.find(quote), len(quote), quote))
+    candidates = []
+    for index, item in enumerate(items):
+        candidate = dict(id=index, topic=item.topic.value, key=item.key,
+                         value=item.value, scope=item.scope.value,
+                         evidence_id=quotes.index(item.evidence))
+        if item.key in ("primary_users", "secondary_users"):
+            candidate.update(kind="actor_declaration", roles=item.roles or [])
+        elif item.role:
+            candidate["role"] = item.role
+        absence = item.absence or absence_label(item.value)
+        if absence:
+            candidate["absence"] = absence
+        if item.knowledge_state == KnowledgeState.INFERRED:
+            candidate["knowledge_state"] = item.knowledge_state.value
+        candidates.append(candidate)
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    actors = [item for item in [*state.get("discovered_knowledge", []), *items]
+              if item.scope == scope and item.knowledge_state == KnowledgeState.CONFIRMED
+              and item.key in ("primary_users", "secondary_users") and not item.absence]
+    actor_context = {key: sorted({r for item in actors if item.key == key for r in item.roles or []})
+                     for key in ("primary_users", "secondary_users")}
+    try:
+        decision = semantic_decision("GROUNDING", GroundingResult,
+            GROUNDING_INSTRUCTION + "\n" + OVERLAP_RULES + "\nField definitions:\n"
+            + field_contract((item.topic, item.key) for item in items),
+              dict(**answer_context(state), latest_response=user_response,
+                   **({"active_gap_review": active_gap_review.model_dump(mode="json")} if active_gap_review else {}),
+                   actor_classification=actor_context,
+                   confirmed_actor_context=confirmed_actor_context(state, scope),
+                   candidates=candidates, evidence_quotes={str(i): quote for i, quote in enumerate(quotes)}))
+        supported = set(decision.supported_ids)
+        confirmed_absences = set(decision.confirmed_absence_ids)
+        accepted = []
+        for index, item in enumerate(items):
+            absence = item.absence or absence_label(item.value)
+            categories = decision.evidence_categories.get(str(candidates[index]["evidence_id"]), [])
+            category_supported = f"{item.topic.value}.{item.key}" in categories
+            if index not in supported or not category_supported or (absence and index not in confirmed_absences):
+                identity = f"actors={item.roles}" if item.key in ("primary_users", "secondary_users") else f"owner={item.role or 'not required'}"
+                reason = decision.rejection_reasons.get(str(index),
+                    "No explicit whole-field absence verified" if absence else
+                    "Category not supported by own quote" if not category_supported else
+                    "Auditor did not support this candidate")
+                print(f"GROUNDING REJECTED: id={index} {item.topic.value}.{item.key} {identity} | {reason} | evidence={item.evidence!r}")
+                continue
+            if absence and not item.absence:
+                item = item.model_copy(update={"absence": absence,
+                    "value": "none" if absence == "none" else "not applicable"})
+            accepted.append(item)
+        return accepted
+    except Exception as exc:
+        # Fail closed: a validator outage must not persist unsupported facts.
+        print(f"GROUNDING FAILED: {exc}")
+        return []
+
+
+def extract_passes(user_response: str, state: AgentState,
+                   scope: DiscoveryScope) -> list[KnowledgeItem]:
+    accepted = []
+    stored_actors = [item for item in state.get("discovered_knowledge", [])
+                     if item.scope == scope and item.knowledge_state == KnowledgeState.CONFIRMED
+                     and item.key in ("primary_users", "secondary_users")]
+    for name, schema, topic, instruction in PASSES:
+        actors = stored_actors + [item for item in accepted if item.key in ("primary_users", "secondary_users")]
+        primary = [canonical_role(r) for item in actors if item.key == "primary_users" for r in item.roles or []]
+        secondary = [canonical_role(r) for item in actors if item.key == "secondary_users" for r in item.roles or []]
+        allowed_remaining_keys = {
+            remaining.value: sorted(TOPIC_KEY_MAP[remaining])
+            for remaining in (DiscoveryTopic.BUSINESS_RULES, DiscoveryTopic.CONSTRAINTS,
+                              DiscoveryTopic.MVP_SCOPE, DiscoveryTopic.EXCEPTIONS,
+                              DiscoveryTopic.EDGE_CASES)
+        }
+        definitions = field_contract(
+            [(topic, key) for key in get_args(schema.model_fields["key"].annotation)]
+            if topic else [(DiscoveryTopic(t), key) for t, keys in allowed_remaining_keys.items() for key in keys]
+        )
+        prompt = f"""Extract {name} facts from the latest user response using JSON with an items array.
+Each item must match {schema.__name__}: {json.dumps(schema.model_json_schema(), default=str)}
+Current scope: {scope.value}. Extract only facts about this scope; do not import
+facts explicitly assigned to another app/dashboard into this scope.
+Current topic: {state.get('current_topic').value if state.get('current_topic') else 'NONE - INITIAL DISCOVERY'}
+Current gap: {state.get('current_gap') or 'none'} (interview focus only; never determines semantic provenance)
+Last question (context for short answers/pronouns only, never evidence): {answer_context(state)['question']}
+CONFIRMED means explicitly stated by the user. INFERRED means genuinely deduced.
+EVIDENCE MUST BE copied directly from the latest user response as one exact contiguous, case-sensitive substring sufficient to support the entire fact.
+The candidate's OWN quote must support its value and category. A fact stated in
+another sentence cannot rescue a wrong quote. Select the sentence that actually
+contains this actor's action/outcome; use a longer contiguous quote for pronouns.
+Do not reconstruct, summarize, remove words from the middle, append punctuation that changes the substring, or quote prompt examples.
+If a short exact quote is unavailable, copy the entire supporting sentence.
+Prompt examples and actor context are not new facts. Actor-only answers contain
+no workflow or goal. Never infer actions from instructions or earlier turns.
+Return an empty array when the latest response does not support this category.
+Confirmed primary roles: {', '.join(primary) or 'none'}
+Confirmed secondary roles: {', '.join(secondary) or 'none'}
+Canonical actor IDs: {json.dumps(primary + secondary)}
+Confirmed actor declarations and role relationships (identity context only):
+{json.dumps(confirmed_actor_context(state, scope), default=str)}
+Use these declarations to resolve actor names and transaction-specific capacities.
+Preserve the capacity and its conditions in the value; do not turn it into a new
+actor when the user has already identified it as a capacity of an existing actor.
+Do not extract old actions from this context. New facts still need their OWN quote
+from the latest response; do not assign ownership solely from the active gap.
+Actor declarations introduce IDs in roles (for example patient); their key is the
+classification (for example primary_users), never an actor ID. They need no role owner.
+Only actor-owned facts use role, matching a listed canonical ID exactly.
+{instruction}
+FIELD DEFINITIONS:
+{definitions}
+{OVERLAP_RULES}
+Explicit whole-field absence may use absence="none", value="none" (or
+absence="not_applicable", value="not applicable"). Never infer absence from silence.
+An explicit prohibition or excluded feature is substantive knowledge, not absence
+of rules or exclusions. Preserve it in value with its original meaning.
 """
-
-extraction_llm = ChatOllama(
-    model="qwen2.5:7b",
-    temperature=0.0,
-    timeout=30,
-).with_structured_output(ExtractedKnowledge)
+        if name == "RULES":
+            prompt += ("\nYou may ONLY use the following topic/key combinations:\n"
+                       + json.dumps(allowed_remaining_keys, indent=2) + "\n")
+        prompt += "\nFinal check: Apply each field definition independently. Reuse evidence where supported; never fill a field merely because it exists.\n"
+        print(f"========== {name} EXTRACTION RAW ==========")
+        try:
+            result = extraction_models()[name].invoke([
+                SystemMessage(content=prompt), HumanMessage(content=user_response)])
+            raw = result.get("parsed") if isinstance(result, dict) and "parsed" in result else result
+            if raw is None:
+                raise ValueError(str(result.get("parsing_error", "No parsed output")))
+            payload = raw if isinstance(raw, RawPass) else RawPass.model_validate(raw)
+            print(payload.model_dump())
+        except Exception as exc:
+            print(f"{name} EXTRACTION FAILED: {exc}")
+            continue
+        pass_accepted = []
+        repair_candidates = []
+        for raw_fact in payload.items:
+            try:
+                fact = schema.model_validate(raw_fact)
+                item = normalize_fact(fact, topic, scope, state.get("turn_count", 0))
+                valid, reason = validate_extraction(item, user_response, state.get("current_gap"))
+                if not valid:
+                    raise ValueError(reason)
+                if isinstance(fact, (OwnedFact, GoalFact)) and item.role:
+                    if item.role not in primary + secondary:
+                        raise ValueError("Owner is not a confirmed actor")
+                if isinstance(fact, GoalFact) and item.key in ("primary_user_goals", "secondary_user_goals"):
+                    expected = primary if item.key == "primary_user_goals" else secondary
+                    if item.role not in expected:
+                        raise ValueError("Goal owner does not match confirmed actor classification")
+                pass_accepted.append(item)
+            except (ValidationError, ValueError) as exc:
+                print(f"{name} REJECTED: {exc}")
+                if name == "GOAL":
+                    repair_candidates.append({"item": raw_fact, "error": str(exc)})
+        if repair_candidates:
+            # One repair call, only for rejected goals. Never guess an owner from
+            # the active gap or discard valid siblings. Repaired items still go
+            # through the same validation and the downstream grounding audit.
+            repair_prompt = prompt + "\nRepair ONLY these rejected goal candidates:\n" + json.dumps(repair_candidates)
+            repair_prompt += (
+                "\nReturn corrected items only. Include role for every primary/secondary goal, "
+                "using the confirmed actor registry and source/question to resolve ownership. "
+                "Do not assign the active gap's owner automatically. Copy evidence exactly "
+                "from the latest response. Omit candidates whose outcome or owner is unsupported."
+            )
+            try:
+                result = extraction_models()[name].invoke([
+                    SystemMessage(content=repair_prompt), HumanMessage(content=user_response)])
+                raw = result.get("parsed") if isinstance(result, dict) and "parsed" in result else result
+                repaired = raw if isinstance(raw, RawPass) else RawPass.model_validate(raw)
+                for raw_fact in repaired.items:
+                    try:
+                        fact = schema.model_validate(raw_fact)
+                        item = normalize_fact(fact, topic, scope, state.get("turn_count", 0))
+                        valid, reason = validate_extraction(item, user_response, state.get("current_gap"))
+                        if not valid:
+                            raise ValueError(reason)
+                        if item.role and item.role not in primary + secondary:
+                            raise ValueError("Owner is not a confirmed actor")
+                        if item.key in ("primary_user_goals", "secondary_user_goals"):
+                            expected = primary if item.key == "primary_user_goals" else secondary
+                            if item.role not in expected:
+                                raise ValueError("Goal owner does not match confirmed actor classification")
+                        if item not in pass_accepted:
+                            pass_accepted.append(item)
+                    except (ValidationError, ValueError) as exc:
+                        print(f"GOAL REPAIR REJECTED: {exc}")
+            except Exception as exc:
+                print(f"GOAL REPAIR FAILED: {exc}")
+        print(f"{name} ACCEPTED {pass_accepted}")
+        accepted.extend(pass_accepted)
+    return accepted
 
 # ──────────────────────────────────────────────
 # Node
@@ -648,20 +557,6 @@ def knowledge_tracker_node(state: AgentState) -> dict:
                 "product_model": build_product_model(promoted, current_scope),
             }
 
-    # -------------------------------------------------------------
-    # HANDLE EXPLICIT "NO" ANSWERS TO UNBLOCK THE PLANNER
-    # -------------------------------------------------------------
-    cleaned_response = user_response.lower().strip().rstrip('.,')
-    is_negative = (
-        cleaned_response in {"no", "none", "nope", "n/a"}
-        or "no other" in cleaned_response
-        or "none besides" in cleaned_response
-        or bool(re.fullmatch(
-            r"(?:none|nothing|nope|not really)(?:\s+(?:else|more))?"
-            r"(?:\s+(?:that )?i can think of)?", cleaned_response
-        ))
-    )
-
     # When the user says a question was already answered, recover the answer
     # from earlier human turns rather than pretending the gap is still blank.
     # We only ask the extractor to recover the current gap, and retain the
@@ -675,178 +570,60 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         if earlier_answers:
             user_response = "\n".join(earlier_answers)
 
-    if is_negative and current_gap:
-        if "::" in current_gap:
-            gap_key, gap_role = current_gap.split("::", 1)
-        else:
-            gap_key, gap_role = current_gap, None
-
-        # Never manufacture a pseudo-key such as "workflow". The planner now
-        # emits canonical keys, but this protects persisted/older sessions.
-        allowed_keys = TOPIC_KEY_MAP.get(current_topic, set())
-        if gap_key not in allowed_keys:
-            fallback_keys = {
-                DiscoveryTopic.CORE_WORKFLOW: "workflow_steps",
-            }
-            gap_key = fallback_keys.get(current_topic)
-        if not gap_key:
-            print(f">>> NEGATIVE HANDLER SKIPPED: invalid gap '{current_gap}'")
-            return {}
-
-        try:
-            dummy_item = KnowledgeItem(
-                topic=current_topic or DiscoveryTopic.USER_ROLES,
-                scope=current_scope,
-                key=gap_key,
-                value="None specified",
-                evidence=user_response,
-                confidence=1.0,
-                role=gap_role,
-            )
-            dummy_item.source_turn = state.get("turn_count", 0)
-
-            discovered_knowledge = list(state.get("discovered_knowledge", []))
-            discovered_knowledge.append(dummy_item)
-
-            topic_status = dict(state.get("topic_status", {}))
-            if topic_status.get(dummy_item.topic) != TopicStatus.COMPLETED:
-                topic_status[dummy_item.topic] = TopicStatus.PARTIAL
-
-            print(f"\n>>> NEGATIVE HANDLER: Marked {current_gap} as 'None specified'")
-            return {
-                "discovered_knowledge": discovered_knowledge,
-                "topic_status": topic_status,
-                "product_model": build_product_model(discovered_knowledge, current_scope),
-            }
-        except Exception as e:
-            print(f">>> NEGATIVE HANDLER FAILED: {e}")
-            # fall through to normal extraction
-
-    print(
-        f"Extracting knowledge for topic: {current_topic}, "
-        f"user response: {user_response}"
-    )
-
-    topic_definitions = {
-        DiscoveryTopic.USER_ROLES:
-            "Who are the users? What roles exist? What permissions do they need?",
-        DiscoveryTopic.USER_GOALS:
-            "What are users trying to accomplish? What are their success criteria?",
-        DiscoveryTopic.CORE_WORKFLOW:
-            "What is the complete happy path from start to finish?",
-        DiscoveryTopic.BUSINESS_RULES:
-            "What rules govern the workflow? What validations exist?",
-        DiscoveryTopic.CONSTRAINTS:
-            "Performance, scale, legal, business, cost, or operational constraints.",
-        DiscoveryTopic.MVP_SCOPE:
-            "What is required for MVP? What is intentionally out of scope?",
-        DiscoveryTopic.EXCEPTIONS:
-            "How should expected failures or error situations behave?",
-        DiscoveryTopic.EDGE_CASES:
-            "Boundary conditions, unusual situations, duplicates, empty states.",
-    }
-
-    existing_knowledge_keys = [
-        f"- [{item.topic.value}] {item.key}" + (f" (for: {item.role})" if item.role else "")
-        for item in state.get("discovered_knowledge", [])
-    ]
-
-    prompt = KNOWLEDGE_EXTRACTION_PROMPT.format(
-        current_topic=current_topic.value if current_topic else DiscoveryTopic.USER_ROLES.value,
-        current_gap=current_gap or "none",
-        topic_definitions="\n".join(
-            f"{topic.value}: {description}"
-            for topic, description in topic_definitions.items()
-        ),
-        existing_knowledge="\n".join(existing_knowledge_keys) or "None",
-        user_response=user_response,
-        is_correction="yes" if state.get("is_correction") else "no",
-    )
-    if recovering_prior_answer:
-        prompt += """
-
-This is a repair pass after the user said the current question was already
-answered. Search the earlier answers above and extract ONLY the fact that
-answers the current gap. If no earlier answer supports that gap, return an
-empty items list. Do not invent a placeholder answer.
-"""
-
-    try:
-        extracted = extraction_llm.invoke([SystemMessage(content=prompt)])
-        print("\n========== KNOWLEDGE EXTRACTION ==========")
-        for item in extracted.items:
-            print(f"- {item.topic} | {item.key} | {item.confidence:.2f}")
-    except Exception as e:
-        print(f"Knowledge extraction failed: {e}")
-        return {}
-
-    # -----------------------------
-    # Merge newly extracted knowledge
-    # -----------------------------
+    print(f"Extracting knowledge for topic: {current_topic}, user response: {user_response}")
+    closed_answer = None if recovering_prior_answer else interpret_closed_answer(state)
+    answer_followup = None
+    if closed_answer is not None:
+        # The exact generated question defines the choice's meaning. No model
+        # inference is involved, and no free-form answer takes this path.
+        extracted_items, followup = closed_answer
+        print(f"CONTROLLED ANSWER: {current_gap} | "
+              f"{'additional actor names needed' if followup else 'explicit absence recorded'}")
+        if followup:
+            answer_followup = dict(gap=current_gap, scope=current_scope, question=followup)
+    else:
+        extracted_items = extract_passes(user_response, state, current_scope)
+        # Never reinterpret historical denials as this turn's answer.
+        absence = None
+        if not recovering_prior_answer:
+            absence = extract_gap_absence(user_response, state, current_scope)
+            if absence:
+                extracted_items.append(absence)
+        extracted_items = ground_items(extracted_items, user_response, state, absence)
     discovered_knowledge = list(state.get("discovered_knowledge", []))
+    if current_gap:
+        print(f"ACTIVE ANSWER: gap={current_gap} accepted_facts="
+              f"{sum(item.topic == current_topic and item_directly_answers_gap(item, current_gap) for item in extracted_items)}")
     accepted_topics = set()
-
-    CONFIDENCE_THRESHOLD = 0.75
-
-    for item in extracted.items:
-        # Filter 1: Confidence
-        if item.confidence < CONFIDENCE_THRESHOLD:
-            print(f"Dropping low-confidence item: {item.topic} | {item.key} | {item.confidence:.2f}")
-            continue
-
-        # Filter 2: Evidence validation (now gap-aware)
-        is_valid, reason = validate_extraction(item, user_response, current_gap)
-        if not is_valid:
-            print(f"REJECTED (evidence): {item.topic} | {item.key} | {reason}")
-            continue
-
-        item.source_turn = state.get("turn_count", 0)
-        item.scope = current_scope  # stamp scope for this discovery phase
-        item.knowledge_state = (
-            KnowledgeState.CONFIRMED
-            if item_directly_answers_gap(item, current_gap)
-            else KnowledgeState.INFERRED
-        )
-        if item.key in ("primary_users", "secondary_users") and item.roles:
-            item.roles = split_role_labels(item.roles)
+    for item in extracted_items:
+        if not recovering_prior_answer and not item.source_question:
+            item = item.model_copy(update={"source_question": answer_context(state)["question"] or None})
+        print("STATE TRACE:", item.topic, item.key, "| LLM state:",
+              item.knowledge_state, "| current_gap:", current_gap,
+              "| directly_answers_gap:", item_directly_answers_gap(item, current_gap))
+        # Absence replaces old values; new positive facts replace absence.
+        discovered_knowledge = [existing for existing in discovered_knowledge
+            if not (item.knowledge_state == KnowledgeState.CONFIRMED
+                    and existing.scope == item.scope and existing.topic == item.topic
+                    and existing.key == item.key and existing.role == item.role
+                    and (item.absence or existing.absence))]
         if state.get("is_correction"):
-            discovered_knowledge = [
-                existing for existing in discovered_knowledge
-                if not (
-                    existing.scope == item.scope
-                    and existing.topic == item.topic
-                    and existing.key == item.key
-                    and existing.role == item.role
-                )
-            ]
-
-        # A direct answer replaces prior incidental evidence for the exact
-        # same decision. This is a promotion, not a duplicate fact.
+            discovered_knowledge = [existing for existing in discovered_knowledge
+                if not (existing.scope == item.scope and existing.topic == item.topic
+                        and existing.key == item.key and existing.role == item.role)]
         if item.knowledge_state == KnowledgeState.CONFIRMED:
-            discovered_knowledge = [
-                existing for existing in discovered_knowledge
-                if not (
-                    existing.knowledge_state == KnowledgeState.INFERRED
-                    and existing.scope == item.scope
-                    and existing.topic == item.topic
-                    and existing.key == item.key
-                    and existing.role == item.role
-                )
-            ]
-
-        if any(
-            existing.scope == item.scope
-            and existing.topic == item.topic
-            and existing.key == item.key
-            and existing.role == item.role
-            and existing.value.lower() == item.value.lower()
-            and existing.knowledge_state == item.knowledge_state
-            for existing in discovered_knowledge
-        ):
+            discovered_knowledge = [existing for existing in discovered_knowledge
+                if not (existing.knowledge_state == KnowledgeState.INFERRED
+                        and existing.scope == item.scope and existing.topic == item.topic
+                        and existing.key == item.key and existing.role == item.role)]
+        if any(existing.scope == item.scope and existing.topic == item.topic
+               and existing.key == item.key and existing.role == item.role
+               and existing.roles == item.roles and existing.value.lower() == item.value.lower()
+               and existing.knowledge_state == item.knowledge_state
+               for existing in discovered_knowledge):
             continue
         discovered_knowledge.append(item)
         accepted_topics.add(item.topic)
-
     # -----------------------------
     # Merge topic status
     # -----------------------------
@@ -879,6 +656,7 @@ empty items list. Do not invent a placeholder answer.
 
     return {
         "discovered_knowledge": discovered_knowledge,
+        "answer_followup": answer_followup,
         "topic_status": topic_status,
         "product_model": build_product_model(discovered_knowledge, current_scope),
     }

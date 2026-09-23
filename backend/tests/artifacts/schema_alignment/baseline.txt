@@ -1,0 +1,420 @@
+F..FFF......F.FFFFFF.................................F....F..F..FF..F... [100%]
+=================================== ERRORS ====================================
+_ ERROR collecting AppData/Local/Temp/architect-schema-baseline-20260921/tests/test_extraction_semantics.py _
+ImportError while importing test module 'C:\Users\DELL\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_extraction_semantics.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+..\..\..\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\importlib\__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\tests\test_extraction_semantics.py:7: in <module>
+    from agents import knowledge_tracker as kt, prior_gap_recovery as recovery
+E   ImportError: cannot import name 'prior_gap_recovery' from 'agents' (C:\Users\DELL\AppData\Local\Temp\architect-schema-baseline-20260921\agents\__init__.py)
+================================== FAILURES ===================================
+______________________________ test_careconnect _______________________________
+backend\tests\test_extraction_passes.py:63: in test_careconnect
+    assert {r.roles[0] for r in records if r.key == "primary_users"} == {"patient", "healthcare provider"}
+E   AssertionError: assert {'healthcare_...r', 'patient'} == {'healthcare ...r', 'patient'}
+E     
+E     Extra items in the left set:
+E     'healthcare_provider'
+E     Extra items in the right set:
+E     'healthcare provider'
+E     Use -v to get more diff
+---------------------------- Captured stdout call -----------------------------
+>>> EXTRACT
+
+===== KNOWLEDGE TRACKER INPUT =====
+Current topic: DiscoveryTopic.USER_ROLES
+Turn: 1
+Incoming topic status:
+  USER_ROLES: None
+  USER_GOALS: None
+  CORE_WORKFLOW: None
+  BUSINESS_RULES: None
+  CONSTRAINTS: None
+  MVP_SCOPE: None
+  EXCEPTIONS: None
+  EDGE_CASES: None
+Knowledge count: 0
+===================================
+
+Extracting knowledge for topic: DiscoveryTopic.USER_ROLES, user response: I want to build CareConnect, a platform that helps patients find and book appointments with healthcare professionals such as general doctors, dermatologists, dentists, physiotherapists, and nutritionists. Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform. Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.
+========== ACTOR EXTRACTION RAW ==========
+{'items': [{'key': 'primary_users', 'value': 'patient', 'evidence': 'patients find and book appointments', 'confidence': 1, 'roles': ['patient']}, {'key': 'primary_users', 'value': 'healthcare provider', 'evidence': 'healthcare professionals such as general doctors', 'confidence': 1, 'roles': ['healthcare provider']}]}
+ACTOR ACCEPTED [KnowledgeItem(topic=<DiscoveryTopic.USER_ROLES: 'USER_ROLES'>, scope=<DiscoveryScope.USER_APP: 'USER_APP'>, key='primary_users', value='patient', evidence='patients find and book appointments', roles=['patient'], aliases=None, role=None, confidence=1.0, knowledge_state=<KnowledgeState.CONFIRMED: 'CONFIRMED'>, source_turn=1, absence=None), KnowledgeItem(topic=<DiscoveryTopic.USER_ROLES: 'USER_ROLES'>, scope=<DiscoveryScope.USER_APP: 'USER_APP'>, key='primary_users', value='healthcare provider', evidence='healthcare professionals such as general doctors', roles=['healthcare_provider'], aliases=None, role=None, confidence=1.0, knowledge_state=<KnowledgeState.CONFIRMED: 'CONFIRMED'>, source_turn=1, absence=None)]
+========== RESPONSIBILITY EXTRACTION RAW ==========
+{'items': [{'key': 'responsibilities', 'value': 'manage profiles, specialties, schedules, appointments, and payments', 'evidence': 'Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.', 'confidence': 1, 'role': 'healthcare provider'}]}
+RESPONSIBILITY ACCEPTED [KnowledgeItem(topic=<DiscoveryTopic.USER_ROLES: 'USER_ROLES'>, scope=<DiscoveryScope.USER_APP: 'USER_APP'>, key='responsibilities', value='manage profiles, specialties, schedules, appointments, and payments', evidence='Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.', roles=None, aliases=None, role='healthcare_provider', confidence=1.0, knowledge_state=<KnowledgeState.CONFIRMED: 'CONFIRMED'>, source_turn=1, absence=None)]
+========== PERMISSION EXTRACTION RAW ==========
+{'items': []}
+PERMISSION ACCEPTED []
+========== WORKFLOW EXTRACTION RAW ==========
+{'items': [{'key': 'workflow_steps', 'value': 'describe concern, search, compare, book, communicate, receive reminders, pay', 'evidence': 'Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.', 'confidence': 1}]}
+WORKFLOW ACCEPTED [KnowledgeItem(topic=<DiscoveryTopic.CORE_WORKFLOW: 'CORE_WORKFLOW'>, scope=<DiscoveryScope.USER_APP: 'USER_APP'>, key='workflow_steps', value='describe concern, search, compare, book, communicate, receive reminders, pay', evidence='Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.', roles=None, aliases=None, role=None, confidence=1.0, knowledge_state=<KnowledgeState.CONFIRMED: 'CONFIRMED'>, source_turn=1, absence=None)]
+========== GOAL EXTRACTION RAW ==========
+{'items': []}
+GOAL ACCEPTED []
+========== RULES EXTRACTION RAW ==========
+{'items': []}
+RULES ACCEPTED []
+STATE TRACE: DiscoveryTopic.USER_ROLES primary_users | LLM state: KnowledgeState.CONFIRMED | current_gap: None | directly_answers_gap: False
+STATE TRACE: DiscoveryTopic.USER_ROLES primary_users | LLM state: KnowledgeState.CONFIRMED | current_gap: None | directly_answers_gap: False
+STATE TRACE: DiscoveryTopic.USER_ROLES responsibilities | LLM state: KnowledgeState.CONFIRMED | current_gap: None | directly_answers_gap: False
+STATE TRACE: DiscoveryTopic.CORE_WORKFLOW workflow_steps | LLM state: KnowledgeState.CONFIRMED | current_gap: None | directly_answers_gap: False
+
+===== TOPIC STATUS MERGE =====
+
+Topic: CORE_WORKFLOW
+  Old status : None
+  New status : TopicStatus.PARTIAL
+
+Topic: USER_ROLES
+  Old status : None
+  New status : TopicStatus.PARTIAL
+================================
+
+
+===== KNOWLEDGE TRACKER OUTPUT =====
+Current topic: DiscoveryTopic.USER_ROLES
+Outgoing topic status:
+  USER_ROLES: TopicStatus.PARTIAL
+  USER_GOALS: None
+  CORE_WORKFLOW: TopicStatus.PARTIAL
+  BUSINESS_RULES: None
+  CONSTRAINTS: None
+  MVP_SCOPE: None
+  EXCEPTIONS: None
+  EDGE_CASES: None
+Knowledge count: 4
+====================================
+
+____________________ test_partial_failure_and_bad_sibling _____________________
+backend\tests\test_extraction_passes.py:100: in test_partial_failure_and_bad_sibling
+    assert len(records) == 1 and records[0].role == "artisan"
+E   assert (0 == 1)
+E    +  where 0 = len([])
+---------------------------- Captured stdout call -----------------------------
+>>> EXTRACT
+
+===== KNOWLEDGE TRACKER INPUT =====
+Current topic: DiscoveryTopic.USER_ROLES
+Turn: 1
+Incoming topic status:
+  USER_ROLES: None
+  USER_GOALS: None
+  CORE_WORKFLOW: None
+  BUSINESS_RULES: None
+  CONSTRAINTS: None
+  MVP_SCOPE: None
+  EXCEPTIONS: None
+  EDGE_CASES: None
+Knowledge count: 0
+===================================
+
+Extracting knowledge for topic: DiscoveryTopic.USER_ROLES, user response: Customers book artisans. Artisans accept jobs and complete them. Admins verify artisans and resolve disputes.
+========== ACTOR EXTRACTION RAW ==========
+ACTOR EXTRACTION FAILED: malformed structured output
+========== RESPONSIBILITY EXTRACTION RAW ==========
+{'items': [{'key': 'responsibilities', 'value': 'accept jobs', 'evidence': 'Artisans accept jobs', 'confidence': 1, 'role': 'artisan'}, {'key': 'permissions', 'value': 'invented', 'evidence': 'fabricated quote', 'confidence': 1, 'role': 'admin'}]}
+RESPONSIBILITY REJECTED: Owner is not a confirmed actor
+RESPONSIBILITY REJECTED: 1 validation error for ResponsibilityFact
+key
+  Input should be 'responsibilities' [type=literal_error, input_value='permissions', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.13/v/literal_error
+RESPONSIBILITY ACCEPTED []
+========== PERMISSION EXTRACTION RAW ==========
+{'items': []}
+PERMISSION ACCEPTED []
+========== WORKFLOW EXTRACTION RAW ==========
+{'items': []}
+WORKFLOW ACCEPTED []
+========== GOAL EXTRACTION RAW ==========
+{'items': []}
+GOAL ACCEPTED []
+========== RULES EXTRACTION RAW ==========
+{'items': []}
+RULES ACCEPTED []
+
+===== TOPIC STATUS MERGE =====
+================================
+
+
+===== KNOWLEDGE TRACKER OUTPUT =====
+Current topic: DiscoveryTopic.USER_ROLES
+Outgoing topic status:
+  USER_ROLES: None
+  USER_GOALS: None
+  CORE_WORKFLOW: None
+  BUSINESS_RULES: None
+  CONSTRAINTS: None
+  MVP_SCOPE: None
+  EXCEPTIONS: None
+  EDGE_CASES: None
+Knowledge count: 0
+====================================
+
+_ test_goals_use_current_actor_classification[I want to build CareConnect, a platform that helps patients find and book appointments with healthcare professionals such as general doctors, dermatologists, dentists, physiotherapists, and nutritionists. Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform. Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.-actors0-patient-find and book appointments with healthcare professionals-patients find and book appointments with healthcare professionals] _
+backend\tests\test_extraction_passes.py:124: in test_goals_use_current_actor_classification
+    assert not any(r.key == "secondary_user_goals" for r in records)
+E   assert not True
+E    +  where True = any(<generator object test_goals_use_current_actor_classification.<locals>.<genexpr> at 0x0000021078098BA0>)
+---------------------------- Captured stdout call -----------------------------
+>>> EXTRACT
+
+===== KNOWLEDGE TRACKER INPUT =====
+Current topic: DiscoveryTopic.USER_ROLES
+Turn: 1
+Incoming topic status:
+  USER_ROLES: None
+  USER_GOALS: None
+  CORE_WORKFLOW: None
+  BUSINESS_RULES: None
+  CONSTRAINTS: None
+  MVP_SCOPE: None
+  EXCEPTIONS: None
+  EDGE_CASES: None
+Knowledge count: 0
+===================================
+
+Extracting knowledge for topic: DiscoveryTopic.USER_ROLES, user response: I want to build CareConnect, a platform that helps patients find and book appointments with healthcare professionals such as general doctors, dermatologists, dentists, physiotherapists, and nutritionists. Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform. Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.
+========== ACTOR EXTRACTION RAW ==========
+{'items': [{'key': 'primary_users', 'value': 'patient', 'evidence': 'patients find and book appointments', 'confidence': 1, 'roles': ['patient']}, {'key': 'primary_users', 'value': 'healthcare_provider', 'evidence': 'Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.', 'confidence': 1, 'roles': ['healthcare_provider']}]}
+ACTOR ACCEPTED [KnowledgeItem(topic=<DiscoveryTopic.USER_ROLES: 'USER_ROLES'>, scope=<DiscoveryScope.USER_APP: 'USER_APP'>, key='primary_users', value='patient', evidence='patients find and book appointments', roles=['patient'], aliases=None, role=None, confidence=1.0, knowledge_state=<KnowledgeState.CONFIRMED: 'CONFIRMED'>, source_turn=1, absence=None), KnowledgeItem(topic=<DiscoveryTopic.USER_ROLES: 'USER_ROLES'>, scope=<DiscoveryScope.USER_APP: 'USER_APP'>, key='primary_users', value='healthcare_provider', evidence='Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.', roles=['healthcare_provider'], aliases=None, role=None, confidence=1.0, knowledge_state=<KnowledgeState.CONFIRMED: 'CONFIRMED'>, source_turn=1, absence=None)]
+========== RESPONSIBILITY EXTRACTION RAW ==========
+{'items': []}
+RESPONSIBILITY ACCEPTED []
+========== PERMISSION EXTRACTION RAW ==========
+{'items': []}
+PERMISSION ACCEPTED []
+========== WORKFLOW EXTRACTION RAW ==========
+{'items': []}
+WORKFLOW ACCEPTED []
+========== GOAL EXTRACTION RAW ==========
+{'items': [{'key': 'primary_user_goals', 'value': 'find and book appointments with healthcare professionals', 'evidence': 'patients find and book appointments with healthcare professionals', 'confidence': 1, 'role': 'patient'}, {'key': 'secondary_user_goals', 'value': 'manage profiles', 'evidence': 'Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.', 'confidence': 1, 'role': 'healthcare_provider'}, {'key': 'success_criteria', 'value': 'the outcome is confirmed', 'evidence': 'patients find and book appointments', 'confidence': 1, 'role': 'patient'}]}
+GOAL ACCEPTED [KnowledgeItem(topic=<DiscoveryTopic.USER_GOALS: 'USER_GOALS'>, scope=<DiscoveryScope.USER_APP: 'USER_APP'>, key='primary_user_goals', value='find and book appointments with healthcare professionals', evidence='patients find and book appointments with healthcare professionals', roles=None, aliases=None, role='patient', confidence=1.0, knowledge_state=<KnowledgeState.CONFIRMED: 'CONFIRMED'>, source_turn=1, absence=None), KnowledgeItem(topic=<DiscoveryTopic.USER_GOALS: 'USER_GOALS'>, scope=<DiscoveryScope.USER_APP: 'USER_APP'>, key='secondary_user_goals', value='manage profiles', evidence='Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.', roles=None, aliases=None, role='healthcare_provider', confidence=1.0, knowledge_state=<KnowledgeState.CONFIRMED: 'CONFIRMED'>, source_turn=1, absence=None), KnowledgeItem(topic=<DiscoveryTopic.USER_GOALS: 'USER_GOALS'>, scope=<DiscoveryScope.USER_APP: 'USER_APP'>, key='success_criteria', value='the outcome is confirmed', evidence='patients find and book appointments', roles=None, aliases=None, role='patient', confidence=1.0, knowledge_state=<KnowledgeState.CONFIRMED: 'CONFIRMED'>, source_turn=1, absence=None)]
+========== RULES EXTRACTION RAW ==========
+{'items': []}
+RULES ACCEPTED []
+STATE TRACE: DiscoveryTopic.USER_ROLES primary_users | LLM state: KnowledgeState.CONFIRMED | current_gap: None | directly_answers_gap: False
+STATE TRACE: DiscoveryTopic.USER_ROLES primary_users | LLM state: KnowledgeState.CONFIRMED | current_gap: None | directly_answers_gap: False
+STATE TRACE: DiscoveryTopic.USER_GOALS primary_user_goals | LLM state: KnowledgeState.CONFIRMED | current_gap: None | directly_answers_gap: False
+STATE TRACE: DiscoveryTopic.USER_GOALS secondary_user_goals | LLM state: KnowledgeState.CONFIRMED | current_gap: None | directly_answers_gap: False
+STATE TRACE: DiscoveryTopic.USER_GOALS success_criteria | LLM state: KnowledgeState.CONFIRMED | current_gap: None | directly_answers_gap: False
+
+===== TOPIC STATUS MERGE =====
+
+Topic: USER_GOALS
+  Old status : None
+  New status : TopicStatus.PARTIAL
+
+Topic: USER_ROLES
+  Old status : None
+  New status : TopicStatus.PARTIAL
+================================
+
+
+===== KNOWLEDGE TRACKER OUTPUT =====
+Current topic: DiscoveryTopic.USER_ROLES
+Outgoing topic status:
+  USER_ROLES: TopicStatus.PARTIAL
+  USER_GOALS: TopicStatus.PARTIAL
+  CORE_WORKFLOW: None
+  BUSINESS_RULES: None
+  CONSTRAINTS: None
+  MVP_SCOPE: None
+  EXCEPTIONS: None
+  EDGE_CASES: None
+Knowledge count: 5
+====================================
+
+_ test_goals_use_current_actor_classification[I want to build FixMate, a platform that helps people find and book trusted local artisans like electricians, plumbers, cleaners, painters, and appliance repair technicians. Users should be able to describe what they need, find suitable service providers nearby, compare them, book a service, communicate with the provider, and pay through the platform.-actors1-customer-find and book trusted local artisans-people find and book trusted local artisans] _
+backend\tests\test_extraction_passes.py:124: in test_goals_use_current_actor_classification
+    assert not any(r.key == "secondary_user_goals" for r in records)
+E   assert not True
+E    +  where True = any(<generator object test_goals_use_current_actor_classification.<locals>.<genexpr> at 0x000002107809A4D0>)
+---------------------------- Captured stdout call -----------------------------
+>>> EXTRACT
+
+===== KNOWLEDGE TRACKER INPUT =====
+Current topic: DiscoveryTopic.USER_ROLES
+Turn: 1
+Incoming topic status:
+  USER_ROLES: None
+  USER_GOALS: None
+  CORE_WORKFLOW: None
+  BUSINESS_RULES: None
+  CONSTRAINTS: None
+  MVP_SCOPE: None
+  EXCEPTIONS: None
+  EDGE_CASES: None
+Knowledge count: 0
+===================================
+
+Extracting knowledge for topic: DiscoveryTopic.USER_ROLES, user response: I want to build FixMate, a platform that helps people find and book trusted local artisans like electricians, plumbers, cleaners, painters, and appliance repair technicians. Users should be able to describe what they need, find suitable service providers nearby, compare them, book a service, communicate with the provider, and pay through the platform.
+========== ACTOR EXTRACTION RAW ==========
+{'items': [{'key': 'primary_users', 'value': 'customer', 'evidence': 'people find and book trusted local artisans', 'confidence': 1, 'roles': ['customer']}, {'key': 'primary_users', 'value': 'artisan', 'evidence': 'local artisans like electricians, plumbers, cleaners, painters, and appliance repair technicians', 'confidence': 1, 'roles': ['artisan']}]}
+ACTOR ACCEPTED [KnowledgeItem(topic=<DiscoveryTopic.USER_ROLES: 'USER_ROLES'>, scope=<DiscoveryScope.USER_APP: 'USER_APP'>, key='primary_users', value='customer', evidence='people find and book trusted local artisans', roles=['customer'], aliases=None, role=None, confidence=1.0, knowledge_state=<KnowledgeState.CONFIRMED: 'CONFIRMED'>, source_turn=1, absence=None), KnowledgeItem(topic=<DiscoveryTopic.USER_ROLES: 'USER_ROLES'>, scope=<DiscoveryScope.USER_APP: 'USER_APP'>, key='primary_users', value='artisan', evidence='local artisans like electricians, plumbers, cleaners, painters, and appliance repair technicians', roles=['artisan'], aliases=None, role=None, confidence=1.0, knowledge_state=<KnowledgeState.CONFIRMED: 'CONFIRMED'>, source_turn=1, absence=None)]
+========== RESPONSIBILITY EXTRACTION RAW ==========
+{'items': []}
+RESPONSIBILITY ACCEPTED []
+========== PERMISSION EXTRACTION RAW ==========
+{'items': []}
+PERMISSION ACCEPTED []
+========== WORKFLOW EXTRACTION RAW ==========
+{'items': []}
+WORKFLOW ACCEPTED []
+========== GOAL EXTRACTION RAW ==========
+{'items': [{'key': 'primary_user_goals', 'value': 'find and book trusted local artisans', 'evidence': 'people find and book trusted local artisans', 'confidence': 1, 'role': 'customer'}, {'key': 'secondary_user_goals', 'value': 'manage profiles', 'evidence': 'local artisans like electricians, plumbers, cleaners, painters, and appliance repair technicians', 'confidence': 1, 'role': 'artisan'}, {'key': 'success_criteria', 'value': 'the outcome is confirmed', 'evidence': 'people find and book trusted local artisans', 'confidence': 1, 'role': 'customer'}]}
+GOAL ACCEPTED [KnowledgeItem(topic=<DiscoveryTopic.USER_GOALS: 'USER_GOALS'>, scope=<DiscoveryScope.USER_APP: 'USER_APP'>, key='primary_user_goals', value='find and book trusted local artisans', evidence='people find and book trusted local artisans', roles=None, aliases=None, role='customer', confidence=1.0, knowledge_state=<KnowledgeState.CONFIRMED: 'CONFIRMED'>, source_turn=1, absence=None), KnowledgeItem(topic=<DiscoveryTopic.USER_GOALS: 'USER_GOALS'>, scope=<DiscoveryScope.USER_APP: 'USER_APP'>, key='secondary_user_goals', value='manage profiles', evidence='local artisans like electricians, plumbers, cleaners, painters, and appliance repair technicians', roles=None, aliases=None, role='artisan', confidence=1.0, knowledge_state=<KnowledgeState.CONFIRMED: 'CONFIRMED'>, source_turn=1, absence=None), KnowledgeItem(topic=<DiscoveryTopic.USER_GOALS: 'USER_GOALS'>, scope=<DiscoveryScope.USER_APP: 'USER_APP'>, key='success_criteria', value='the outcome is confirmed', evidence='people find and book trusted local artisans', roles=None, aliases=None, role='customer', confidence=1.0, knowledge_state=<KnowledgeState.CONFIRMED: 'CONFIRMED'>, source_turn=1, absence=None)]
+========== RULES EXTRACTION RAW ==========
+{'items': []}
+RULES ACCEPTED []
+STATE TRACE: DiscoveryTopic.USER_ROLES primary_users | LLM state: KnowledgeState.CONFIRMED | current_gap: None | directly_answers_gap: False
+STATE TRACE: DiscoveryTopic.USER_ROLES primary_users | LLM state: KnowledgeState.CONFIRMED | current_gap: None | directly_answers_gap: False
+STATE TRACE: DiscoveryTopic.USER_GOALS primary_user_goals | LLM state: KnowledgeState.CONFIRMED | current_gap: None | directly_answers_gap: False
+STATE TRACE: DiscoveryTopic.USER_GOALS secondary_user_goals | LLM state: KnowledgeState.CONFIRMED | current_gap: None | directly_answers_gap: False
+STATE TRACE: DiscoveryTopic.USER_GOALS success_criteria | LLM state: KnowledgeState.CONFIRMED | current_gap: None | directly_answers_gap: False
+
+===== TOPIC STATUS MERGE =====
+
+Topic: USER_GOALS
+  Old status : None
+  New status : TopicStatus.PARTIAL
+
+Topic: USER_ROLES
+  Old status : None
+  New status : TopicStatus.PARTIAL
+================================
+
+
+===== KNOWLEDGE TRACKER OUTPUT =====
+Current topic: DiscoveryTopic.USER_ROLES
+Outgoing topic status:
+  USER_ROLES: TopicStatus.PARTIAL
+  USER_GOALS: TopicStatus.PARTIAL
+  CORE_WORKFLOW: None
+  BUSINESS_RULES: None
+  CONSTRAINTS: None
+  MVP_SCOPE: None
+  EXCEPTIONS: None
+  EDGE_CASES: None
+Knowledge count: 5
+====================================
+
+________ test_success_criterion_validation_checks_support_not_meaning _________
+backend\tests\test_extraction_passes.py:214: in test_success_criterion_validation_checks_support_not_meaning
+    assert tracker.validate_extraction(unsupported, quote) == (
+E   AssertionError: assert (True, '') == (False, 'Succ...its evidence')
+E     
+E     At index 0 diff: True != False
+E     Use -v to get more diff
+_____________ test_live_failure_repaired_by_model_before_storage ______________
+backend\tests\test_extraction_repair.py:55: in test_live_failure_repaired_by_model_before_storage
+    result, calls = replay(monkeypatch, [failed_batch(), corrected_batch()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\tests\test_extraction_repair.py:40: in replay
+    parser = PydanticOutputParser(pydantic_object=kt.ExtractedKnowledge)
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'agents.knowledge_tracker' has no attribute 'ExtractedKnowledge'
+____ test_second_invalid_batch_stops_without_salvaging_unsupported_sibling ____
+backend\tests\test_extraction_repair.py:72: in test_second_invalid_batch_stops_without_salvaging_unsupported_sibling
+    result, calls = replay(monkeypatch, [failed_batch(), failed_batch()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\tests\test_extraction_repair.py:40: in replay
+    parser = PydanticOutputParser(pydantic_object=kt.ExtractedKnowledge)
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'agents.knowledge_tracker' has no attribute 'ExtractedKnowledge'
+______________________ test_valid_output_does_not_retry _______________________
+backend\tests\test_extraction_repair.py:77: in test_valid_output_does_not_retry
+    result, calls = replay(monkeypatch, [corrected_batch()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\tests\test_extraction_repair.py:40: in replay
+    parser = PydanticOutputParser(pydantic_object=kt.ExtractedKnowledge)
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'agents.knowledge_tracker' has no attribute 'ExtractedKnowledge'
+____________________ test_provider_failure_does_not_retry _____________________
+backend\tests\test_extraction_repair.py:82: in test_provider_failure_does_not_retry
+    result, calls = replay(monkeypatch, [TimeoutError('provider timed out')])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\tests\test_extraction_repair.py:40: in replay
+    parser = PydanticOutputParser(pydantic_object=kt.ExtractedKnowledge)
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'agents.knowledge_tracker' has no attribute 'ExtractedKnowledge'
+_____________ test_repaired_output_still_requires_exact_evidence ______________
+backend\tests\test_extraction_repair.py:89: in test_repaired_output_still_requires_exact_evidence
+    result, calls = replay(monkeypatch, [failed_batch(), repaired])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\tests\test_extraction_repair.py:40: in replay
+    parser = PydanticOutputParser(pydantic_object=kt.ExtractedKnowledge)
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'agents.knowledge_tracker' has no attribute 'ExtractedKnowledge'
+__________________ test_roles_is_required_in_provider_schema __________________
+backend\tests\test_extraction_repair.py:95: in test_roles_is_required_in_provider_schema
+    assert 'roles' in kt.ExtractedKnowledge.model_json_schema()['$defs']['ExtractedItem']['required']
+                      ^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'agents.knowledge_tracker' has no attribute 'ExtractedKnowledge'
+___________________ test_evidence_rejects_ungrounded_value ____________________
+backend\tests\test_pm_discovery_regressions.py:54: in test_evidence_rejects_ungrounded_value
+    assert not valid
+E   assert not True
+________ test_coherent_topic_is_not_completed_while_schema_gaps_remain ________
+backend\tests\test_pm_discovery_regressions.py:113: in test_coherent_topic_is_not_completed_while_schema_gaps_remain
+    assert result["current_gap"] == "permissions::guests"
+E   AssertionError: assert 'secondary_users' == 'permissions::guests'
+E     
+E     - permissions::guests
+E     + secondary_users
+---------------------------- Captured stdout call -----------------------------
+
+=== INTERVIEW PLANNER ===
+Scope: USER_APP
+Current topic: DiscoveryTopic.USER_ROLES
+Known: {'primary_users', 'responsibilities'}
+Missing: ['secondary_users', 'permissions::hosts', 'permissions::guests', 'multiple_roles', 'role_transitions']
+Current gap: secondary_users
+_________ test_permission_remains_a_gap_after_abstract_responsibility _________
+backend\tests\test_pm_discovery_regressions.py:180: in test_permission_remains_a_gap_after_abstract_responsibility
+    assert build_gap_info(state, DiscoveryTopic.USER_ROLES)["current_gap"] == "permissions::buyer"
+E   AssertionError: assert 'secondary_users' == 'permissions::buyer'
+E     
+E     - permissions::buyer
+E     + secondary_users
+_____ test_compound_secondary_role_does_not_become_a_combined_planner_gap _____
+backend\tests\test_pm_discovery_regressions.py:212: in test_compound_secondary_role_does_not_become_a_combined_planner_gap
+    KnowledgeItem(topic=DiscoveryTopic.USER_ROLES, scope=DiscoveryScope.USER_APP,
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for KnowledgeItem
+E     Value error, 'administrators and support staff' does not look like a valid role name [type=value_error, input_value={'topic': <DiscoveryTopic...ff'], 'confidence': 1.0}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+____ test_misclassified_known_role_answer_is_repaired_to_atomic_active_gap ____
+backend\tests\test_pm_discovery_regressions.py:240: in test_misclassified_known_role_answer_is_repaired_to_atomic_active_gap
+    assert item.key == "responsibilities"
+E   AssertionError: assert 'secondary_users' == 'responsibilities'
+E     
+E     - responsibilities
+E     + secondary_users
+____________ test_direct_role_scoped_goal_is_bound_to_active_role _____________
+backend\tests\test_pm_discovery_regressions.py:289: in test_direct_role_scoped_goal_is_bound_to_active_role
+    assert valid, reason
+E   AssertionError: Fact requires a functional role owner
+E   assert False
+=========================== short test summary info ===========================
+FAILED ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_extraction_passes.py::test_careconnect
+FAILED ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_extraction_passes.py::test_partial_failure_and_bad_sibling
+FAILED ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_extraction_passes.py::test_goals_use_current_actor_classification[I want to build CareConnect, a platform that helps patients find and book appointments with healthcare professionals such as general doctors, dermatologists, dentists, physiotherapists, and nutritionists. Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform. Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.-actors0-patient-find and book appointments with healthcare professionals-patients find and book appointments with healthcare professionals]
+FAILED ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_extraction_passes.py::test_goals_use_current_actor_classification[I want to build FixMate, a platform that helps people find and book trusted local artisans like electricians, plumbers, cleaners, painters, and appliance repair technicians. Users should be able to describe what they need, find suitable service providers nearby, compare them, book a service, communicate with the provider, and pay through the platform.-actors1-customer-find and book trusted local artisans-people find and book trusted local artisans]
+FAILED ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_extraction_passes.py::test_success_criterion_validation_checks_support_not_meaning
+FAILED ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_extraction_repair.py::test_live_failure_repaired_by_model_before_storage
+FAILED ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_extraction_repair.py::test_second_invalid_batch_stops_without_salvaging_unsupported_sibling
+FAILED ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_extraction_repair.py::test_valid_output_does_not_retry
+FAILED ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_extraction_repair.py::test_provider_failure_does_not_retry
+FAILED ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_extraction_repair.py::test_repaired_output_still_requires_exact_evidence
+FAILED ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_extraction_repair.py::test_roles_is_required_in_provider_schema
+FAILED ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_pm_discovery_regressions.py::test_evidence_rejects_ungrounded_value
+FAILED ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_pm_discovery_regressions.py::test_coherent_topic_is_not_completed_while_schema_gaps_remain
+FAILED ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_pm_discovery_regressions.py::test_permission_remains_a_gap_after_abstract_responsibility
+FAILED ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_pm_discovery_regressions.py::test_compound_secondary_role_does_not_become_a_combined_planner_gap
+FAILED ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_pm_discovery_regressions.py::test_misclassified_known_role_answer_is_repaired_to_atomic_active_gap
+FAILED ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_pm_discovery_regressions.py::test_direct_role_scoped_goal_is_bound_to_active_role
+ERROR ..\..\..\AppData\Local\Temp\architect-schema-baseline-20260921\tests\test_extraction_semantics.py
+17 failed, 55 passed, 1 error in 1.49s

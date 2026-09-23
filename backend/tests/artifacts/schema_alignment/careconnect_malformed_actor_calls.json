@@ -1,0 +1,74 @@
+[
+  {
+    "name": "ACTOR",
+    "parsed": {
+      "items": [
+        {
+          "key": "primary_users",
+          "value": "patients",
+          "evidence": "Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "roles": [
+            "primary_users"
+          ],
+          "aliases": []
+        },
+        {
+          "key": "primary_users",
+          "value": "healthcare_provider",
+          "evidence": "Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "roles": [
+            "primary_users"
+          ],
+          "aliases": []
+        },
+        {
+          "key": "multiple_roles",
+          "value": "none",
+          "evidence": "Each account has only one role.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "roles": [],
+          "aliases": []
+        },
+        {
+          "key": "role_transitions",
+          "value": "none",
+          "evidence": "Each account has only one role.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "roles": [],
+          "aliases": []
+        }
+      ]
+    },
+    "input_chars": 8954
+  },
+  {
+    "name": "RESPONSIBILITY",
+    "parsed": {
+      "items": [
+        {
+          "key": "responsibilities",
+          "value": "describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform",
+          "evidence": "Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "role": "primary_users"
+        },
+        {
+          "key": "responsibilities",
+          "value": "manage their profiles, specialties, schedules, appointments, and payments",
+          "evidence": "Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "role": "primary_users"
+        }
+      ]
+    },
+    "input_chars": 7295
+  }
+]

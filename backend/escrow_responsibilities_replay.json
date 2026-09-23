@@ -1,0 +1,431 @@
+{
+  "conversation": {
+    "messages": [
+      {
+        "content": "I want to create an escrow app",
+        "additional_kwargs": {},
+        "response_metadata": {},
+        "type": "human",
+        "name": null,
+        "id": null
+      },
+      {
+        "content": "Who are the primary users of the escrow app?",
+        "additional_kwargs": {},
+        "response_metadata": {},
+        "type": "ai",
+        "name": null,
+        "id": null,
+        "tool_calls": [],
+        "invalid_tool_calls": [],
+        "usage_metadata": null
+      },
+      {
+        "content": "the primary users are customers who can either be a buyer or seller based on a particular transaction",
+        "additional_kwargs": {},
+        "response_metadata": {},
+        "type": "human",
+        "name": null,
+        "id": null
+      },
+      {
+        "content": "Besides customers, will anyone else use the user app?",
+        "additional_kwargs": {},
+        "response_metadata": {},
+        "type": "ai",
+        "name": null,
+        "id": null,
+        "tool_calls": [],
+        "invalid_tool_calls": [],
+        "usage_metadata": null
+      },
+      {
+        "content": "there are no ther users beside customers",
+        "additional_kwargs": {},
+        "response_metadata": {},
+        "type": "human",
+        "name": null,
+        "id": null
+      },
+      {
+        "content": "Can you describe the significant actions or capabilities that a customer, whether they are a buyer or a seller, performs or manages within the app during a transaction?",
+        "additional_kwargs": {},
+        "response_metadata": {},
+        "type": "ai",
+        "name": null,
+        "id": null,
+        "tool_calls": [],
+        "invalid_tool_calls": [],
+        "usage_metadata": null
+      },
+      {
+        "content": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released. The buyer can also raise a dispute if the seller does not fulfill the agreed terms.\nThe seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds. The seller can also raise or respond to a dispute if there is a problem with the transaction.",
+        "additional_kwargs": {},
+        "response_metadata": {},
+        "type": "human",
+        "name": null,
+        "id": null
+      }
+    ],
+    "current_topic": "USER_ROLES",
+    "current_gap": "responsibilities::customer",
+    "discovery_scope": "USER_APP",
+    "discovered_knowledge": [
+      {
+        "topic": "USER_ROLES",
+        "scope": "USER_APP",
+        "key": "primary_users",
+        "value": "customers",
+        "evidence": "the primary users are customers who can either be a buyer or seller based on a particular transaction",
+        "roles": [
+          "customer"
+        ],
+        "aliases": null,
+        "role": null,
+        "confidence": 1.0,
+        "knowledge_state": "CONFIRMED",
+        "source_turn": 1,
+        "absence": null
+      },
+      {
+        "topic": "USER_ROLES",
+        "scope": "USER_APP",
+        "key": "secondary_users",
+        "value": "none",
+        "evidence": "there are no ther users beside customers",
+        "roles": null,
+        "aliases": null,
+        "role": null,
+        "confidence": 1.0,
+        "knowledge_state": "CONFIRMED",
+        "source_turn": 2,
+        "absence": "none"
+      }
+    ],
+    "topic_status": {
+      "USER_ROLES": "PARTIAL"
+    },
+    "topic_maturity": {},
+    "turn_count": 3,
+    "awaiting_confirmation": false,
+    "pm_is_complete": false,
+    "conversation_intent": "product_information",
+    "is_correction": false,
+    "question_retry_count": 0
+  },
+  "calls": [
+    {
+      "name": "ACTOR",
+      "seconds": 115.25,
+      "messages": [
+        {
+          "content": "Extract ACTOR facts from the latest user response using JSON with an items array.\nEach item must match ActorFact: {\"$defs\": {\"KnowledgeState\": {\"description\": \"How strongly a discovered fact has been established with the user.\", \"enum\": [\"INFERRED\", \"CONFIRMED\"], \"title\": \"KnowledgeState\", \"type\": \"string\"}}, \"additionalProperties\": false, \"properties\": {\"key\": {\"enum\": [\"primary_users\", \"secondary_users\", \"multiple_roles\", \"role_transitions\"], \"title\": \"Key\", \"type\": \"string\"}, \"value\": {\"minLength\": 1, \"title\": \"Value\", \"type\": \"string\"}, \"evidence\": {\"minLength\": 1, \"title\": \"Evidence\", \"type\": \"string\"}, \"confidence\": {\"maximum\": 1, \"minimum\": 0, \"title\": \"Confidence\", \"type\": \"number\"}, \"knowledge_state\": {\"$ref\": \"#/$defs/KnowledgeState\", \"default\": \"CONFIRMED\"}, \"absence\": {\"anyOf\": [{\"enum\": [\"none\", \"not_applicable\"], \"type\": \"string\"}, {\"type\": \"null\"}], \"default\": null, \"title\": \"Absence\"}, \"roles\": {\"items\": {\"type\": \"string\"}, \"maxItems\": 1, \"title\": \"Roles\", \"type\": \"array\"}, \"aliases\": {\"items\": {\"type\": \"string\"}, \"title\": \"Aliases\", \"type\": \"array\"}}, \"required\": [\"key\", \"value\", \"evidence\", \"confidence\"], \"title\": \"ActorFact\", \"type\": \"object\"}\nCurrent scope: USER_APP. Extract only facts about this scope; do not import\nfacts explicitly assigned to another app/dashboard into this scope.\nCurrent topic: USER_ROLES\nCurrent gap: responsibilities::customer (interview focus only; never determines semantic provenance)\nLast question (context for short answers/pronouns only, never evidence): Can you describe the significant actions or capabilities that a customer, whether they are a buyer or a seller, performs or manages within the app during a transaction?\nCONFIRMED means explicitly stated by the user. INFERRED means genuinely deduced.\nEVIDENCE MUST BE copied directly from the latest user response as one exact contiguous, case-sensitive substring sufficient to support the entire fact.\nThe candidate's OWN quote must support its value and category. A fact stated in\nanother sentence cannot rescue a wrong quote. Select the sentence that actually\ncontains this actor's action/outcome; use a longer contiguous quote for pronouns.\nDo not reconstruct, summarize, remove words from the middle, append punctuation that changes the substring, or quote prompt examples.\nIf a short exact quote is unavailable, copy the entire supporting sentence.\nPrompt examples and actor context are not new facts. Actor-only answers contain\nno workflow or goal. Never infer actions from instructions or earlier turns.\nReturn an empty array when the latest response does not support this category.\nConfirmed primary roles: customer\nConfirmed secondary roles: none\nCanonical actor IDs: [\"customer\"]\nActor declarations introduce IDs in roles (for example patient); their key is the\nclassification (for example primary_users), never an actor ID. They need no role owner.\nOnly actor-owned facts use role, matching a listed canonical ID exactly.\nIdentify functional product actors only.\nPrimary actors directly participate in the core value or workflow, including both demand and supply sides.\nThe service provider is a primary actor when providing the service is part of the product's core value exchange. Secondary does NOT mean supply side.\nSecondary actors mainly administer, moderate, support, supervise or audit, BUT emit a secondary actor only when the response explicitly describes one.\nNever infer an admin just because providers manage their own profiles or schedules.\nProfessions such as electricians or dermatologists are categories of a provider actor, not separate product roles.\nKeep named functions: patients -> patient; healthcare providers -> healthcare_provider.\nNormalize vague people who book artisans to customer.\nFor a patient booking healthcare professionals, output primary patient and healthcare_provider, with no secondary actors.\nFor the pattern \"patients find and book appointments with healthcare professionals\", return TWO primary_users items: roles=[\"patient\"] and roles=[\"healthcare_provider\"]. Do not classify healthcare_provider as secondary_users because it manages its profile or schedule.\nFor people booking artisans, output primary customer and artisan, with no secondary actors.\nNever use demand_side, supply_side, user, users, people or person as canonical role IDs.\n\"Platform\" does not imply an administrator. Use exactly one canonical role per item in roles.\nDo not extract responsibilities here. Also extract multiple_roles and role_transitions\nwhen explicitly stated, with roles=[] and aliases=[]. These are policies, not new actors.\nExamples: \"Users can have both roles\" -> multiple_roles with the stated positive policy;\n\"Each account has only one role\" -> multiple_roles with that negative policy;\n\"A provider can also be a patient\" -> multiple_roles;\n\"Patients become providers after verification\" -> role_transitions preserving verification;\n\"Roles never change\" -> role_transitions with that negative policy.\nDo not infer either policy merely from a list of actors. A denial is a confirmed\npolicy, not missing information. Explicit absence of ALL primary/secondary actors\nmay use absence=\"none\", value=\"none\", roles=[], aliases=[]; never use this for a\nspecific denied actor (\"no admins\") or an uncertain/future actor.\nIf the response says only what separate actors do, emit NO multiple_roles or\nrole_transitions item. Separate actors do not imply separate accounts. Omit\nunmentioned policies entirely: never output none/not_applicable for silence.\nEvidence must be copied verbatim as one exact contiguous, case-sensitive substring of the latest user response.\nNever shorten a sentence by deleting words from its middle or end and adding punctuation that was not there.\nIf a concise quote is unavailable, copy the full supporting sentence exactly as written.\nFIELD DEFINITIONS:\nUSER_ROLES.primary_users: Functional actors directly participating in the core product value exchange, including both service recipients and providers. Do not invent roles or split professions into separate actors.\nUSER_ROLES.secondary_users: Additional actors who interact with the scoped product outside its primary value exchange, such as explicitly named support or oversight roles. Explicit absence of ALL additional actors is valid; denying one actor is not total absence.\nUSER_ROLES.multiple_roles: Whether ONE person/account can hold multiple roles, simultaneously or in different interactions. 'A provider can also be a patient' and 'users can have both roles' establish this. 'Each account has only one role' establishes the negative. Merely listing several actors does not.\nUSER_ROLES.role_transitions: Whether and under what conditions a user changes or switches roles over time. 'Patients become providers after verification' establishes a conditional transition; 'roles never change' or 'users cannot switch roles' establishes no transitions. Holding two roles does not by itself imply switching.\nEvaluate each supported semantic view independently. Evidence is\nreusable across topics and keys; never discard a fact merely because another pass\nused its quote. Never emit a fact merely because another category is supported.\nEvery candidate must independently satisfy its own category using its own quote.\nExplicit role actions may be BOTH responsibilities and workflow\nsteps when they form a journey. Desired outcomes still need explicit outcome\nmeaning; authorization still needs an explicit boundary. Likewise, validation\nwith a stated rejection can support both validation_rules and invalid_actions.\nA concurrency failure with stated recovery may support simultaneous_actions and\nrecovery. Do not force arbitrary single-topic routing; do not manufacture another\nmeaning just to fill a gap. Preserve actor, scope, conditions, and negation.\nExplicit whole-field absence/inapplicability is knowledge, not missing data.\nSilence and descriptions of separate actors establish no whole-field absence.\nSpecific exclusions/prohibitions are substantive facts, not whole-field absence.\n\nExplicit whole-field absence may use absence=\"none\", value=\"none\" (or\nabsence=\"not_applicable\", value=\"not applicable\"). Never infer absence from silence.\nAn explicit prohibition or excluded feature is substantive knowledge, not absence\nof rules or exclusions. Preserve it in value with its original meaning.\n\nFinal check: Apply each field definition independently. Reuse evidence where supported; never fill a field merely because it exists.\n",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "system",
+          "name": null,
+          "id": null
+        },
+        {
+          "content": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released. The buyer can also raise a dispute if the seller does not fulfill the agreed terms.\nThe seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds. The seller can also raise or respond to a dispute if there is a problem with the transaction.",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "human",
+          "name": null,
+          "id": null
+        }
+      ],
+      "result": {
+        "raw": {
+          "content": "{\n  \"items\": [\n    {\n      \"key\": \"primary_users\",\n      \"value\": \"buyer\",\n      \"evidence\": \"The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.\",\n      \"confidence\": 1,\n      \"knowledge_state\": \"CONFIRMED\",\n      \"roles\": [\"customer\"],\n      \"aliases\": []\n    },\n    {\n      \"key\": \"primary_users\",\n      \"value\": \"seller\",\n      \"evidence\": \"The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.\",\n      \"confidence\": 1,\n      \"knowledge_state\": \"CONFIRMED\",\n      \"roles\": [\"customer\"],\n      \"aliases\": []\n    }\n  ]\n}",
+          "additional_kwargs": {},
+          "response_metadata": {
+            "model": "qwen2.5:7b",
+            "created_at": "2026-09-22T19:23:30.16412Z",
+            "done": true,
+            "done_reason": "stop",
+            "total_duration": 115153723800,
+            "load_duration": 2712900,
+            "prompt_eval_count": 1838,
+            "prompt_eval_duration": 30373671000,
+            "eval_count": 203,
+            "eval_duration": 57425010000,
+            "logprobs": null,
+            "model_name": "qwen2.5:7b",
+            "model_provider": "ollama"
+          },
+          "type": "ai",
+          "name": null,
+          "id": "lc_run--01a0ca90-fe20-7630-b8e0-1ddde387cbe7-0",
+          "tool_calls": [],
+          "invalid_tool_calls": [],
+          "usage_metadata": {
+            "input_tokens": 1838,
+            "output_tokens": 203,
+            "total_tokens": 2041
+          }
+        },
+        "parsed": {
+          "items": [
+            {
+              "key": "primary_users",
+              "value": "buyer",
+              "evidence": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.",
+              "confidence": 1,
+              "knowledge_state": "CONFIRMED",
+              "roles": [
+                "customer"
+              ],
+              "aliases": []
+            },
+            {
+              "key": "primary_users",
+              "value": "seller",
+              "evidence": "The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.",
+              "confidence": 1,
+              "knowledge_state": "CONFIRMED",
+              "roles": [
+                "customer"
+              ],
+              "aliases": []
+            }
+          ]
+        },
+        "parsing_error": null
+      }
+    },
+    {
+      "name": "RESPONSIBILITY",
+      "seconds": 115.81,
+      "messages": [
+        {
+          "content": "Extract RESPONSIBILITY facts from the latest user response using JSON with an items array.\nEach item must match ResponsibilityFact: {\"$defs\": {\"KnowledgeState\": {\"description\": \"How strongly a discovered fact has been established with the user.\", \"enum\": [\"INFERRED\", \"CONFIRMED\"], \"title\": \"KnowledgeState\", \"type\": \"string\"}}, \"additionalProperties\": false, \"properties\": {\"key\": {\"const\": \"responsibilities\", \"title\": \"Key\", \"type\": \"string\"}, \"value\": {\"description\": \"The significant actions, activities, duties, capabilities, or processes that a role performs or manages within the product. Explicit ordinary product actions and 'can'/'should be able to' capabilities qualify. Preserve the exact actor owner. Actor names alone establish no actions.\", \"minLength\": 1, \"title\": \"Value\", \"type\": \"string\"}, \"evidence\": {\"minLength\": 1, \"title\": \"Evidence\", \"type\": \"string\"}, \"confidence\": {\"maximum\": 1, \"minimum\": 0, \"title\": \"Confidence\", \"type\": \"number\"}, \"knowledge_state\": {\"$ref\": \"#/$defs/KnowledgeState\", \"default\": \"CONFIRMED\"}, \"absence\": {\"anyOf\": [{\"enum\": [\"none\", \"not_applicable\"], \"type\": \"string\"}, {\"type\": \"null\"}], \"default\": null, \"title\": \"Absence\"}, \"role\": {\"minLength\": 1, \"title\": \"Role\", \"type\": \"string\"}}, \"required\": [\"key\", \"value\", \"evidence\", \"confidence\", \"role\"], \"title\": \"ResponsibilityFact\", \"type\": \"object\"}\nCurrent scope: USER_APP. Extract only facts about this scope; do not import\nfacts explicitly assigned to another app/dashboard into this scope.\nCurrent topic: USER_ROLES\nCurrent gap: responsibilities::customer (interview focus only; never determines semantic provenance)\nLast question (context for short answers/pronouns only, never evidence): Can you describe the significant actions or capabilities that a customer, whether they are a buyer or a seller, performs or manages within the app during a transaction?\nCONFIRMED means explicitly stated by the user. INFERRED means genuinely deduced.\nEVIDENCE MUST BE copied directly from the latest user response as one exact contiguous, case-sensitive substring sufficient to support the entire fact.\nThe candidate's OWN quote must support its value and category. A fact stated in\nanother sentence cannot rescue a wrong quote. Select the sentence that actually\ncontains this actor's action/outcome; use a longer contiguous quote for pronouns.\nDo not reconstruct, summarize, remove words from the middle, append punctuation that changes the substring, or quote prompt examples.\nIf a short exact quote is unavailable, copy the entire supporting sentence.\nPrompt examples and actor context are not new facts. Actor-only answers contain\nno workflow or goal. Never infer actions from instructions or earlier turns.\nReturn an empty array when the latest response does not support this category.\nConfirmed primary roles: customer, customer, customer\nConfirmed secondary roles: none\nCanonical actor IDs: [\"customer\", \"customer\", \"customer\"]\nActor declarations introduce IDs in roles (for example patient); their key is the\nclassification (for example primary_users), never an actor ID. They need no role owner.\nOnly actor-owned facts use role, matching a listed canonical ID exactly.\n\nExtract the significant actions, activities, duties, capabilities, or processes\nthat EACH known role explicitly performs or manages within the product.\nAsk: \"What does this role do in the product?\"\nIn this single pass, review every known actor and every relevant clause; emit\none or more owned items for every actor with explicit role-action evidence.\nDo not require the user to call an action a duty or responsibility.\n\"Can\", \"should be able to\", and \"will be able to\" establish supported product\ncapabilities when assigned to a role. Searching, comparing, booking, messaging,\nsubmitting information, receiving notifications, and paying all qualify.\nManaging owned resources and operational processes also qualifies.\nThe same exact quote may ALSO support workflow_steps if it describes a journey;\nthat is a valid different view, not a reason to omit the responsibility.\nDo not turn prohibited actions into things the actor performs. Preserve conditions.\nDo not infer actions from actor identity, domain conventions, or other actors.\nThe founder's intention to build the product is not an actor responsibility.\nEvery item uses key=\"responsibilities\", exactly one known canonical actor in role,\nand exact contiguous evidence from the latest response. Do not invent owners.\nReturn {\"items\": []} only if no role actions are explicitly supported.\nExamples:\n- \"Buyers can browse items and pay.\" -> buyer responsibilities: browse items and pay.\n- \"Sellers can upload shipment evidence, but cannot release escrow funds.\" ->\n  seller responsibilities: upload shipment evidence. The prohibition belongs to permissions.\n- \"Providers should be able to manage profiles and schedules.\" -> provider responsibilities.\n- \"The only actors are buyers and sellers.\" -> no responsibility facts.\n\nFIELD DEFINITIONS:\nUSER_ROLES.responsibilities: The significant actions, activities, duties, capabilities, or processes that a role performs or manages within the product. Explicit ordinary product actions and 'can'/'should be able to' capabilities qualify. Preserve the exact actor owner. Actor names alone establish no actions.\nEvaluate each supported semantic view independently. Evidence is\nreusable across topics and keys; never discard a fact merely because another pass\nused its quote. Never emit a fact merely because another category is supported.\nEvery candidate must independently satisfy its own category using its own quote.\nExplicit role actions may be BOTH responsibilities and workflow\nsteps when they form a journey. Desired outcomes still need explicit outcome\nmeaning; authorization still needs an explicit boundary. Likewise, validation\nwith a stated rejection can support both validation_rules and invalid_actions.\nA concurrency failure with stated recovery may support simultaneous_actions and\nrecovery. Do not force arbitrary single-topic routing; do not manufacture another\nmeaning just to fill a gap. Preserve actor, scope, conditions, and negation.\nExplicit whole-field absence/inapplicability is knowledge, not missing data.\nSilence and descriptions of separate actors establish no whole-field absence.\nSpecific exclusions/prohibitions are substantive facts, not whole-field absence.\n\nExplicit whole-field absence may use absence=\"none\", value=\"none\" (or\nabsence=\"not_applicable\", value=\"not applicable\"). Never infer absence from silence.\nAn explicit prohibition or excluded feature is substantive knowledge, not absence\nof rules or exclusions. Preserve it in value with its original meaning.\n\nFinal check: Apply each field definition independently. Reuse evidence where supported; never fill a field merely because it exists.\n",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "system",
+          "name": null,
+          "id": null
+        },
+        {
+          "content": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released. The buyer can also raise a dispute if the seller does not fulfill the agreed terms.\nThe seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds. The seller can also raise or respond to a dispute if there is a problem with the transaction.",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "human",
+          "name": null,
+          "id": null
+        }
+      ],
+      "result": {
+        "raw": {
+          "content": "{\n  \"items\": [\n    {\n      \"key\": \"responsibilities\",\n      \"value\": \"creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released\",\n      \"evidence\": \"The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.\",\n      \"confidence\": 1,\n      \"knowledge_state\": \"CONFIRMED\",\n      \"absence\": null,\n      \"role\": \"customer\"\n    },\n    {\n      \"key\": \"responsibilities\",\n      \"value\": \"creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds\",\n      \"evidence\": \"The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.\",\n      \"confidence\": 1,\n      \"knowledge_state\": \"CONFIRMED\",\n      \"absence\": null,\n      \"role\": \"customer\"\n    }\n  ]\n}",
+          "additional_kwargs": {},
+          "response_metadata": {
+            "model": "qwen2.5:7b",
+            "created_at": "2026-09-22T19:25:26.0852449Z",
+            "done": true,
+            "done_reason": "stop",
+            "total_duration": 115800905200,
+            "load_duration": 29432200,
+            "prompt_eval_count": 1523,
+            "prompt_eval_duration": 18830309000,
+            "eval_count": 278,
+            "eval_duration": 58572945000,
+            "logprobs": null,
+            "model_name": "qwen2.5:7b",
+            "model_provider": "ollama"
+          },
+          "type": "ai",
+          "name": null,
+          "id": "lc_run--01a0ca92-c06a-7b31-be1d-0be13381811c-0",
+          "tool_calls": [],
+          "invalid_tool_calls": [],
+          "usage_metadata": {
+            "input_tokens": 1523,
+            "output_tokens": 278,
+            "total_tokens": 1801
+          }
+        },
+        "parsed": {
+          "items": [
+            {
+              "key": "responsibilities",
+              "value": "creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released",
+              "evidence": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.",
+              "confidence": 1,
+              "knowledge_state": "CONFIRMED",
+              "absence": null,
+              "role": "customer"
+            },
+            {
+              "key": "responsibilities",
+              "value": "creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds",
+              "evidence": "The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.",
+              "confidence": 1,
+              "knowledge_state": "CONFIRMED",
+              "absence": null,
+              "role": "customer"
+            }
+          ]
+        },
+        "parsing_error": null
+      }
+    },
+    {
+      "name": "PERMISSION",
+      "seconds": 263.3,
+      "messages": [
+        {
+          "content": "Extract PERMISSION facts from the latest user response using JSON with an items array.\nEach item must match PermissionFact: {\"$defs\": {\"KnowledgeState\": {\"description\": \"How strongly a discovered fact has been established with the user.\", \"enum\": [\"INFERRED\", \"CONFIRMED\"], \"title\": \"KnowledgeState\", \"type\": \"string\"}}, \"additionalProperties\": false, \"properties\": {\"key\": {\"const\": \"permissions\", \"title\": \"Key\", \"type\": \"string\"}, \"value\": {\"minLength\": 1, \"title\": \"Value\", \"type\": \"string\"}, \"evidence\": {\"minLength\": 1, \"title\": \"Evidence\", \"type\": \"string\"}, \"confidence\": {\"maximum\": 1, \"minimum\": 0, \"title\": \"Confidence\", \"type\": \"number\"}, \"knowledge_state\": {\"$ref\": \"#/$defs/KnowledgeState\", \"default\": \"CONFIRMED\"}, \"absence\": {\"anyOf\": [{\"enum\": [\"none\", \"not_applicable\"], \"type\": \"string\"}, {\"type\": \"null\"}], \"default\": null, \"title\": \"Absence\"}, \"role\": {\"minLength\": 1, \"title\": \"Role\", \"type\": \"string\"}}, \"required\": [\"key\", \"value\", \"evidence\", \"confidence\", \"role\"], \"title\": \"PermissionFact\", \"type\": \"object\"}\nCurrent scope: USER_APP. Extract only facts about this scope; do not import\nfacts explicitly assigned to another app/dashboard into this scope.\nCurrent topic: USER_ROLES\nCurrent gap: responsibilities::customer (interview focus only; never determines semantic provenance)\nLast question (context for short answers/pronouns only, never evidence): Can you describe the significant actions or capabilities that a customer, whether they are a buyer or a seller, performs or manages within the app during a transaction?\nCONFIRMED means explicitly stated by the user. INFERRED means genuinely deduced.\nEVIDENCE MUST BE copied directly from the latest user response as one exact contiguous, case-sensitive substring sufficient to support the entire fact.\nThe candidate's OWN quote must support its value and category. A fact stated in\nanother sentence cannot rescue a wrong quote. Select the sentence that actually\ncontains this actor's action/outcome; use a longer contiguous quote for pronouns.\nDo not reconstruct, summarize, remove words from the middle, append punctuation that changes the substring, or quote prompt examples.\nIf a short exact quote is unavailable, copy the entire supporting sentence.\nPrompt examples and actor context are not new facts. Actor-only answers contain\nno workflow or goal. Never infer actions from instructions or earlier turns.\nReturn an empty array when the latest response does not support this category.\nConfirmed primary roles: customer, customer, customer\nConfirmed secondary roles: none\nCanonical actor IDs: [\"customer\", \"customer\", \"customer\"]\nActor declarations introduce IDs in roles (for example patient); their key is the\nclassification (for example primary_users), never an actor ID. They need no role owner.\nOnly actor-owned facts use role, matching a listed canonical ID exactly.\n\nExtract only explicit actor PERMISSIONS from the latest response.\n\nA permission is an explicit authorization, prohibition, restriction,\nexclusivity rule, access-control boundary, or role-specific authority.\n\nAsk:\n\n\"Does this statement establish what this actor is specifically allowed,\nforbidden, restricted, uniquely authorized, or limited to doing or accessing?\"\n\nA normal product capability is NOT a permission.\nEvery permission item must use a known canonical actor ID in role.\n\nStatements that only identify which actors exist, or say there are no other\nactors, are actor facts. They do not grant those actors permission to exist,\njoin, or use the product. For example, \"No, just patients and providers for\nnow\" contains no permission; return {\"items\": []}.\n\nThe fact that an actor can perform an action through the product does not\nby itself establish permission semantics.\n\nThe phrases:\n- \"can\"\n- \"should be able to\"\n- \"will be able to\"\n\ndo NOT by themselves mean permission.\n\nIf the response merely describes ordinary product usage \u2014 such as searching,\ncomparing, booking, communicating, submitting information, receiving\nnotifications, or paying \u2014 return no permission item.\n\nOnly extract a permission when the response explicitly communicates an\nauthorization boundary, restriction, prohibition, exclusivity condition,\naccess limitation, or role-specific authority.\n\nBe conservative.\n\nIf no explicit permission semantics are present, return:\n\n{\"items\": []}\n\nDo not convert workflow/capability statements into permissions.\n\nEvery returned item must:\n- use key=\"permissions\"\n- identify exactly one functional actor in `role`\n- have a non-empty value\n- be explicitly supported by the latest response\n- use exact contiguous evidence copied from the latest response\n\nNever reconstruct or paraphrase evidence.\nNever infer authorization merely because the product supports an action.\nNever use instruction text as evidence.\n\nFIELD DEFINITIONS:\nUSER_ROLES.permissions: Explicit authorization, prohibition, access restriction, exclusivity, or conditional authority for one role. A capability alone is not authorization. Preserve what is allowed/forbidden and its conditions; no special permissions is a valid explicit absence.\nEvaluate each supported semantic view independently. Evidence is\nreusable across topics and keys; never discard a fact merely because another pass\nused its quote. Never emit a fact merely because another category is supported.\nEvery candidate must independently satisfy its own category using its own quote.\nExplicit role actions may be BOTH responsibilities and workflow\nsteps when they form a journey. Desired outcomes still need explicit outcome\nmeaning; authorization still needs an explicit boundary. Likewise, validation\nwith a stated rejection can support both validation_rules and invalid_actions.\nA concurrency failure with stated recovery may support simultaneous_actions and\nrecovery. Do not force arbitrary single-topic routing; do not manufacture another\nmeaning just to fill a gap. Preserve actor, scope, conditions, and negation.\nExplicit whole-field absence/inapplicability is knowledge, not missing data.\nSilence and descriptions of separate actors establish no whole-field absence.\nSpecific exclusions/prohibitions are substantive facts, not whole-field absence.\n\nExplicit whole-field absence may use absence=\"none\", value=\"none\" (or\nabsence=\"not_applicable\", value=\"not applicable\"). Never infer absence from silence.\nAn explicit prohibition or excluded feature is substantive knowledge, not absence\nof rules or exclusions. Preserve it in value with its original meaning.\n\nFinal check: Apply each field definition independently. Reuse evidence where supported; never fill a field merely because it exists.\n",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "system",
+          "name": null,
+          "id": null
+        },
+        {
+          "content": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released. The buyer can also raise a dispute if the seller does not fulfill the agreed terms.\nThe seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds. The seller can also raise or respond to a dispute if there is a problem with the transaction.",
+          "additional_kwargs": {},
+          "response_metadata": {},
+          "type": "human",
+          "name": null,
+          "id": null
+        }
+      ],
+      "result": {
+        "raw": {
+          "content": "{\"items\": [{\"key\": \"permissions\", \"value\": \"create or join the transaction\", \"evidence\": \"The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.\", \"confidence\": 1, \"role\": \"customer\", \"knowledge_state\": \"CONFIRMED\", \"absence\": null}, {\"key\": \"permissions\", \"value\": \"agree to the terms\", \"evidence\": \"The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.\", \"confidence\": 1, \"role\": \"customer\", \"knowledge_state\": \"CONFIRMED\", \"absence\": null}, {\"key\": \"permissions\", \"value\": \"fund the escrow\", \"evidence\": \"The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.\", \"confidence\": 1, \"role\": \"customer\", \"knowledge_state\": \"CONFIRMED\", \"absence\": null}, {\"key\": \"permissions\", \"value\": \"review whether the seller has fulfilled the agreement\", \"evidence\": \"The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.\", \"confidence\": 1, \"role\": \"customer\", \"knowledge_state\": \"CONFIRMED\", \"absence\": null}, {\"key\": \"permissions\", \"value\": \"confirm completion\", \"evidence\": \"The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.\", \"confidence\": 1, \"role\": \"customer\", \"knowledge_state\": \"CONFIRMED\", \"absence\": null}, {\"key\": \"permissions\", \"value\": \"raise a dispute\", \"evidence\": \"The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released. The buyer can also raise a dispute if the seller does not fulfill the agreed terms.\", \"confidence\": 1, \"role\": \"customer\", \"knowledge_state\": \"CONFIRMED\", \"absence\": null}, {\"key\": \"permissions\", \"value\": \"create or join the transaction\", \"evidence\": \"The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.\", \"confidence\": 1, \"role\": \"customer\", \"knowledge_state\": \"CONFIRMED\", \"absence\": null}, {\"key\": \"permissions\", \"value\": \"agree to the terms\", \"evidence\": \"The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.\", \"confidence\": 1, \"role\": \"customer\", \"knowledge_state\": \"CONFIRMED\", \"absence\": null}, {\"key\": \"permissions\", \"value\": \"fulfill the agreed goods or services\", \"evidence\": \"The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.\", \"confidence\": 1, \"role\": \"customer\", \"knowledge_state\": \"CONFIRMED\", \"absence\": null}, {\"key\": \"permissions\", \"value\": \"provide any required proof of fulfillment\", \"evidence\": \"The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.\", \"confidence\": 1, \"role\": \"customer\", \"knowledge_state\": \"CONFIRMED\", \"absence\": null}, {\"key\": \"permissions\", \"value\": \"respond to a dispute\", \"evidence\": \"The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds. The seller can also raise or respond to a dispute if there is a problem with the transaction.\", \"confidence\": 1, \"role\": \"customer\", \"knowledge_state\": \"CONFIRMED\", \"absence\": null}]}",
+          "additional_kwargs": {},
+          "response_metadata": {
+            "model": "qwen2.5:7b",
+            "created_at": "2026-09-22T19:29:49.3897417Z",
+            "done": true,
+            "done_reason": "stop",
+            "total_duration": 263285243400,
+            "load_duration": 7390200,
+            "prompt_eval_count": 1482,
+            "prompt_eval_duration": 19078749000,
+            "eval_count": 1031,
+            "eval_duration": 225916652000,
+            "logprobs": null,
+            "model_name": "qwen2.5:7b",
+            "model_provider": "ollama"
+          },
+          "type": "ai",
+          "name": null,
+          "id": "lc_run--01a0ca94-84d6-7001-a311-b0368f470142-0",
+          "tool_calls": [],
+          "invalid_tool_calls": [],
+          "usage_metadata": {
+            "input_tokens": 1482,
+            "output_tokens": 1031,
+            "total_tokens": 2513
+          }
+        },
+        "parsed": {
+          "items": [
+            {
+              "key": "permissions",
+              "value": "create or join the transaction",
+              "evidence": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.",
+              "confidence": 1,
+              "role": "customer",
+              "knowledge_state": "CONFIRMED",
+              "absence": null
+            },
+            {
+              "key": "permissions",
+              "value": "agree to the terms",
+              "evidence": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.",
+              "confidence": 1,
+              "role": "customer",
+              "knowledge_state": "CONFIRMED",
+              "absence": null
+            },
+            {
+              "key": "permissions",
+              "value": "fund the escrow",
+              "evidence": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.",
+              "confidence": 1,
+              "role": "customer",
+              "knowledge_state": "CONFIRMED",
+              "absence": null
+            },
+            {
+              "key": "permissions",
+              "value": "review whether the seller has fulfilled the agreement",
+              "evidence": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.",
+              "confidence": 1,
+              "role": "customer",
+              "knowledge_state": "CONFIRMED",
+              "absence": null
+            },
+            {
+              "key": "permissions",
+              "value": "confirm completion",
+              "evidence": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released.",
+              "confidence": 1,
+              "role": "customer",
+              "knowledge_state": "CONFIRMED",
+              "absence": null
+            },
+            {
+              "key": "permissions",
+              "value": "raise a dispute",
+              "evidence": "The buyer is responsible for creating or joining the transaction, agreeing to the terms, funding the escrow, reviewing whether the seller has fulfilled the agreement, and confirming completion so the funds can be released. The buyer can also raise a dispute if the seller does not fulfill the agreed terms.",
+              "confidence": 1,
+              "role": "customer",
+              "knowledge_state": "CONFIRMED",
+              "absence": null
+            },
+            {
+              "key": "permissions",
+              "value": "create or join the transaction",
+              "evidence": "The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.",
+              "confidence": 1,
+              "role": "customer",
+              "knowledge_state": "CONFIRMED",
+              "absence": null
+            },
+            {
+              "key": "permissions",
+              "value": "agree to the terms",
+              "evidence": "The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.",
+              "confidence": 1,
+              "role": "customer",
+              "knowledge_state": "CONFIRMED",
+              "absence": null
+            },
+            {
+              "key": "permissions",
+              "value": "fulfill the agreed goods or services",
+              "evidence": "The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.",
+              "confidence": 1,
+              "role": "customer",
+              "knowledge_state": "CONFIRMED",
+              "absence": null
+            },
+            {
+              "key": "permissions",
+              "value": "provide any required proof of fulfillment",
+              "evidence": "The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds.",
+              "confidence": 1,
+              "role": "customer",
+              "knowledge_state": "CONFIRMED",
+              "absence": null
+            },
+            {
+              "key": "permissions",
+              "value": "respond to a dispute",
+              "evidence": "The seller is responsible for creating or joining the transaction, agreeing to the terms, fulfilling the agreed goods or services, providing any required proof of fulfillment, and waiting for the buyer's confirmation before receiving the escrowed funds. The seller can also raise or respond to a dispute if there is a problem with the transaction.",
+              "confidence": 1,
+              "role": "customer",
+              "knowledge_state": "CONFIRMED",
+              "absence": null
+            }
+          ]
+        },
+        "parsing_error": null
+      }
+    }
+  ]
+}

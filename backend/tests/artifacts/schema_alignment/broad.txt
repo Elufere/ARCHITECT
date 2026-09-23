@@ -1,0 +1,148 @@
+.................FFFFFF.................................F....F..F..FF..F [ 67%]
+...................................                                      [100%]
+=================================== ERRORS ====================================
+_____________________ ERROR collecting backend/test_pm.py _____________________
+ImportError while importing test module 'C:\Users\DELL\Desktop\AI-Project-Development\architect\backend\test_pm.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+..\..\..\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\importlib\__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\test_pm.py:6: in <module>
+    from agents.graph import build_graph
+backend\agents\graph.py:13: in <module>
+    from agents.pm_agent import pm_compile_node
+backend\agents\pm_agent.py:13: in <module>
+    from agents.kb_injection import load_static_rules
+backend\agents\kb_injection.py:10: in <module>
+    import chromadb
+E   ModuleNotFoundError: No module named 'chromadb'
+__________________ ERROR collecting backend/test_scrapper.py __________________
+ImportError while importing test module 'C:\Users\DELL\Desktop\AI-Project-Development\architect\backend\test_scrapper.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+..\..\..\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\importlib\__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\test_scrapper.py:15: in <module>
+    from scraper.clean import clean_content
+backend\scraper\clean.py:16: in <module>
+    from bs4 import BeautifulSoup, Tag
+E   ModuleNotFoundError: No module named 'bs4'
+_________ ERROR collecting backend/tests/test_extraction_semantics.py _________
+ImportError while importing test module 'C:\Users\DELL\Desktop\AI-Project-Development\architect\backend\tests\test_extraction_semantics.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+..\..\..\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\importlib\__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\tests\test_extraction_semantics.py:7: in <module>
+    from agents import knowledge_tracker as kt, prior_gap_recovery as recovery
+E   ImportError: cannot import name 'prior_gap_recovery' from 'agents' (C:\Users\DELL\Desktop\AI-Project-Development\architect\backend\agents\__init__.py)
+================================== FAILURES ===================================
+_____________ test_live_failure_repaired_by_model_before_storage ______________
+backend\tests\test_extraction_repair.py:55: in test_live_failure_repaired_by_model_before_storage
+    result, calls = replay(monkeypatch, [failed_batch(), corrected_batch()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\tests\test_extraction_repair.py:40: in replay
+    parser = PydanticOutputParser(pydantic_object=kt.ExtractedKnowledge)
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'agents.knowledge_tracker' has no attribute 'ExtractedKnowledge'
+____ test_second_invalid_batch_stops_without_salvaging_unsupported_sibling ____
+backend\tests\test_extraction_repair.py:72: in test_second_invalid_batch_stops_without_salvaging_unsupported_sibling
+    result, calls = replay(monkeypatch, [failed_batch(), failed_batch()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\tests\test_extraction_repair.py:40: in replay
+    parser = PydanticOutputParser(pydantic_object=kt.ExtractedKnowledge)
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'agents.knowledge_tracker' has no attribute 'ExtractedKnowledge'
+______________________ test_valid_output_does_not_retry _______________________
+backend\tests\test_extraction_repair.py:77: in test_valid_output_does_not_retry
+    result, calls = replay(monkeypatch, [corrected_batch()])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\tests\test_extraction_repair.py:40: in replay
+    parser = PydanticOutputParser(pydantic_object=kt.ExtractedKnowledge)
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'agents.knowledge_tracker' has no attribute 'ExtractedKnowledge'
+____________________ test_provider_failure_does_not_retry _____________________
+backend\tests\test_extraction_repair.py:82: in test_provider_failure_does_not_retry
+    result, calls = replay(monkeypatch, [TimeoutError('provider timed out')])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\tests\test_extraction_repair.py:40: in replay
+    parser = PydanticOutputParser(pydantic_object=kt.ExtractedKnowledge)
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'agents.knowledge_tracker' has no attribute 'ExtractedKnowledge'
+_____________ test_repaired_output_still_requires_exact_evidence ______________
+backend\tests\test_extraction_repair.py:89: in test_repaired_output_still_requires_exact_evidence
+    result, calls = replay(monkeypatch, [failed_batch(), repaired])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\tests\test_extraction_repair.py:40: in replay
+    parser = PydanticOutputParser(pydantic_object=kt.ExtractedKnowledge)
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'agents.knowledge_tracker' has no attribute 'ExtractedKnowledge'
+__________________ test_roles_is_required_in_provider_schema __________________
+backend\tests\test_extraction_repair.py:95: in test_roles_is_required_in_provider_schema
+    assert 'roles' in kt.ExtractedKnowledge.model_json_schema()['$defs']['ExtractedItem']['required']
+                      ^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'agents.knowledge_tracker' has no attribute 'ExtractedKnowledge'
+___________________ test_evidence_rejects_ungrounded_value ____________________
+backend\tests\test_pm_discovery_regressions.py:54: in test_evidence_rejects_ungrounded_value
+    assert not valid
+E   assert not True
+________ test_coherent_topic_is_not_completed_while_schema_gaps_remain ________
+backend\tests\test_pm_discovery_regressions.py:113: in test_coherent_topic_is_not_completed_while_schema_gaps_remain
+    assert result["current_gap"] == "permissions::guests"
+E   AssertionError: assert 'secondary_users' == 'permissions::guests'
+E     
+E     - permissions::guests
+E     + secondary_users
+---------------------------- Captured stdout call -----------------------------
+
+=== INTERVIEW PLANNER ===
+Scope: USER_APP
+Current topic: DiscoveryTopic.USER_ROLES
+Known: {'primary_users', 'responsibilities'}
+Missing: ['secondary_users', 'permissions::hosts', 'permissions::guests', 'multiple_roles', 'role_transitions']
+Current gap: secondary_users
+_________ test_permission_remains_a_gap_after_abstract_responsibility _________
+backend\tests\test_pm_discovery_regressions.py:180: in test_permission_remains_a_gap_after_abstract_responsibility
+    assert build_gap_info(state, DiscoveryTopic.USER_ROLES)["current_gap"] == "permissions::buyer"
+E   AssertionError: assert 'secondary_users' == 'permissions::buyer'
+E     
+E     - permissions::buyer
+E     + secondary_users
+_____ test_compound_secondary_role_does_not_become_a_combined_planner_gap _____
+backend\tests\test_pm_discovery_regressions.py:212: in test_compound_secondary_role_does_not_become_a_combined_planner_gap
+    KnowledgeItem(topic=DiscoveryTopic.USER_ROLES, scope=DiscoveryScope.USER_APP,
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for KnowledgeItem
+E     Value error, 'administrators and support staff' does not look like a valid role name [type=value_error, input_value={'topic': <DiscoveryTopic...ff'], 'confidence': 1.0}, input_type=dict]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+____ test_misclassified_known_role_answer_is_repaired_to_atomic_active_gap ____
+backend\tests\test_pm_discovery_regressions.py:240: in test_misclassified_known_role_answer_is_repaired_to_atomic_active_gap
+    assert item.key == "responsibilities"
+E   AssertionError: assert 'secondary_users' == 'responsibilities'
+E     
+E     - responsibilities
+E     + secondary_users
+____________ test_direct_role_scoped_goal_is_bound_to_active_role _____________
+backend\tests\test_pm_discovery_regressions.py:289: in test_direct_role_scoped_goal_is_bound_to_active_role
+    assert valid, reason
+E   AssertionError: Fact requires a functional role owner
+E   assert False
+=========================== short test summary info ===========================
+FAILED backend/tests/test_extraction_repair.py::test_live_failure_repaired_by_model_before_storage
+FAILED backend/tests/test_extraction_repair.py::test_second_invalid_batch_stops_without_salvaging_unsupported_sibling
+FAILED backend/tests/test_extraction_repair.py::test_valid_output_does_not_retry
+FAILED backend/tests/test_extraction_repair.py::test_provider_failure_does_not_retry
+FAILED backend/tests/test_extraction_repair.py::test_repaired_output_still_requires_exact_evidence
+FAILED backend/tests/test_extraction_repair.py::test_roles_is_required_in_provider_schema
+FAILED backend/tests/test_pm_discovery_regressions.py::test_evidence_rejects_ungrounded_value
+FAILED backend/tests/test_pm_discovery_regressions.py::test_coherent_topic_is_not_completed_while_schema_gaps_remain
+FAILED backend/tests/test_pm_discovery_regressions.py::test_permission_remains_a_gap_after_abstract_responsibility
+FAILED backend/tests/test_pm_discovery_regressions.py::test_compound_secondary_role_does_not_become_a_combined_planner_gap
+FAILED backend/tests/test_pm_discovery_regressions.py::test_misclassified_known_role_answer_is_repaired_to_atomic_active_gap
+FAILED backend/tests/test_pm_discovery_regressions.py::test_direct_role_scoped_goal_is_bound_to_active_role
+ERROR backend/test_pm.py
+ERROR backend/test_scrapper.py
+ERROR backend/tests/test_extraction_semantics.py
+12 failed, 95 passed, 3 errors in 4.01s

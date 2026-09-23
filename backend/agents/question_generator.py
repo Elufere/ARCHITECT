@@ -1,8 +1,10 @@
 # agents/question_generator.py
 from langchain_ollama import ChatOllama
 
-from agents.state import AgentState, DiscoveryScope
+from agents.state import AgentState, DiscoveryScope, KnowledgeState
 from agents.product_model import format_product_model
+from agents.discovery_fields import FIELD_DEFINITIONS
+from agents.answer_contract import additional_actors_question
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 
@@ -20,8 +22,8 @@ You are ONLY discovering the customer-facing journey.
   it is fine to ask what marks that handoff point — but do NOT ask how that
   outside step works, who does it, or what happens inside it. That belongs to
   a later phase.
-- If the user mentions an internal/staff role, acknowledge it but do NOT ask
-  follow-up questions about that role's own responsibilities in this phase.
+- Follow the selected gap for every explicitly confirmed role in this scope,
+  including staff who actually use this app. Do not import roles from another scope.
 """,
     DiscoveryScope.ADMIN_DASHBOARD: """
 CURRENT SCOPE: ADMIN DASHBOARD
@@ -60,14 +62,16 @@ def permission_discovery_guidance(state: AgentState, current_role: str | None) -
     """Give the generator evidence and a semantic decision rule for permissions.
 
     Responsibilities deliberately do not satisfy the permissions schema key.
-    They only determine whether the permission question should first discover
-    capabilities or should deepen into the boundaries of known capabilities.
+    They provide context for discovering authorization boundaries, not another
+    capability list. Scope and confirmation are required before using this context.
     """
     responsibilities = [
         item.value
         for item in state.get("discovered_knowledge", [])
         if item.topic.value == "USER_ROLES"
         and item.key == "responsibilities"
+        and item.scope == state.get("discovery_scope", DiscoveryScope.USER_APP)
+        and item.knowledge_state == KnowledgeState.CONFIRMED
         and _same_role(item.role, current_role)
     ]
     evidence = "\n".join(f"- {value}" for value in responsibilities) or "None recorded."
@@ -76,7 +80,7 @@ PERMISSION DISCOVERY — EVIDENCE-AWARE MODE
 Responsibility evidence already recorded for '{current_role}':
 {evidence}
 
-Responsibilities describe the role's duties in the business workflow.
+Responsibilities describe significant actions, activities, capabilities, duties, and processes the role performs or manages in the product.
 Permissions describe what the system authorizes that role to access or do,
 including scope, restrictions, conditions, transaction-state limitations,
 approval requirements, and actions reserved for another role.
@@ -85,8 +89,9 @@ First, SEMANTICALLY assess the responsibility evidence above. Do not use a
 keyword checklist. Decide whether it establishes concrete in-app actions, or
 only a high-level purpose/duty.
 
-- If it is high-level or vague, ask which concrete actions the role is allowed
-  to perform in the product.
+- If it is high-level or vague, ask about explicit access or authorization
+  boundaries, including whether there are any special restrictions. Do not ask
+  for ordinary capabilities as a substitute for permissions.
 - If it already establishes concrete actions, do NOT ask the user to list
   those actions again. Briefly ground the question in the known actions and
   ask instead about their authorization boundaries: who/what the role can act
@@ -130,6 +135,18 @@ def question_generator_node(state: AgentState) -> dict:
     if not current_topic:
         return {"messages": [SystemMessage(content="I need to understand your product better. Could you start by telling me who the primary users will be?")]}
 
+    followup = state.get("answer_followup")
+    if (followup and followup["gap"] == current_gap and followup["scope"] == discovery_scope
+            and not state.get("question_retry_count", 0)):
+        return {"messages": [AIMessage(content=followup["question"])]}
+
+    # This question needs the complete actor list, not another model decision.
+    # Reuse the same wording for clarification so a following "No" still answers
+    # whether ANY other users exist, rather than denying one suggested example.
+    if (current_gap == "secondary_users" and discovery_move != "confirm_inference"
+            and not state.get("question_retry_count", 0)):
+        return {"messages": [additional_actors_question(state)]}
+
     chat_llm = ChatOllama(
         model="qwen2.5:7b",
         temperature=0.0,
@@ -140,6 +157,8 @@ def question_generator_node(state: AgentState) -> dict:
         f"- {item.key}" + (f" [{item.role}]" if item.role else "") + f": {item.value}"
         for item in state.get("discovered_knowledge", [])
         if item.topic == current_topic
+        and item.scope == discovery_scope
+        and item.knowledge_state == KnowledgeState.CONFIRMED
         and (current_role is None or item.role is None or item.role == current_role)
     ]
 
@@ -197,6 +216,8 @@ Current gap: {current_gap}
 Current objective: {current_objective}
 Question guidance: {question_hint}
 Discovery move: {discovery_move}
+Internal semantic definition (context only; never quote this to the user):
+{FIELD_DEFINITIONS.get(current_topic, {}).get((current_gap or '').split('::')[0], '')}
 
 ========================================
 WHAT YOU MUST DO
@@ -209,6 +230,8 @@ Use this guidance for HOW to phrase it: "{question_hint}"
 Your question MUST directly ask about the objective above.
 Your question MUST use vocabulary related to the objective.
 Your question MUST NOT drift to any other topic or field.
+Use simple product language. Do not repeat internal terms such as primary value
+exchange, scoped product, explicit absence, current gap, or planner objective.
 
 ========================================
 WHAT YOU MUST NOT DO
@@ -221,10 +244,12 @@ WHAT YOU MUST NOT DO
 - Do NOT ask about future discovery topics.
 - Do NOT ask for definitions.
 - Do NOT ask "what do you mean by..." unless the user explicitly used an ambiguous term.
-- Do NOT ask hypothetical scenarios.
+- Do NOT invent speculative scenarios. When the selected gap is an exception or
+  edge case, ask about intended handling of that class without assuming it occurs.
 - Do NOT ask implementation questions.
 - Do NOT ask architecture questions.
-- Do NOT ask roadmap questions.
+- Do NOT ask roadmap planning questions. MVP_SCOPE questions about launch
+  inclusion, optional/deferred features, or exclusions are valid scope discovery.
 - Do NOT ask technical design questions.
 - Do NOT ask the user whether any part of the workflow is unclear.
 - Do NOT ask the user to identify gaps, ambiguities, or areas needing clarification.
@@ -281,6 +306,11 @@ Return ONLY the question. No preamble. No explanation.
         raise ValueError(
             "Planner did not provide current_objective/question_hint."
         )
+
+    if state.get("question_retry_count", 0) and isinstance(state["messages"][-1], SystemMessage):
+        # Some local chat templates ignore system messages after the first one.
+        # Put the latest rejection in the primary system prompt as well.
+        system_prompt += "\nRevise the rejected draft using this feedback:\n" + state["messages"][-1].content
 
     response = chat_llm.invoke([SystemMessage(content=system_prompt)] + state["messages"])
     print("response:", response.content)

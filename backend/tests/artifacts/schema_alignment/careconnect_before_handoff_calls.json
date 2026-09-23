@@ -1,0 +1,396 @@
+[
+  {
+    "name": "ACTOR",
+    "parsed": {
+      "items": [
+        {
+          "key": "primary_users",
+          "value": "patients",
+          "evidence": "I want to build CareConnect, a platform that helps patients find and book appointments with healthcare professionals such as general doctors, dermatologists, dentists, physiotherapists, and nutritionists.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "roles": [
+            "patient"
+          ],
+          "aliases": []
+        },
+        {
+          "key": "primary_users",
+          "value": "healthcare professionals",
+          "evidence": "I want to build CareConnect, a platform that helps patients find and book appointments with healthcare professionals such as general doctors, dermatologists, dentists, physiotherapists, and nutritionists.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "roles": [
+            "healthcare_provider"
+          ],
+          "aliases": []
+        },
+        {
+          "key": "multiple_roles",
+          "value": "none",
+          "evidence": "Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "roles": [],
+          "aliases": []
+        },
+        {
+          "key": "role_transitions",
+          "value": "none",
+          "evidence": "Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "roles": [],
+          "aliases": []
+        }
+      ]
+    },
+    "input_chars": 8859
+  },
+  {
+    "name": "RESPONSIBILITY",
+    "parsed": {
+      "items": [
+        {
+          "key": "responsibilities",
+          "value": "describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform",
+          "evidence": "Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "role": "patient"
+        },
+        {
+          "key": "responsibilities",
+          "value": "manage their profiles, specialties, schedules, appointments, and payments",
+          "evidence": "Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "role": "healthcare_provider"
+        }
+      ]
+    },
+    "input_chars": 7200
+  },
+  {
+    "name": "PERMISSION",
+    "parsed": {
+      "items": []
+    },
+    "input_chars": 7005
+  },
+  {
+    "name": "WORKFLOW",
+    "parsed": {
+      "items": [
+        {
+          "key": "trigger",
+          "value": "I want to build CareConnect",
+          "evidence": "I want to build CareConnect, a platform that helps patients find and book appointments with healthcare professionals such as general doctors, dermatologists, dentists, physiotherapists, and nutritionists.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED"
+        },
+        {
+          "key": "workflow_steps",
+          "value": "describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay",
+          "evidence": "Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED"
+        },
+        {
+          "key": "end_state",
+          "value": "receive appointment reminders and pay",
+          "evidence": "Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED"
+        }
+      ]
+    },
+    "input_chars": 7796
+  },
+  {
+    "name": "GOAL",
+    "parsed": {
+      "items": [
+        {
+          "key": "primary_user_goals",
+          "value": "find and book appointments",
+          "evidence": "I want to build CareConnect, a platform that helps patients find and book appointments with healthcare professionals such as general doctors, dermatologists, dentists, physiotherapists, and nutritionists.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "role": "patient"
+        },
+        {
+          "key": "primary_user_goals",
+          "value": "describe their health concern",
+          "evidence": "Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "role": "patient"
+        },
+        {
+          "key": "primary_user_goals",
+          "value": "search for suitable healthcare providers",
+          "evidence": "Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "role": "patient"
+        },
+        {
+          "key": "primary_user_goals",
+          "value": "compare their profiles and availability",
+          "evidence": "Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "role": "patient"
+        },
+        {
+          "key": "primary_user_goals",
+          "value": "communicate with the provider",
+          "evidence": "Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "role": "patient"
+        },
+        {
+          "key": "primary_user_goals",
+          "value": "receive appointment reminders",
+          "evidence": "Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "role": "patient"
+        },
+        {
+          "key": "primary_user_goals",
+          "value": "pay through the platform",
+          "evidence": "Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "role": "patient"
+        },
+        {
+          "key": "primary_user_goals",
+          "value": "manage their profiles",
+          "evidence": "Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "role": "healthcare_provider"
+        },
+        {
+          "key": "primary_user_goals",
+          "value": "manage their specialties",
+          "evidence": "Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "role": "healthcare_provider"
+        },
+        {
+          "key": "primary_user_goals",
+          "value": "manage their schedules",
+          "evidence": "Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "role": "healthcare_provider"
+        },
+        {
+          "key": "primary_user_goals",
+          "value": "manage their appointments",
+          "evidence": "Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "role": "healthcare_provider"
+        },
+        {
+          "key": "primary_user_goals",
+          "value": "manage their payments",
+          "evidence": "Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "role": "healthcare_provider"
+        }
+      ]
+    },
+    "input_chars": 8443
+  },
+  {
+    "name": "RULES",
+    "parsed": {
+      "items": []
+    },
+    "input_chars": 11314
+  },
+  {
+    "name": "GROUNDING",
+    "parsed": {
+      "evidence_categories": {
+        "0": [
+          "USER_ROLES.primary_users",
+          "USER_ROLES.responsibilities",
+          "USER_GOALS.primary_user_goals"
+        ],
+        "1": [
+          "USER_ROLES.multiple_roles",
+          "USER_ROLES.responsibilities",
+          "CORE_WORKFLOW.workflow_steps"
+        ],
+        "2": [
+          "USER_ROLES.role_transitions",
+          "USER_ROLES.responsibilities"
+        ]
+      },
+      "supported_ids": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "confirmed_absence_ids": [],
+      "rejection_reasons": {}
+    },
+    "input_chars": 13477
+  },
+  {
+    "name": "GROUNDING",
+    "parsed": {
+      "evidence_categories": {
+        "0": [
+          "USER_GOALS.primary_user_goals"
+        ],
+        "1": [],
+        "2": []
+      },
+      "supported_ids": [
+        2
+      ],
+      "confirmed_absence_ids": [],
+      "rejection_reasons": {
+        "0": "",
+        "1": "The evidence does not explicitly state that a single person can hold multiple roles.",
+        "2": "The evidence does not explicitly state that a user can switch roles over time."
+      }
+    },
+    "input_chars": 11044
+  },
+  {
+    "name": "ACTOR",
+    "parsed": {
+      "items": [
+        {
+          "key": "secondary_users",
+          "value": "none",
+          "evidence": "No.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED",
+          "absence": "none"
+        }
+      ]
+    },
+    "input_chars": 8432
+  },
+  {
+    "name": "RESPONSIBILITY",
+    "parsed": {
+      "items": []
+    },
+    "input_chars": 6717
+  },
+  {
+    "name": "PERMISSION",
+    "parsed": {
+      "items": []
+    },
+    "input_chars": 6522
+  },
+  {
+    "name": "WORKFLOW",
+    "parsed": {
+      "items": [
+        {
+          "key": "downstream_dependency",
+          "value": "none",
+          "evidence": "No.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED"
+        }
+      ]
+    },
+    "input_chars": 7313
+  },
+  {
+    "name": "GOAL",
+    "parsed": {
+      "items": [
+        {
+          "key": "secondary_user_goals",
+          "value": "none",
+          "evidence": "No. Besides patients and healthcare professionals, will anyone else use the user app? No.",
+          "confidence": 1,
+          "knowledge_state": "CONFIRMED"
+        }
+      ]
+    },
+    "input_chars": 7960
+  },
+  {
+    "name": "RULES",
+    "parsed": {
+      "items": [
+        {
+          "key": "secondary_users",
+          "value": "none",
+          "evidence": "No. ",
+          "confidence": 1,
+          "topic": "USER_ROLES",
+          "knowledge_state": "CONFIRMED",
+          "absence": "none"
+        }
+      ]
+    },
+    "input_chars": 10831
+  },
+  {
+    "name": "GAP_ANSWER",
+    "parsed": {
+      "resolution": "none",
+      "evidence": "No.",
+      "confidence": 1.0
+    },
+    "input_chars": 3326
+  },
+  {
+    "name": "GROUNDING",
+    "parsed": {
+      "evidence_categories": {
+        "USER_ROLES.secondary_users": [
+          "USER_ROLES.secondary_users"
+        ]
+      },
+      "supported_ids": [
+        0,
+        2
+      ],
+      "confirmed_absence_ids": [],
+      "rejection_reasons": {
+        "1": "The evidence 'No.' explicitly denies the presence of secondary users, but does not provide a whole-field negation for all secondary users. Therefore, it only supports the absence of specific secondary users, not the absence of all secondary users."
+      }
+    },
+    "input_chars": 8426
+  },
+  {
+    "name": "GROUNDING",
+    "parsed": {
+      "evidence_categories": {
+        "USER_ROLES.secondary_users": []
+      },
+      "supported_ids": [],
+      "confirmed_absence_ids": [
+        0,
+        1
+      ],
+      "rejection_reasons": {}
+    },
+    "input_chars": 8259
+  }
+]

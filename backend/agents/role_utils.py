@@ -24,7 +24,7 @@ def split_role_labels(roles: list[str] | None) -> list[str]:
 
 def role_identity(role: str | None) -> str:
     """Compare harmless aliases without changing the label presented to users."""
-    normalized = (role or "").strip().lower().rstrip("s")
+    normalized = (role or "").replace("_", " ").strip().lower().rstrip("s")
     return "admin" if normalized in {"admin", "administrator"} else normalized
 
 

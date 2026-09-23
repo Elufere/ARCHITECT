@@ -25,13 +25,13 @@ DISCOVERY_TASKS = {
             "question_hint": "Ask whether there are additional users besides the primary users."
         },
         "responsibilities": {
-            "objective": "Understand what responsibilities each user has.",
-            "question_hint": "Ask what each user is responsible for.",
+            "objective": "Understand the significant actions, capabilities, duties, and processes each role performs or manages in the product.",
+            "question_hint": "Ask what the role does or can do in the product, including any duties or processes it manages.",
             "role_source": "all_confirmed_roles",
         },
         "permissions": {
-            "objective": "Understand what actions each role is allowed to perform.",
-            "question_hint": "Ask what each user is allowed to do.",
+            "objective": "Understand explicit authorization and access boundaries for each role.",
+            "question_hint": "Ask about access restrictions, conditional authority, forbidden actions, or role-exclusive actions; do not simply repeat the capability question.",
             "role_source": "all_confirmed_roles",
         },
         "multiple_roles": {
@@ -71,7 +71,7 @@ DISCOVERY_TASKS = {
             "question_hint": "Ask what event starts the process."
         },
         "workflow_steps": {
-            "objective": "Understand the complete happy path.",
+            "objective": "Understand the stated normal interaction steps and their sequence.",
             "question_hint": "Ask the user to describe the workflow from start to finish."
         },
         "completion_condition": {  
@@ -186,8 +186,8 @@ DISCOVERY_TASKS = {
             "question_hint": "Ask what happens if users perform the same action twice."
         },
         "boundary_conditions": {
-            "objective": "Understand minimum and maximum limits.",
-            "question_hint": "Ask about minimum and maximum supported values."
+            "objective": "Understand behavior at or beyond limits and empty/zero/capacity boundaries.",
+            "question_hint": "Ask what happens at or beyond minimum, maximum, empty, or capacity boundaries, rather than re-asking the limit itself."
         },
         "simultaneous_actions": {
             "objective": "Understand concurrent user scenarios.",
@@ -217,6 +217,10 @@ def assess_topic_maturity(state: AgentState, topic: DiscoveryTopic) -> TopicMatu
     known = get_known_keys(state, topic)
     if not known:
         return TopicMaturity.UNSEEN
+    # Empty role sets can legitimately waive per-role fields. Completed coverage
+    # must still unlock dependent topics without manufacturing placeholder facts.
+    if not build_gap_info(state, topic)["missing_keys"]:
+        return TopicMaturity.DECISION_READY
 
     if topic == DiscoveryTopic.CORE_WORKFLOW:
         required = {"workflow_steps", "completion_condition"}
@@ -253,8 +257,9 @@ def get_roles_in_discovery_order(state: AgentState, topic: DiscoveryTopic) -> li
             item.topic == topic and item.scope == scope
             and item.knowledge_state == KnowledgeState.CONFIRMED
             and item.key in ("primary_users", "secondary_users")
+            and not item.absence
         ):
-            extracted_roles = split_role_labels(item.roles or item.value.split(","))
+            extracted_roles = split_role_labels(item.roles if item.roles is not None else item.value.split(","))
             for role in extracted_roles:
                 role = role.strip().lower()
                 if role in {"none", "none specified", "n/a"}:
@@ -282,10 +287,11 @@ def get_confirmed_roles_for_source(state: AgentState, source_key: str) -> list[s
     for item in state.get("discovered_knowledge", []):
         if (
             item.topic != DiscoveryTopic.USER_ROLES or item.scope != scope
+            or item.absence
             or item.knowledge_state != KnowledgeState.CONFIRMED or item.key != source_key
         ):
             continue
-        for role in split_role_labels(item.roles or item.value.split(",")):
+        for role in split_role_labels(item.roles if item.roles is not None else item.value.split(",")):
             if role in {"none", "none specified", "n/a"}:
                 continue
             identity = role_identity(role)
@@ -302,18 +308,6 @@ def get_known_keys(state: AgentState, topic: DiscoveryTopic):
         if item.topic == topic and item.scope == scope
         and item.knowledge_state == KnowledgeState.CONFIRMED
     }
-    # "Only buyers and sellers" is explicit evidence that no additional
-    # direct user role has been identified; do not ask it again as a blank field.
-    if topic == DiscoveryTopic.USER_ROLES:
-        primary_facts = [
-            f"{item.value} {item.evidence}".lower()
-            for item in state.get("discovered_knowledge", [])
-            if item.topic == topic and item.scope == scope
-            and item.knowledge_state == KnowledgeState.CONFIRMED
-            and item.key == "primary_users"
-        ]
-        if any("only" in fact or "no other" in fact for fact in primary_facts):
-            keys.add("secondary_users")
     return keys
 
 
@@ -376,7 +370,11 @@ def build_gap_info(state: AgentState, topic: DiscoveryTopic):
                 else get_confirmed_roles_for_source(state, source_key)
             )
             if not roles:
-                if source_key and source_key in get_known_keys(state, DiscoveryTopic.USER_ROLES):
+                actor_keys = get_known_keys(state, DiscoveryTopic.USER_ROLES)
+                if (source_key and source_key in actor_keys) or (
+                    source_key == "all_confirmed_roles"
+                    and {"primary_users", "secondary_users"}.issubset(actor_keys)
+                ):
                     continue
                 missing_keys.append(key)
                 continue
@@ -436,6 +434,10 @@ def interview_planner_node(state: AgentState) -> dict:
     topic_maturity = dict(state.get("topic_maturity", {}))
     current_topic = state.get("current_topic")
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    # New/corrected actors can introduce role-specific gaps in completed topics.
+    for topic, status in list(topic_status.items()):
+        if status == TopicStatus.COMPLETED and build_gap_info(state, topic)["missing_keys"]:
+            topic_status[topic] = TopicStatus.PARTIAL
 
     print("\n=== INTERVIEW PLANNER ===")
     print("Scope:", scope.value)
