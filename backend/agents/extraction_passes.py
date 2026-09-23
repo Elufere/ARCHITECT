@@ -171,23 +171,25 @@ In this single pass, review every known actor and every relevant clause; emit
 one or more owned items for every actor with explicit role-action evidence.
 Do not require the user to call an action a duty or responsibility.
 "Can", "should be able to", and "will be able to" establish supported product
-capabilities when assigned to a role. Searching, comparing, booking, messaging,
-submitting information, receiving notifications, and paying all qualify.
+capabilities only when the latest response explicitly assigns the action to a role.
 Managing owned resources and operational processes also qualifies.
 The same exact quote may ALSO support workflow_steps if it describes a journey;
 that is a valid different view, not a reason to omit the responsibility.
 Do not turn prohibited actions into things the actor performs. Preserve conditions.
 Do not infer actions from actor identity, domain conventions, or other actors.
+Actor identity alone never implies responsibilities. Merely saying an actor uses
+the platform identifies participation, not a specific product activity; return
+{"items": []} if that is all the response says. Do not expand generic usage into
+stereotypical actions from product/domain knowledge, actor context, or examples.
+Before emitting each candidate, read its own evidence quote independently: it
+must explicitly support every proposed action, its owner, and any conditions.
+A verbatim actor-only quote cannot support an invented action. Omit unsupported
+actions even if they would be plausible for this actor or product.
 The founder's intention to build the product is not an actor responsibility.
 Every item uses key="responsibilities", exactly one known canonical actor in role,
 and exact contiguous evidence from the latest response. Do not invent owners.
 Return {"items": []} only if no role actions are explicitly supported.
-Examples:
-- "Buyers can browse items and pay." -> buyer responsibilities: browse items and pay.
-- "Sellers can upload shipment evidence, but cannot release escrow funds." ->
-  seller responsibilities: upload shipment evidence. The prohibition belongs to permissions.
-- "Providers should be able to manage profiles and schedules." -> provider responsibilities.
-- "The only actors are buyers and sellers." -> no responsibility facts.
+Do not copy actions from instructional examples into an unrelated response.
 """
 ),
 

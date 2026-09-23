@@ -192,6 +192,11 @@ Critical distinctions:
 - Actor declarations use roles, not role ownership. Preserve both service sides.
   Follow the primary/secondary registry for goal ownership; paragraph order is irrelevant.
 - Actor membership alone establishes no workflow, responsibility or goal.
+- For responsibilities, merely saying an actor uses the platform is participation,
+  not a specific product activity. Its quote supports no responsibility category.
+  Require the candidate's own quote to explicitly state every proposed action
+  performed by its confirmed actor, preserving conditions. Reject invented or
+  stereotypical actions even when the quote is verbatim and the actor is known.
 - Absence requires explicit whole-field denial or an unambiguous negative answer
   to the EXACT active gap. Silence and separate actor descriptions are not absence.
   Specific exclusions, mixed answers, uncertainty and denied examples are not whole-field absence.
