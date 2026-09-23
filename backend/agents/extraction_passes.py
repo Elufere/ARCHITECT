@@ -149,6 +149,31 @@ a label as a separate application user type, preserve that distinction even if
 the same label previously denoted a contextual capacity.
 Apply this identity resolution before primary/secondary classification: multiple
 sides of an interaction do not by themselves establish independent actor types.
+When actors have already been discovered, classify each newly mentioned
+participant BEFORE adding a confirmed actor: existing actor under another label,
+contextual capacity, new current-application user, other application/back-office
+participant, external workflow dependency, or ambiguous membership.
+Only add a new CONFIRMED actor when its own quote explicitly establishes that it
+interacts with the CURRENT application. Explicitly identifying it as a user of
+this application also establishes membership. Logging in, using its dashboard,
+viewing records in it, submitting information through it, or managing something
+through it are evidence when the application reference resolves to the current
+scope. These are semantic examples, not a required keyword list.
+A named participant performing an action, even a review/approval in a conditional
+workflow, does not by itself establish application membership. A job title or
+administrative-sounding duty is not sufficient evidence of a secondary user.
+An explicit other-application/back-office participant or external dependency is
+not an actor of this scope; emit no actor declaration for it here. Do not relabel
+an explicitly external participant as an ambiguous current-application user.
+If the participant is explicitly mentioned but current-application membership
+is genuinely ambiguous, preserve a tentative actor candidate using the existing
+knowledge_state="INFERRED". Its value must retain the stated participation and
+say current-application membership is unresolved; its evidence must be the exact
+supporting quote. Do not invent an in-app action, alias relationship, or definite
+membership. This is unresolved information for clarification, not a confirmed
+actor or an owner for extracted actions. Never infer a participant from silence.
+For later new participants, this membership check takes precedence over the
+occupational and primary/secondary classification guidance below.
 Primary actors directly participate in the core value or workflow, including both demand and supply sides.
 The service provider is a primary actor when providing the service is part of the product's core value exchange. Secondary does NOT mean supply side.
 Secondary actors mainly administer, moderate, support, supervise or audit, BUT emit a secondary actor only when the response explicitly describes one.

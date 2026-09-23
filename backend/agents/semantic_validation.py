@@ -200,6 +200,20 @@ Critical distinctions:
   alias and the relationship/conditions against the source quote or confirmed
   identity context. Preserve genuinely separate application user types when the
   source explicitly distinguishes them; never collapse them by domain assumption.
+- For newly mentioned actors after initial role discovery, confirmed membership
+  requires the candidate's own quote to explicitly establish interaction with the
+  CURRENT application (or explicitly name its users). A named workflow participant
+  or an administrative duty alone is insufficient. References to another app or
+  back-office surface, and explicitly external dependencies, do not establish
+  current-scope membership. Resolve application references from scope/question.
+  actor_classification includes candidate proposals; it is not proof of membership.
+  Use confirmed_actor_context to distinguish established actors from new proposals.
+  An INFERRED actor candidate may preserve an explicitly mentioned participant
+  whose membership is genuinely unresolved, provided its value states that
+  uncertainty and preserves only supported participation. Support its actor
+  category as tentative information only, never as confirmed membership. Reject
+  an unsupported CONFIRMED declaration, an invented participant, or a tentative
+  current-app candidate whose quote explicitly places it outside this application.
 - Actor membership alone establishes no workflow, responsibility or goal.
 - For responsibilities, merely saying an actor uses the platform is participation,
   not a specific product activity. Its quote supports no responsibility category.

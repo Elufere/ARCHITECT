@@ -374,7 +374,9 @@ def extract_passes(user_response: str, state: AgentState,
                      if item.scope == scope and item.knowledge_state == KnowledgeState.CONFIRMED
                      and item.key in ("primary_users", "secondary_users")]
     for name, schema, topic, instruction in PASSES:
-        actors = stored_actors + [item for item in accepted if item.key in ("primary_users", "secondary_users")]
+        actors = stored_actors + [item for item in accepted
+                                  if item.key in ("primary_users", "secondary_users")
+                                  and item.knowledge_state == KnowledgeState.CONFIRMED]
         primary = [canonical_role(r) for item in actors if item.key == "primary_users" for r in item.roles or []]
         secondary = [canonical_role(r) for item in actors if item.key == "secondary_users" for r in item.roles or []]
         allowed_remaining_keys = {
