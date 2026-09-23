@@ -316,6 +316,8 @@ def ground_batch(items, user_response, state, active_gap_review=None):
                          evidence_id=quotes.index(item.evidence))
         if item.key in ("primary_users", "secondary_users"):
             candidate.update(kind="actor_declaration", roles=item.roles or [])
+            if item.aliases:
+                candidate["aliases"] = item.aliases
         elif item.role:
             candidate["role"] = item.role
         absence = item.absence or absence_label(item.value)
@@ -406,7 +408,7 @@ Confirmed primary roles: {', '.join(primary) or 'none'}
 Confirmed secondary roles: {', '.join(secondary) or 'none'}
 Canonical actor IDs: {json.dumps(primary + secondary)}
 Confirmed actor declarations and role relationships (identity context only):
-{json.dumps(confirmed_actor_context(state, scope), default=str)}
+{json.dumps(confirmed_actor_context({**state, "discovered_knowledge": [*state.get("discovered_knowledge", []), *accepted]}, scope), default=str)}
 Use these declarations to resolve actor names and transaction-specific capacities.
 Preserve the capacity and its conditions in the value; do not turn it into a new
 actor when the user has already identified it as a capacity of an existing actor.
@@ -619,6 +621,8 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         if any(existing.scope == item.scope and existing.topic == item.topic
                and existing.key == item.key and existing.role == item.role
                and existing.roles == item.roles and existing.value.lower() == item.value.lower()
+               and (item.key not in ("primary_users", "secondary_users")
+                    or existing.aliases == item.aliases)
                and existing.knowledge_state == item.knowledge_state
                for existing in discovered_knowledge):
             continue

@@ -130,6 +130,25 @@ class RemainingFact(Fact):
 
 PASSES = (
     ("ACTOR", ActorFact, DiscoveryTopic.USER_ROLES, """Identify functional product actors only.
+Resolve each mentioned label against the confirmed canonical actor registry,
+aliases, and source-backed role relationships BEFORE proposing a new actor.
+A contextual capacity, subrole, or transaction role is not automatically a
+separate application user type. If the response describes one actor acting in
+different capacities, emit ONE actor declaration with that canonical ID in roles.
+Record the explicitly stated capacity labels in aliases, preserve the relationship
+and its conditions in value, and quote the full supporting relationship in evidence.
+For later mentions of established capacities, reuse their canonical actor; do not
+emit primary_users or secondary_users for the capacity labels themselves.
+When the relationship is new for an existing actor, emit an updated declaration
+under the existing canonical ID so its aliases and source evidence are retained.
+Do not infer a relationship from domain conventions or similar-looking names.
+Shared participation or the ability to hold multiple independent user types alone
+does not make those types capacities of a single actor. Discover a genuinely new
+application actor when explicitly described. If the user explicitly establishes
+a label as a separate application user type, preserve that distinction even if
+the same label previously denoted a contextual capacity.
+Apply this identity resolution before primary/secondary classification: multiple
+sides of an interaction do not by themselves establish independent actor types.
 Primary actors directly participate in the core value or workflow, including both demand and supply sides.
 The service provider is a primary actor when providing the service is part of the product's core value exchange. Secondary does NOT mean supply side.
 Secondary actors mainly administer, moderate, support, supervise or audit, BUT emit a secondary actor only when the response explicitly describes one.

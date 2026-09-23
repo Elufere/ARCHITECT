@@ -191,6 +191,15 @@ Critical distinctions:
 - Permissions require explicit authorization/restriction, not capabilities alone.
 - Actor declarations use roles, not role ownership. Preserve both service sides.
   Follow the primary/secondary registry for goal ownership; paragraph order is irrelevant.
+- For actor declarations, resolve labels against confirmed_actor_context before
+  accepting a new canonical actor. An explicitly established contextual capacity,
+  subrole, or transaction role must not become an independent application actor
+  merely because it is mentioned again. A quote describing one actor acting in
+  several capacities supports that canonical actor with capacity aliases, not
+  separate primary_users/secondary_users for each capacity. Verify each proposed
+  alias and the relationship/conditions against the source quote or confirmed
+  identity context. Preserve genuinely separate application user types when the
+  source explicitly distinguishes them; never collapse them by domain assumption.
 - Actor membership alone establishes no workflow, responsibility or goal.
 - For responsibilities, merely saying an actor uses the platform is participation,
   not a specific product activity. Its quote supports no responsibility category.
