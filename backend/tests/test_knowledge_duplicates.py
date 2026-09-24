@@ -24,7 +24,7 @@ def commit(monkeypatch, existing, candidates, relation="semantic_duplicate", **s
     monkeypatch.setattr(tracker, "extract_gap_absence", lambda *_: None)
     monkeypatch.setattr(tracker, "ground_items", lambda items, *_: items)
     monkeypatch.setattr(tracker, "semantic_decision", verdict(relation))
-    state = dict(messages=[HumanMessage(content="A grounded answer")],
+    state = dict(messages=[HumanMessage(content="\n".join(item.evidence for item in candidates))],
         discovered_knowledge=existing, discovery_scope=S.USER_APP,
         current_topic=T.USER_ROLES, topic_status={}, turn_count=2)
     state.update(state_changes)

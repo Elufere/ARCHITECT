@@ -23,6 +23,7 @@ from agents.absence_supersession import matching_absences, can_replace_absence, 
 from agents.answer_contract import interpret_closed_answer
 from agents.evidence_spans import recover_evidence_span
 from agents.knowledge_duplicates import FactComparison, compare_candidate
+from agents.knowledge_corrections import CorrectionReview, correction_targets
 from agents.role_utils import roles_match, split_role_labels
 from agents.extraction_passes import PASSES, RawPass, OwnedFact, GoalFact, normalize_fact, canonical_role, absence_label
 
@@ -124,6 +125,7 @@ def extraction_models():
             "GAP_ANSWER": base.with_structured_output(GapAnswer, include_raw=True),
             "GROUNDING": base.with_structured_output(GroundingResponse, include_raw=True),
             "FACT_COMPARISON": base.with_structured_output(FactComparison, include_raw=True),
+            "CORRECTION_REVIEW": base.with_structured_output(CorrectionReview, include_raw=True),
         })
     return _extraction_models
 
@@ -482,6 +484,21 @@ of rules or exclusions. Preserve it in value with its original meaning.
         pass_accepted = []
         repair_candidates = []
         for raw_fact in payload.items:
+            # RemainingFact already performs this one deterministic repair.
+            # Trace active-answer recovery without retrying validation or using
+            # the active gap to supply a missing topic, field, value or owner.
+            active_format_repair = (
+                name == "RULES" and state.get("current_topic") is not None
+                and raw_fact.get("topic") == state["current_topic"].value
+                and isinstance(raw_fact.get("key"), str)
+                and raw_fact["key"].startswith(raw_fact["topic"] + ".")
+                and raw_fact["key"].rsplit(".", 1)[-1] == (state.get("current_gap") or "").split("::", 1)[0])
+            if active_format_repair:
+                print("ACTIVE ANSWER FORMAT ORIGINAL:", json.dumps(raw_fact, default=str))
+                print("ACTIVE ANSWER FORMAT REJECTION: key must be a bare field name, not a topic-qualified label")
+                print("ACTIVE ANSWER FORMAT REPAIR ATTEMPT: 1/1; remove one exact matching topic prefix only")
+                print("ACTIVE ANSWER FORMAT REPAIRED:", json.dumps(
+                    {**raw_fact, "key": raw_fact["key"][len(raw_fact["topic"]) + 1:]}, default=str))
             try:
                 fact = schema.model_validate(raw_fact)
                 item = normalize_fact(fact, topic, scope, state.get("turn_count", 0))
@@ -506,6 +523,8 @@ of rules or exclusions. Preserve it in value with its original meaning.
                 pass_accepted.append(item)
             except (ValidationError, ValueError) as exc:
                 print(f"{name} REJECTED: {exc}")
+                if active_format_repair:
+                    print(f"ACTIVE ANSWER FORMAT FINAL REJECT: {exc}")
                 if name == "GOAL":
                     repair_candidates.append({"item": raw_fact, "error": str(exc)})
         if repair_candidates:
@@ -657,7 +676,11 @@ def knowledge_tracker_node(state: AgentState) -> dict:
             absence = extract_gap_absence(user_response, state, current_scope)
             if absence:
                 extracted_items.append(absence)
+        before_grounding = list(extracted_items)
         extracted_items = ground_items(extracted_items, user_response, state, absence)
+        for rejected in before_grounding:
+            if rejected not in extracted_items:
+                print("CANDIDATE FINAL REJECT (grounding):", rejected.model_dump(mode="json"))
     discovered_knowledge = list(state.get("discovered_knowledge", []))
     if current_gap:
         print(f"ACTIVE ANSWER: gap={current_gap} accepted_facts="
@@ -693,27 +716,42 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         relation, matched = compare_candidate(item, discovered_knowledge, semantic_decision)
         print(f"KNOWLEDGE COMPARISON: {item.topic.value}.{item.key} | {relation}")
         if relation in ("exact_duplicate", "semantic_duplicate", "already_refined"):
+            print("CANDIDATE FINAL NO NEW COMMIT (already represented):", item.model_dump(mode="json"))
             continue
         if relation == "refinement":
             discovered_knowledge.remove(matched)
             superseded_knowledge.append(supersession_record(matched, item))
+        if (item.knowledge_state == KnowledgeState.CONFIRMED and not recovering_prior_answer
+                and item.evidence in messages[-1].content):
+            replaced = []
+            if relation == "correction" and matched in state.get("discovered_knowledge", []):
+                replaced.append(matched)
+            if (state.get("is_correction") or relation in ("correction", "contradiction")
+                    or item.key in ("primary_users", "secondary_users")):
+                replaced.extend(correction_targets(item, state.get("discovered_knowledge", []),
+                                                  messages[-1].content, semantic_decision))
+            for old in replaced:
+                if old in discovered_knowledge:
+                    discovered_knowledge.remove(old)
+                    superseded_knowledge.append(supersession_record(old, item))
+                    print(f"KNOWLEDGE SUPERSESSION: {item.topic.value}.{item.key} | {old.value} -> {item.value}")
         # Absence replaces old values; new positive facts replace absence.
+        if item.absence and item.knowledge_state == KnowledgeState.CONFIRMED:
+            superseded_knowledge.extend(supersession_record(old, item) for old in discovered_knowledge
+                if old.scope == item.scope and old.topic == item.topic and old.key == item.key
+                and old.role == item.role and old not in previous_absences)
         discovered_knowledge = [existing for existing in discovered_knowledge
             if not (item.knowledge_state == KnowledgeState.CONFIRMED
                     and existing.scope == item.scope and existing.topic == item.topic
                     and existing.key == item.key and existing.role == item.role
                     and (item.absence or existing.absence or existing in previous_absences))]
-        if state.get("is_correction"):
-            discovered_knowledge = [existing for existing in discovered_knowledge
-                if not (existing.scope == item.scope and existing.topic == item.topic
-                        and existing.key == item.key and existing.role == item.role
-                        and not (existing.absence or absence_label(existing.value)))]
         if item.knowledge_state == KnowledgeState.CONFIRMED:
             discovered_knowledge = [existing for existing in discovered_knowledge
                 if not (existing.knowledge_state == KnowledgeState.INFERRED
                         and existing.scope == item.scope and existing.topic == item.topic
                         and existing.key == item.key and existing.role == item.role)]
         discovered_knowledge.append(item)
+        print("CANDIDATE FINAL COMMIT:", item.model_dump(mode="json"))
         if item.knowledge_state == KnowledgeState.CONFIRMED:
             superseded_knowledge.extend(supersession_record(old, item) for old in previous_absences)
         committed_items.append(item)

@@ -1,4 +1,7 @@
 """Explicit completion invalidation at the knowledge commit boundary."""
+import hashlib
+import json
+
 from agents.interview_planner import build_gap_info, get_roles_in_discovery_order
 from agents.role_utils import role_identity
 from agents.state import DiscoveryScope, DiscoveryTopic, KnowledgeState, TopicStatus
@@ -51,7 +54,27 @@ def invalidate_completed_topics(state, knowledge, committed, topic_status):
             reason = "explicit correction changed confirmed completion coverage"
         else:
             reason = "committed confirmed fact changed required completion coverage"
+        # Diagnostic attribution only; the reopening decision above is unchanged.
+        if affected_roles and actor_changes:
+            affected = {role_identity(role) for role in affected_roles}
+            triggers = [item for item in actor_changes
+                        if any(role_identity(role) in affected for role in item.roles or [])]
+        else:
+            gap_keys = {gap.split("::", 1)[0] for gap in new_gaps}
+            triggers = [item for item in confirmed if item in actor_changes
+                        or (item.topic == topic and item.key in gap_keys)]
+        if not triggers:
+            triggers = [item for item in confirmed if item.topic == topic]
+        details = []
+        for item in triggers:
+            payload = json.dumps(item.model_dump(mode="json"), sort_keys=True, ensure_ascii=False)
+            # KnowledgeItem has no stored ID. A stable diagnostic fingerprint
+            # identifies this exact committed record without changing its schema.
+            fact_id = "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+            details.append(f"Trigger: {payload}\nFact ID: {fact_id}\nSource turn: {item.source_turn}")
+        print(f"=== TOPIC INVALIDATION ===\nTopic: {topic.value}\nOld: {TopicStatus(status).value}\nNew: PARTIAL\n"
+              f"{topic.value}: COMPLETED -> PARTIAL\n"
+              f"scope: {scope.value}\nreason: {reason}\n"
+              + "\n".join(details) + f"\nnew gaps: {', '.join(new_gaps)}")
         updated[topic] = TopicStatus.PARTIAL
-        print(f"TOPIC INVALIDATION\n{topic.value}: COMPLETED -> PARTIAL\n"
-              f"scope: {scope.value}\nreason: {reason}\nnew gaps: {', '.join(new_gaps)}")
     return updated

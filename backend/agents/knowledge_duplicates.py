@@ -24,7 +24,11 @@ compatible specificity. already_refined: the existing fact preserves ALL candida
 information plus compatible specificity. Mere overlap or related actions is new.
 Different limits, actors, stages, conditions, permissions, or exceptions are NOT
 duplicates. Two independently applicable rules must coexist even if similarly worded.
-correction: source explicitly corrects the prior assertion. contradiction:
+correction: source explicitly corrects, replaces, narrows, or supersedes the prior
+assertion. Require evidence about that specific assertion; an intent flag or
+correction keyword alone does not supersede unrelated facts. Different conditions
+may coexist (permission before a stage and prohibition after another stage).
+contradiction:
 incompatible assertions without explicit correction. Never label either a duplicate
 or refinement. Evidence and source questions are provenance, not extra assertions.
 Use only supplied facts and evidence, not domain assumptions. When uncertain use
