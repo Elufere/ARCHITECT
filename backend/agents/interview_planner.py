@@ -434,11 +434,6 @@ def interview_planner_node(state: AgentState) -> dict:
     topic_maturity = dict(state.get("topic_maturity", {}))
     current_topic = state.get("current_topic")
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
-    # New/corrected actors can introduce role-specific gaps in completed topics.
-    for topic, status in list(topic_status.items()):
-        if status == TopicStatus.COMPLETED and build_gap_info(state, topic)["missing_keys"]:
-            topic_status[topic] = TopicStatus.PARTIAL
-
     print("\n=== INTERVIEW PLANNER ===")
     print("Scope:", scope.value)
     print("Current topic:", current_topic)

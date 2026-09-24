@@ -217,15 +217,14 @@ def test_actor_topic_scope_ownership_boundaries_and_legacy_spelling(monkeypatch)
     assert "manage schedules" not in permission_discovery_guidance(other_scope, "healthcare_provider")
 
 
-def test_new_actor_reopens_completed_role_gaps():
-    # A topic marked complete must not hide a newly introduced actor's gaps.
+def test_existing_gaps_do_not_silently_reopen_a_completed_topic():
+    # Only a new commit may invalidate completion, not a planner snapshot.
     state = dict(discovery_scope=S.USER_APP, current_topic=None,
                  discovered_knowledge=[actor("patient")], topic_maturity={},
                  topic_status={T.USER_ROLES: TopicStatus.COMPLETED})
     plan = interview_planner_node(state)
-    assert plan["current_topic"] == T.USER_ROLES
-    assert plan["topic_status"][T.USER_ROLES] == TopicStatus.PARTIAL
-    assert "responsibilities::patient" in plan["missing_keys"]
+    assert plan["current_topic"] != T.USER_ROLES
+    assert plan["topic_status"][T.USER_ROLES] == TopicStatus.COMPLETED
 
 
 def test_every_planner_field_has_storage_extraction_and_shared_semantics():

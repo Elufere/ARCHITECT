@@ -92,10 +92,21 @@ including whether the rule applies within one transaction or across transactions
 Return resolution='policy' and value containing the complete rule in plain language.
 Use only the supplied question and answer; do not invent broader restrictions.
 For an explicitly stated rule, preserve the answer's conditions and exceptions.
+For a mixed "yes, but" answer, keep both the allowed behavior established by
+the question/answer and the prohibited behavior, including its context and timing.
+An allowance across transactions is not an allowance for simultaneous roles in
+one transaction. A prohibition during one workflow instance is not a global ban.
 multiple_roles concerns holding roles; role_transitions concerns switching roles.
 Never infer one from the other. Uncertainty, objections, or an ambiguous question
 return resolution='unresolved', value=null. Explicit inapplicability may return
-resolution='not_applicable', value=null. Never return resolution='none' for a rule.
+resolution='not_applicable', value=null. Return resolution='none', value=null only
+when the user explicitly denies the ENTIRE field in all contexts. For example,
+"Users never have multiple roles at all" supports whole-field multiple_roles
+absence. A condition, time boundary, exception, or mixed allowance/prohibition
+requires resolution='policy' and the complete rule, never 'none'. Negative words
+such as cannot, never, and not do not by themselves establish whole-field absence.
+If the supplied gap differs from the question, extract it only if the response
+independently states that policy; do not copy the question's answer to another field.
 evidence must be copied exactly from latest_response; 'no' or 'yes' is valid evidence.
 An unambiguous yes/no answer to a clear question warrants high confidence.
 Return only JSON with resolution, value, evidence, and confidence (0 to 1).
@@ -174,11 +185,33 @@ policy resolved against the last question. Verify its polarity and ALL condition
 against that question. Such policies require supported_ids and the correct
 evidence category, not confirmed_absence_ids. A rule limited to one transaction
 must not become an account-wide prohibition or a rule about switching roles.
+For these role-policy fields, whole-field absence requires explicit denial in
+ALL contexts and both supported_ids and confirmed_absence_ids. A restriction
+within one transaction/workflow instance, or a "yes, but" policy preserving an
+allowance, cannot support absence. Reject any policy value that drops its allowed
+behavior, prohibited behavior, conditions, or timing. An absolute statement such
+as "Users never have multiple roles at all" may support multiple_roles absence.
 
 Critical distinctions:
 - A product PURPOSE ("helps customers achieve X") expresses a GOAL, not a trigger.
   A platform helping a named role achieve an outcome directly supports that role's
   goal; the user need not literally say "their goal is".
+- For USER_GOALS, an individual action, workflow step, feature, permission, or
+  business rule is not a goal without an explicitly expressed desired outcome,
+  motivation, or definition of success in the candidate's own quote. Reject
+  invented intent or benefits added to an action in the candidate value. Feature
+  qualities alone do not establish desired outcomes or reasons for choosing it.
+  Judge each goal key separately: actor-desired results support role-specific
+  goals, defined success conditions support success_criteria, and stated reasons
+  for choosing/wanting the product support motivations. An action prerequisite
+  is not automatically a success condition. Do not rescue unsupported actions
+  by accepting them under a different USER_GOALS key.
+  If an action and purpose coexist, the goal value must preserve the stated
+  desired result, not merely repeat the action. Goal ownership must follow that
+  result's actor and supported reference context; the current gap's actor is not
+  ownership evidence. Reject ambiguous or reassigned owners even if they are
+  valid canonical actors. Do not require specific goal keywords when the desired
+  outcome is otherwise explicit.
 - "Should be able to X, Y, Z" describes CAPABILITIES, not desired outcomes.
   These support responsibilities; a journey also supports workflow_steps.
   Judge workflow candidates against workflow definitions, not against goal rules.
@@ -188,9 +221,46 @@ Critical distinctions:
 - A workflow trigger requires a stated START EVENT. Founder intent is not one.
 - Completion needs an explicit completion criterion; end_state needs an explicit
   resulting state. Neither follows from a final listed action such as paying.
+- For CORE_WORKFLOW, assess each field from its own quote without filling the
+  other fields to complete a template. The current workflow topic/gap proves
+  nothing about missing process information; exactly one supported fact is valid.
+  A trigger is an explicit process-start event/condition, not a motivation.
+  workflow_steps need ordered or process-like actions linked by stages, handoffs,
+  or a journey. An isolated capability/feature is insufficient; an action explicitly
+  placed within a process stage can describe a partial workflow without inventing
+  other steps. A dispute feature is not a completion condition unless the quote
+  explicitly defines completion that way. end_state needs an explicit resulting
+  status, not an aspiration, available feature, or arbitrary statement.
+  downstream_dependency needs an explicit link between a process stage and what
+  that stage requires before it can proceed/complete. A role restriction, actor
+  mention, or condition alone does not establish such a dependency. Silence, or
+  denial of only one dependency type, cannot support whole-field absence. Require
+  the existing independent absence verdict for an explicit denial of the whole field.
 - Permissions require explicit authorization/restriction, not capabilities alone.
+- Audit responsibilities and permissions independently for each actor and action.
+  "Can" alone supports a capability, not an authorization boundary. An
+  exclusivity rule, prohibition, or access limitation alone supports permissions,
+  not a duplicate responsibility obtained by stripping away its boundary.
+  Require permission values to retain the actual boundary, polarity, conditions,
+  and scope stated for that owner and action. A restriction on another action or
+  actor in the same quote cannot justify this candidate's permission category.
+  Managing one's resources alone is not a rule limiting access to those resources.
+  Support both categories only when the quote independently states the affirmative
+  action/duty/capability AND the authorization boundary. Shared evidence is allowed;
+  neither identical wording nor a shared quote is grounds to accept or reject both.
 - Actor declarations use roles, not role ownership. Preserve both service sides.
   Follow the primary/secondary registry for goal ownership; paragraph order is irrelevant.
+- Audit actor application membership independently of business-process participation
+  on EVERY turn, including initial discovery. The candidate's assigned scope is
+  not evidence that its actor uses that application. Another surface, internal
+  operation, external system, offline process, or third-party platform is not the
+  current application merely because it participates in the same business process.
+  Unknown surface means unresolved membership, not an invented application.
+  A supported current-process dependency, handoff, or business rule may retain a
+  participant from another/unknown surface without supporting an actor declaration.
+  Evaluate those process candidates independently; an external participant need
+  not belong to the current actor registry. Preserve explicit surface qualifiers
+  and reject unrelated facts about the other application.
 - For actor declarations, resolve labels against confirmed_actor_context before
   accepting a new canonical actor. An explicitly established contextual capacity,
   subrole, or transaction role must not become an independent application actor

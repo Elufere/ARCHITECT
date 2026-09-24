@@ -130,6 +130,7 @@ class AgentState(TypedDict):
     pm_is_complete: bool
 
     discovered_knowledge: List[KnowledgeItem]
+    superseded_knowledge: List[dict]
     topic_status: Dict[DiscoveryTopic, TopicStatus]
     current_topic: Optional[DiscoveryTopic]
     topic_dependencies: Dict[DiscoveryTopic, List[DiscoveryTopic]]

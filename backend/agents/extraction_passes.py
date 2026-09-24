@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agents.state import DiscoveryTopic, KnowledgeState, KnowledgeItem
+from agents.state import BUSINESS_RULES_KEYS, CONSTRAINTS_KEYS, MVP_SCOPE_KEYS, EXCEPTIONS_KEYS, EDGE_CASES_KEYS
 from agents.extraction_contract import valid_role_id
 from agents.discovery_fields import FIELD_DEFINITIONS
 
@@ -119,6 +120,19 @@ class WorkflowFact(Fact):
 
 class RemainingFact(Fact):
     topic: Literal["BUSINESS_RULES", "CONSTRAINTS", "MVP_SCOPE", "EXCEPTIONS", "EDGE_CASES"]
+    key: Literal[BUSINESS_RULES_KEYS, CONSTRAINTS_KEYS, MVP_SCOPE_KEYS, EXCEPTIONS_KEYS, EDGE_CASES_KEYS] = Field(
+        description="Bare field name belonging to topic, e.g. approval_rules. Never include a topic prefix; topic is stored separately.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_topic_prefix(cls, data):
+        # Repair only an exact matching topic prefix. The field enum and
+        # topic/key validator still reject unknown or mismatched fields.
+        if isinstance(data, dict):
+            topic, key = data.get("topic"), data.get("key")
+            if isinstance(topic, str) and isinstance(key, str) and key.startswith(topic + "."):
+                return {**data, "key": key[len(topic) + 1:]}
+        return data
 
     @model_validator(mode="after")
     def valid_key(self):
@@ -130,6 +144,17 @@ class RemainingFact(Fact):
 
 PASSES = (
     ("ACTOR", ActorFact, DiscoveryTopic.USER_ROLES, """Identify functional product actors only.
+Application scope and business-process participation are separate. This boundary
+applies on EVERY turn, including initial discovery, before the actor registry exists.
+The current scope is an extraction boundary, not evidence of actor membership.
+Only declare a CONFIRMED actor in that scope when the source explicitly establishes
+interaction with that application. Shared payments, disputes, records, or business
+processes do not establish shared application access. Another application,
+back-office tool, internal operation, external system, offline process, or
+third-party platform must not be silently treated as the current application.
+Retain explicit surface distinctions in supporting evidence. If the actual
+surface is unknown, keep membership unresolved; do not invent a surface or
+default it to the current app. Do not create actors in a different scope here.
 Resolve each mentioned label against the confirmed canonical actor registry,
 aliases, and source-backed role relationships BEFORE proposing a new actor.
 A contextual capacity, subrole, or transaction role is not automatically a
@@ -193,7 +218,21 @@ Examples: "Users can have both roles" -> multiple_roles with the stated positive
 "A provider can also be a patient" -> multiple_roles;
 "Patients become providers after verification" -> role_transitions preserving verification;
 "Roles never change" -> role_transitions with that negative policy.
-Do not infer either policy merely from a list of actors. A denial is a confirmed
+For these two fields, distinguish whole-field absence from a scoped restriction.
+"Users never have multiple roles at all" explicitly denies multiple roles in
+every context and may use multiple_roles with value="none", absence="none".
+"Users can have different roles across transactions but cannot hold both within
+one transaction" is a substantive multiple_roles policy, with absence=null.
+Preserve BOTH the cross-transaction allowance and the within-transaction ban.
+"Users may switch roles" is a positive role_transitions policy. "Users cannot
+switch roles once a workflow instance starts" is a scoped role_transitions
+restriction, with absence=null; preserve when the restriction starts and applies.
+Never use cannot/never/not alone to decide absence. Conditional restrictions and
+mixed allowed/prohibited behavior are policies, not whole-field absence.
+For a "yes, but" answer, resolve the allowance against the actual question and
+retain the stated exception. Extract both fields when both policies are stated;
+do not lose a transition restriction merely because the active gap is multiple_roles.
+Do not infer either policy merely from a list of actors. A conditional denial is a confirmed
 policy, not missing information. Explicit absence of ALL primary/secondary actors
 may use absence="none", value="none", roles=[], aliases=[]; never use this for a
 specific denied actor ("no admins") or an uncertain/future actor.
@@ -220,6 +259,14 @@ Managing owned resources and operational processes also qualifies.
 The same exact quote may ALSO support workflow_steps if it describes a journey;
 that is a valid different view, not a reason to omit the responsibility.
 Do not turn prohibited actions into things the actor performs. Preserve conditions.
+Distinguish an action/capability from a statement that only defines authorization.
+An exclusivity rule, prohibition, or access limitation alone is a permission,
+not an additional responsibility. Do not manufacture an unqualified action by
+removing only, cannot, or an access/authority condition from such a statement.
+In particular, "can" inside an access-boundary statement does not independently
+establish a performed activity. Emit both categories only when the evidence also
+affirmatively states the actor's action, duty, or capability independently of
+the authorization boundary; preserve each meaning in its own candidate.
 Do not infer actions from actor identity, domain conventions, or other actors.
 Actor identity alone never implies responsibilities. Merely saying an actor uses
 the platform identifies participation, not a specific product activity; return
@@ -253,6 +300,16 @@ Ask:
 forbidden, restricted, uniquely authorized, or limited to doing or accessing?"
 
 A normal product capability is NOT a permission.
+Before emitting an item, identify the explicit boundary on this actor's proposed
+action or access. The candidate value must retain that boundary, including its
+polarity, exclusivity, conditions, and scope. Merely paraphrasing an action as
+"can" or "may" perform it does not establish authorization semantics.
+A capability clause elsewhere in a quote cannot borrow a restriction belonging
+to another action or actor. Likewise, an ownership phrase such as managing one's
+resources is not an access limitation unless the source actually limits access.
+An authorization-only clause belongs here without automatically duplicating it
+as a responsibility. Both categories are valid only when the quote independently
+states an action/duty/capability and an explicit authorization boundary.
 Every permission item must use a known canonical actor ID in role.
 
 Statements that only identify which actors exist, or say there are no other
@@ -305,16 +362,33 @@ The same evidence may also support role responsibilities. Do not suppress a jour
 because its actor actions were already extracted as responsibilities.
 An isolated capability, actor list, or unordered inventory of managed resources
 is not a process sequence. Do not invent ordering, triggers, dependencies or end states.
+For workflow_steps, require actual ordered or process-like actions connected by
+a journey, stage, handoff, or temporal relationship in the source. Formal numbering
+is unnecessary, but a standalone available action or feature is insufficient.
+One stated action within an explicit process stage may be a partial process;
+do not require a complete journey or manufacture preceding/following steps.
 Apply these independent thresholds before emitting each non-step field:
 - trigger: the quote explicitly identifies what starts the interaction. A product
   purpose or founder intention does not state a start event.
+  A motivation or reason for choosing the product is not a process-start event.
 - completion_condition: the quote explicitly defines when the process is complete.
   The last listed action, a reminder, or payment capability is not that definition.
+  The availability of a dispute/exception-handling feature does not say when the
+  main process completes. Do not invent a completion test from a feature.
 - end_state: the quote explicitly states a resulting status after completion.
   A list of things users can do establishes no final status.
+  Desired benefits and arbitrary descriptive statements are not resulting states.
 - downstream_dependency: the quote explicitly names a required prerequisite,
-  external action, approval, system, or event. Omit if unmentioned; silence is
+  external action, approval, system, or event AND ties it to a process stage that
+  needs it before proceeding or completing. A named participant, temporal qualifier,
+  eligibility condition, or role restriction alone is not that dependency link.
+  Omit if unmentioned; silence is
   never evidence of none. Explicitly denying such dependencies is different.
+  Use absence="none" only for an explicit denial of the WHOLE dependency field.
+  Denying one kind of approval or prerequisite does not deny all dependencies.
+Assess all five fields independently. The current CORE_WORKFLOW topic or gap is
+not evidence for any field. A response may support exactly one workflow fact;
+return only that fact and leave every unsupported field unmentioned.
 "I want to build a platform" is founder intent, not the workflow trigger.
 "Providers manage profiles, specialties and schedules" alone is not a journey.
 Extract explicit trigger, completion_condition, downstream_dependency and end_state
@@ -335,6 +409,27 @@ STRICT OUTCOME REQUIREMENT: the selected evidence must itself express the actor'
 desired result, purpose, or problem to solve. "Should be able to" followed by an
 action list does not express separate desired outcomes for every action. Return
 ZERO goal items from that list unless it also explicitly expresses an outcome.
+Apply this requirement to individual actions too, not only capability lists.
+A performed workflow step, transaction action, agreement, approval, or dispute
+handling procedure does not by itself state a desired result. A product feature,
+authorization boundary, or mandatory business rule also establishes no goal.
+Do not turn these descriptions into goals by adding "wants", "aims to", or an
+unstated benefit to the value. Describing a feature as secure/easy/fast does not
+state a user's objective or reason for choosing the product.
+For a sentence containing both an action and an explicit desired outcome, extract
+the stated outcome, not the action relabeled as a goal. This is a semantic test,
+not a ban on particular verbs: an explicitly desired result remains valid even
+when the same wording also describes an action elsewhere.
+Choose the USER_GOALS key independently: a desired actor result belongs to a
+role-specific goal; an explicit condition defining success belongs to
+success_criteria; a stated reason for choosing/wanting the product belongs to
+motivations. A prerequisite for performing an action is not a success condition
+unless the user explicitly defines success that way. Do not move unsupported
+actions, features, or rules into success_criteria or motivations as a fallback.
+Resolve the owner from the stated outcome and supported identity/reference
+context. The current gap's actor is not ownership evidence. If ownership remains
+ambiguous, omit the role-specific goal rather than selecting an actor to satisfy
+the schema. Do not turn an owner's action into another actor's desired result.
 "Manage profiles/specialties/schedules/appointments/payments" alone establishes
 provider actions, not provider goals. A primary provider does not become a
 secondary actor merely because its activities were described second.
@@ -356,6 +451,9 @@ completion condition, or motivation. If it only states an available action, omit
 Copy evidence verbatim; a contextual pronoun may use the full supporting sentences."""),
     ("RULES", RemainingFact, None, """Extract remaining EXPLICIT knowledge only.
 Only use a listed topic/key combination supplied in the prompt. Do not invent arbitrary keys.
+Store topic separately and emit key as the bare field name only. For example,
+emit topic="BUSINESS_RULES", key="approval_rules", never key="BUSINESS_RULES.approval_rules".
+Qualified labels in field definitions identify categories; they are not serialized keys.
 Normal features such as search, booking, communication, appointment reminders, payments, and provider profile management yield {"items": []} unless the user explicitly states a governing rule, constraint, MVP requirement, exception, or edge case.
 Use the supplied definitions for EVERY allowed field. A sentence may also support
 responsibilities, permissions, goals, or workflow in another pass; that does not

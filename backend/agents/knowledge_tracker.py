@@ -18,7 +18,11 @@ from agents.state import (
 from agents.semantic_validation import GapAnswer, GroundingResult, GroundingResponse, GAP_INSTRUCTION, ROLE_POLICY_INSTRUCTION, GROUNDING_INSTRUCTION, category_contradiction
 from agents.discovery_fields import OVERLAP_RULES, field_contract
 from agents.product_model import build_product_model
+from agents.topic_lifecycle import invalidate_completed_topics
+from agents.absence_supersession import matching_absences, can_replace_absence, supersession_record
 from agents.answer_contract import interpret_closed_answer
+from agents.evidence_spans import recover_evidence_span
+from agents.knowledge_duplicates import FactComparison, compare_candidate
 from agents.role_utils import roles_match, split_role_labels
 from agents.extraction_passes import PASSES, RawPass, OwnedFact, GoalFact, normalize_fact, canonical_role, absence_label
 
@@ -48,6 +52,10 @@ def validate_extraction(
 ) -> Tuple[bool, str]:
     if not item.evidence or not item.evidence.strip():
         return False, "Missing evidence field"
+    evidence = recover_evidence_span(item.evidence, user_message)
+    if evidence is None:
+        return False, "Evidence is not an exact substring with a unique source span"
+    item.evidence = evidence
     if item.evidence not in user_message:
         return False, "Evidence is not an exact substring of the user message"
     if not get_content_words(item.evidence) and not item.absence and not item_directly_answers_gap(item, current_gap):
@@ -115,6 +123,7 @@ def extraction_models():
         _extraction_models.update({
             "GAP_ANSWER": base.with_structured_output(GapAnswer, include_raw=True),
             "GROUNDING": base.with_structured_output(GroundingResponse, include_raw=True),
+            "FACT_COMPARISON": base.with_structured_output(FactComparison, include_raw=True),
         })
     return _extraction_models
 
@@ -228,9 +237,11 @@ def extract_gap_absence(user_response, state, scope):
             (ROLE_POLICY_INSTRUCTION if policy_field else GAP_INSTRUCTION)
             + "\nActive field definition:\n" + field_contract([(topic, key)]),
             dict(**answer_context(state), latest_response=user_response, existing=existing))
+        evidence = recover_evidence_span(decision.evidence, user_response)
         if (decision.resolution == "unresolved" or decision.confidence < 0.75
-                or not decision.evidence.strip() or decision.evidence not in user_response):
+                or evidence is None):
             return None
+        decision.evidence = evidence
         if decision.resolution == "policy":
             if not policy_field or not decision.value or not decision.value.strip() or absence_label(decision.value):
                 return None
@@ -238,9 +249,6 @@ def extract_gap_absence(user_response, state, scope):
                 value=decision.value.strip(), evidence=decision.evidence,
                 confidence=decision.confidence, knowledge_state=KnowledgeState.CONFIRMED,
                 source_turn=state.get("turn_count", 0))
-        if policy_field and decision.resolution == "none":
-            # A denied role combination is a rule, not missing policy.
-            return None
         return KnowledgeItem(topic=topic, scope=scope, key=key, role=role or None,
             roles=[] if key in ("primary_users", "secondary_users") else None,
             value="none" if decision.resolution == "none" else "not applicable",
@@ -294,8 +302,6 @@ def ground_batch(items, user_response, state, active_gap_review=None):
     eligible = []
     for item in items:
         reason = category_contradiction(item.key, item.evidence)
-        if item.key in ("multiple_roles", "role_transitions") and item.absence == "none":
-            reason = "A negative role policy must preserve its rule and conditions, not use absence"
         if reason:
             print(f"CATEGORY REJECTED: {item.topic.value}.{item.key} owner={item.role} | {reason}")
         else:
@@ -397,6 +403,25 @@ Current topic: {state.get('current_topic').value if state.get('current_topic') e
 Current gap: {state.get('current_gap') or 'none'} (interview focus only; never determines semantic provenance)
 Last question (context for short answers/pronouns only, never evidence): {answer_context(state)['question']}
 CONFIRMED means explicitly stated by the user. INFERRED means genuinely deduced.
+Category admission for this {name} pass happens BEFORE generating candidates:
+For each exact statement ask: "Does this exact statement explicitly express a
+fact belonging to MY category?" If not, emit no candidate for that statement.
+First identify the meaning explicitly expressed, then check this pass's field
+definitions; do not reinterpret the sentence to fit an available field.
+Current topic, current gap, question wording, product domain, and previously
+inferred semantics cannot justify category membership, even for INFERRED items.
+Question context may resolve references or the proposition explicitly affirmed
+or denied by a short answer such as yes/no. It cannot supply an action, outcome,
+boundary, process, or rule that the response does not assert. A question listing
+several possibilities does not make an ambiguous answer confirm all of them.
+Actor context resolves identity only; mentioning a known actor does not restate
+its membership or supply its actions. A motivation alone does not imply duties,
+authorization, process stages, governing rules, exceptions, or new actor membership.
+Reuse a quote across passes only when it explicitly expresses each category's
+meaning independently; related concepts and plausible implications do not qualify.
+Do not make every statement belong somewhere. Return {{"items": []}} when this
+pass's category is unsupported. Do not emit speculative candidates for the final
+auditor to sort out; its later checks do not replace this admission decision.
 EVIDENCE MUST BE copied directly from the latest user response as one exact contiguous, case-sensitive substring sufficient to support the entire fact.
 The candidate's OWN quote must support its value and category. A fact stated in
 another sentence cannot rescue a wrong quote. Select the sentence that actually
@@ -428,6 +453,16 @@ absence="not_applicable", value="not applicable"). Never infer absence from sile
 An explicit prohibition or excluded feature is substantive knowledge, not absence
 of rules or exclusions. Preserve it in value with its original meaning.
 """
+        if name in ("WORKFLOW", "RULES"):
+            prompt += (
+                "\nScope boundary: An explicitly stated dependency, handoff, or business rule "
+                "linking the current application's process to another surface is knowledge "
+                "about the current process. Preserve its participant and stated surface "
+                "without declaring that participant a current-app user. No registered "
+                "current-app actor is required for an external process participant. "
+                "Do not invent its surface when unspecified, and do not import unrelated "
+                "details of another application. Apply the existing field definitions.\n"
+            )
         if name == "RULES":
             prompt += ("\nYou may ONLY use the following topic/key combinations:\n"
                        + json.dumps(allowed_remaining_keys, indent=2) + "\n")
@@ -450,6 +485,14 @@ of rules or exclusions. Preserve it in value with its original meaning.
             try:
                 fact = schema.model_validate(raw_fact)
                 item = normalize_fact(fact, topic, scope, state.get("turn_count", 0))
+                if name == "ACTOR" and fact.key in ("multiple_roles", "role_transitions") and fact.absence == "none":
+                    # Reinterpret absence-shaped role policies instead of losing
+                    # their conditions. The result still requires normal grounding.
+                    item = extract_gap_absence(user_response, {
+                        **state, "current_topic": DiscoveryTopic.USER_ROLES,
+                        "current_gap": fact.key}, scope)
+                    if item is None:
+                        raise ValueError("Role-policy absence lacks a supported interpretation")
                 valid, reason = validate_extraction(item, user_response, state.get("current_gap"))
                 if not valid:
                     raise ValueError(reason)
@@ -537,6 +580,7 @@ def knowledge_tracker_node(state: AgentState) -> dict:
     current_topic = state.get("current_topic")
     current_gap = state.get("current_gap")
     current_scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    superseded_knowledge = list(state.get("superseded_knowledge", []))
 
     # A concise confirmation is meaningful only when the planner presented
     # inferred evidence for the active gap. Promote that evidence instead of
@@ -547,16 +591,36 @@ def knowledge_tracker_node(state: AgentState) -> dict:
     ):
         inferred = inferred_items_for_gap(state)
         if inferred:
-            promoted = [
-                item.model_copy(update={"knowledge_state": KnowledgeState.CONFIRMED})
-                if item in inferred else item
-                for item in state.get("discovered_knowledge", [])
-            ]
+            promoted, committed_promotions, replaced_absences = [], [], []
+            for item in state.get("discovered_knowledge", []):
+                if item not in inferred:
+                    promoted.append(item)
+                    continue
+                replacement = item.model_copy(update={"knowledge_state": KnowledgeState.CONFIRMED})
+                previous = matching_absences(item, state.get("discovered_knowledge", []))
+                if previous:
+                    replacement = replacement.model_copy(update={
+                        "evidence": user_response, "source_turn": state.get("turn_count", 0),
+                        "source_question": answer_context(state)["question"] or None})
+                    if not can_replace_absence(replacement, previous, user_response,
+                                               answer_context(state), semantic_decision):
+                        promoted.append(item)
+                        continue
+                    replaced_absences.extend(previous)
+                    superseded_knowledge.extend(supersession_record(old, replacement) for old in previous)
+                promoted.append(replacement)
+                committed_promotions.append(replacement)
+            promoted = [item for item in promoted if item not in replaced_absences]
+            print("\n===== TOPIC STATUS MERGE =====")
             topic_status = dict(state.get("topic_status", {}))
             if current_topic and topic_status.get(current_topic) != TopicStatus.COMPLETED:
                 topic_status[current_topic] = TopicStatus.PARTIAL
+            topic_status = invalidate_completed_topics(
+                state, promoted,
+                committed_promotions, topic_status)
             return {
                 "discovered_knowledge": promoted,
+                "superseded_knowledge": superseded_knowledge,
                 "topic_status": topic_status,
                 "product_model": build_product_model(promoted, current_scope),
             }
@@ -599,36 +663,60 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         print(f"ACTIVE ANSWER: gap={current_gap} accepted_facts="
               f"{sum(item.topic == current_topic and item_directly_answers_gap(item, current_gap) for item in extracted_items)}")
     accepted_topics = set()
+    committed_items = []
+    blocked_actor_roles = set()
     for item in extracted_items:
         if not recovering_prior_answer and not item.source_question:
             item = item.model_copy(update={"source_question": answer_context(state)["question"] or None})
         print("STATE TRACE:", item.topic, item.key, "| LLM state:",
               item.knowledge_state, "| current_gap:", current_gap,
               "| directly_answers_gap:", item_directly_answers_gap(item, current_gap))
+        if (item.scope, item.role) in blocked_actor_roles and not any(
+            old.scope == item.scope and old.knowledge_state == KnowledgeState.CONFIRMED
+            and old.key in ("primary_users", "secondary_users")
+            and item.role in (old.roles or []) for old in discovered_knowledge
+        ):
+            continue  # Do not commit owned facts through a rejected absence replacement.
+        # Review each candidate against the turn-start decisions, even if an
+        # earlier sibling has already replaced one during this same merge.
+        previous_absences = matching_absences(item, state.get("discovered_knowledge", []))
+        if previous_absences and item.knowledge_state == KnowledgeState.CONFIRMED:
+            label = item.absence or absence_label(item.value)
+            if label and all((old.absence or absence_label(old.value)) == label for old in previous_absences):
+                continue  # A repeated absence keeps its original provenance.
+            if not can_replace_absence(item, previous_absences, messages[-1].content,
+                                       answer_context(state), semantic_decision):
+                print(f"ABSENCE PRESERVED: {item.topic.value}.{item.key} scope={item.scope.value} owner={item.role}")
+                if item.key in ("primary_users", "secondary_users"):
+                    blocked_actor_roles.update((item.scope, role) for role in item.roles or [])
+                continue
+        relation, matched = compare_candidate(item, discovered_knowledge, semantic_decision)
+        print(f"KNOWLEDGE COMPARISON: {item.topic.value}.{item.key} | {relation}")
+        if relation in ("exact_duplicate", "semantic_duplicate", "already_refined"):
+            continue
+        if relation == "refinement":
+            discovered_knowledge.remove(matched)
+            superseded_knowledge.append(supersession_record(matched, item))
         # Absence replaces old values; new positive facts replace absence.
         discovered_knowledge = [existing for existing in discovered_knowledge
             if not (item.knowledge_state == KnowledgeState.CONFIRMED
                     and existing.scope == item.scope and existing.topic == item.topic
                     and existing.key == item.key and existing.role == item.role
-                    and (item.absence or existing.absence))]
+                    and (item.absence or existing.absence or existing in previous_absences))]
         if state.get("is_correction"):
             discovered_knowledge = [existing for existing in discovered_knowledge
                 if not (existing.scope == item.scope and existing.topic == item.topic
-                        and existing.key == item.key and existing.role == item.role)]
+                        and existing.key == item.key and existing.role == item.role
+                        and not (existing.absence or absence_label(existing.value)))]
         if item.knowledge_state == KnowledgeState.CONFIRMED:
             discovered_knowledge = [existing for existing in discovered_knowledge
                 if not (existing.knowledge_state == KnowledgeState.INFERRED
                         and existing.scope == item.scope and existing.topic == item.topic
                         and existing.key == item.key and existing.role == item.role)]
-        if any(existing.scope == item.scope and existing.topic == item.topic
-               and existing.key == item.key and existing.role == item.role
-               and existing.roles == item.roles and existing.value.lower() == item.value.lower()
-               and (item.key not in ("primary_users", "secondary_users")
-                    or existing.aliases == item.aliases)
-               and existing.knowledge_state == item.knowledge_state
-               for existing in discovered_knowledge):
-            continue
         discovered_knowledge.append(item)
+        if item.knowledge_state == KnowledgeState.CONFIRMED:
+            superseded_knowledge.extend(supersession_record(old, item) for old in previous_absences)
+        committed_items.append(item)
         accepted_topics.add(item.topic)
     # -----------------------------
     # Merge topic status
@@ -648,6 +736,9 @@ def knowledge_tracker_node(state: AgentState) -> dict:
 
         print(f"  New status : {topic_status.get(topic)}")
 
+    topic_status = invalidate_completed_topics(
+        state, discovered_knowledge, committed_items, topic_status)
+
     print("================================\n")
 
     print("\n===== KNOWLEDGE TRACKER OUTPUT =====")
@@ -662,6 +753,7 @@ def knowledge_tracker_node(state: AgentState) -> dict:
 
     return {
         "discovered_knowledge": discovered_knowledge,
+        "superseded_knowledge": superseded_knowledge,
         "answer_followup": answer_followup,
         "topic_status": topic_status,
         "product_model": build_product_model(discovered_knowledge, current_scope),

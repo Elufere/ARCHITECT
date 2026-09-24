@@ -57,6 +57,9 @@ def test_policy_still_requires_independent_grounding(monkeypatch):
     assert result["discovered_knowledge"] == initial["discovered_knowledge"]
 
 
-def test_legacy_none_does_not_erase_role_policy(monkeypatch):
-    models(monkeypatch, resolution="none", evidence="no")
-    assert tracker.extract_gap_absence("no", state("no", "multiple_roles"), S.USER_APP) is None
+def test_incorrect_none_still_requires_whole_field_grounding(monkeypatch):
+    initial = state("no", "multiple_roles")
+    initial["messages"][0] = AIMessage(content=QUESTION)
+    models(monkeypatch, resolution="none", evidence="no", supported=[])
+    result = tracker.knowledge_tracker_node(initial)
+    assert result["discovered_knowledge"] == initial["discovered_knowledge"]
