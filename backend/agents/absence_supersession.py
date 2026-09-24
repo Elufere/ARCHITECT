@@ -1,4 +1,5 @@
 """Protect explicit absence at the commit boundary, independently of extraction."""
+from agents.llm_errors import raise_if_llm_failure
 from agents.extraction_passes import absence_label
 from agents.semantic_validation import GroundingResult
 from agents.state import KnowledgeState
@@ -53,6 +54,7 @@ def can_replace_absence(item, previous, response, context, decide):
                 and f"{item.topic.value}.{item.key}" in decision.evidence_categories.get("0", [])
                 and (not absence or 0 in decision.confirmed_absence_ids))
     except Exception as exc:
+        raise_if_llm_failure(exc)
         print(f"ABSENCE REPLACEMENT FAILED: {exc}")
         return False
 

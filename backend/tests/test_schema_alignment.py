@@ -1,7 +1,7 @@
 """Semantic contracts and extraction -> grounding -> planner integration.
 
 Model responses are deterministic here; replay_schema_alignment.py exercises the
-actual local model separately. No stage after model invocation is bypassed.
+actual configured OpenAI model separately. No stage after model invocation is bypassed.
 """
 import json
 from types import SimpleNamespace

@@ -140,7 +140,7 @@ def test_unknown_owner_cannot_pass_schema_repair(monkeypatch):
 
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_GOAL_BOUNDARIES") != "1",
-                    reason="Requires the configured live Ollama model")
+                    reason="Requires the configured live OpenAI model (uses API credits)")
 @pytest.mark.parametrize("text", NEGATIVES)
 def test_live_non_goal_statements(text):
     initial = state(text)
@@ -149,7 +149,7 @@ def test_live_non_goal_statements(text):
 
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_GOAL_BOUNDARIES") != "1",
-                    reason="Requires the configured live Ollama model")
+                    reason="Requires the configured live OpenAI model (uses API credits)")
 @pytest.mark.parametrize("text,key,role,value", POSITIVES)
 def test_live_explicit_goal_meanings(text, key, role, value):
     initial = state(text)

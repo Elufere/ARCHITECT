@@ -112,7 +112,7 @@ def test_unknown_owners_are_rejected_before_semantic_audit(monkeypatch):
 
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_PERMISSION_BOUNDARY") != "1",
-                    reason="Requires the configured live Ollama model")
+                    reason="Requires the configured live OpenAI model (uses API credits)")
 @pytest.mark.parametrize("text,role,responsibility,permission", CASES)
 def test_live_responsibility_permission_boundary(text, role, responsibility, permission):
     initial = state(text, [role])

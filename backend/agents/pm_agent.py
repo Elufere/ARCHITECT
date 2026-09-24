@@ -7,7 +7,8 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from langchain_ollama import ChatOllama
+from agents.llm_errors import raise_if_llm_failure
+from agents.llm import get_structured_model
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import ValidationError
 
@@ -18,12 +19,9 @@ from agents.discovery_fields import FIELD_DEFINITIONS
 
 logger = logging.getLogger(__name__)
 
-structured_llm = ChatOllama(model=os.getenv("PM_COMPILER_MODEL", "qwen2.5:7b"), temperature=0.0, timeout=60, num_ctx=32768,
-                          num_predict=4096).with_structured_output(PRDDraft, method="json_schema", include_raw=True)
-audit_llm = ChatOllama(model=os.getenv("PM_VERIFIER_MODEL", "qwen2.5:7b"), temperature=0.0, timeout=60, num_ctx=32768,
-                     num_predict=1024).with_structured_output(ClaimVerdict, method="json_schema", include_raw=True)
-category_llm = ChatOllama(model=os.getenv("PM_VERIFIER_MODEL", "qwen2.5:7b"), temperature=0.0, timeout=60, num_ctx=32768,
-                        num_predict=1024).with_structured_output(SemanticCategories, method="json_schema", include_raw=True)
+structured_llm = get_structured_model(call_name="pm_compile.compile", schema=PRDDraft, include_raw=True, max_tokens=4096)
+audit_llm = get_structured_model(call_name="pm_compile.audit", schema=ClaimVerdict, include_raw=True, max_tokens=1024)
+category_llm = get_structured_model(call_name="pm_compile.classification", schema=SemanticCategories, include_raw=True, max_tokens=1024)
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 MAX_COMPILE_ATTEMPTS = 2
 
@@ -105,6 +103,7 @@ def pm_compile_node(state: AgentState) -> dict:
                     payload["repair_errors"] = errors
         raise PRDValidationError(errors[-1])
     except Exception as exc:
+        raise_if_llm_failure(exc)
         # Includes verifier/provider failures and disk errors; never advertise
         # success or expose an unverified draft as the current PRD.
         reason = str(exc) if isinstance(exc, (PRDValidationError, PRDAuditError)) else f"Compilation failed ({type(exc).__name__})."

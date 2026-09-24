@@ -1,4 +1,4 @@
-"""Opt-in local Ollama replay: python tests/replay_schema_alignment.py.
+"""Opt-in OpenAI replay (uses API credits): python tests/replay_schema_alignment.py.
 
 Runs the two supplied CareConnect turns from an empty state and records actual
 planner selections. It also audits injected unsupported claims, without adding

@@ -54,7 +54,7 @@ def replay(monkeypatch, payloads):
 def test_live_failure_repaired_by_model_before_storage(monkeypatch):
     result, calls = replay(monkeypatch, [failed_batch(), corrected_batch()])
     assert len(calls) == 2
-    # The installed Qwen template does not render later system messages.
+    # Repair instructions must remain visible in the initial system message.
     assert len(calls[1]) == 2 and isinstance(calls[1][-1], HumanMessage)
     assert SOURCE in calls[1][0].content
     assert 'Only an explicit absence' in calls[1][-1].content

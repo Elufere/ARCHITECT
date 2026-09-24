@@ -1,7 +1,11 @@
-"""Standalone Ollama probe for the five extraction pass prompts (stdlib only)."""
+"""Opt-in OpenAI probe for the five extraction pass prompts (uses API credits)."""
 import json
-import urllib.request
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from agents.llm import get_structured_model
+from langchain_core.messages import SystemMessage
 
 
 CARE = ("I want to build CareConnect, a platform that helps patients find and book appointments with healthcare professionals such as general doctors, dermatologists, dentists, physiotherapists, and nutritionists. Patients should be able to describe their health concern, search for suitable healthcare providers, compare their profiles and availability, book appointments, communicate with the provider, receive appointment reminders, and pay through the platform. Healthcare providers should be able to manage their profiles, specialties, schedules, appointments, and payments.")
@@ -44,12 +48,9 @@ def call(name, message, actor_context="", post_context=""):
               "Evidence must be an exact case-sensitive substring of the response supporting the whole item. "
               "Use a short sufficient quote. Every explicit fact has knowledge_state CONFIRMED. "
               f"{actor_context}Latest user response:\n{message}\n{post_context}")
-    body = json.dumps({"model": "qwen2.5:7b", "stream": False, "format": fmt,
-                       "messages": [{"role": "system", "content": prompt}]}).encode()
-    request = urllib.request.Request("http://127.0.0.1:11434/api/chat", body,
-                                     {"Content-Type": "application/json"})
-    with urllib.request.urlopen(request, timeout=180) as response:
-        return json.loads(response.read())["message"]["content"]
+    model = get_structured_model(call_name=f"live_pass_probe.{name}",
+        schema={"title": "ProbeFacts", "description": "Extracted facts", **fmt})
+    return json.dumps(model.invoke([SystemMessage(content=prompt)]))
 
 
 if __name__ == "__main__":

@@ -146,7 +146,7 @@ LIVE_CASES = [
 
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_ACTOR_RESOLUTION") != "1",
-                    reason="Requires the configured live Ollama model")
+                    reason="Requires the configured live OpenAI model (uses API credits)")
 @pytest.mark.parametrize("text,role,resolution", LIVE_CASES)
 def test_live_new_participant_membership(text, role, resolution):
     initial = state(text)

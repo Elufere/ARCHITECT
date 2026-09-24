@@ -123,6 +123,15 @@ class KnowledgeItem(BaseModel):
 
 
 class AgentState(TypedDict):
+    session_id: str
+    checkpoint_cursor: str
+    interview_status: str
+    asked_gap: Optional[dict]
+    gap_coverage: Dict[str, dict]
+    fact_acquisition: Dict[str, dict]
+    active_answer_result: Optional[dict]
+    extraction_status: str
+    known_gap_evidence: List[str]
     messages: Annotated[list, add_messages]
     raw_idea: str
     prd_contract: Optional[PRDContract]

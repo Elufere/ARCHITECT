@@ -1,7 +1,7 @@
 """Canonical capacities: context propagation, auditing, and optional live checks.
 
 RUN_LIVE_ACTOR_RESOLUTION=1 enables semantic regressions against the configured
-Ollama model. Offline fixtures test the plumbing, not model semantic accuracy.
+OpenAI model. Offline fixtures test the plumbing, not model semantic accuracy.
 """
 import json
 import os
@@ -134,7 +134,7 @@ def test_explicit_separate_actor_types_remain_discoverable(
 
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_ACTOR_RESOLUTION") != "1",
-                    reason="Requires the configured live Ollama model")
+                    reason="Requires the configured live OpenAI model (uses API credits)")
 @pytest.mark.parametrize("role,aliases,quote,later", CASES)
 def test_live_capacities_and_explicit_separate_types(role, aliases, quote, later):
     first = state(quote)

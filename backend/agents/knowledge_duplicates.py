@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agents.llm_errors import raise_if_llm_failure
 from agents.extraction_passes import canonical_role
 
 
@@ -66,6 +67,7 @@ def compare_candidate(candidate, knowledge, decide):
                 and 0 <= result.existing_id < len(existing)):
             return result.relation, existing[result.existing_id]
     except Exception as exc:
+        raise_if_llm_failure(exc)
         # Comparison failure cannot justify deleting a grounded, distinct fact.
         print(f"FACT COMPARISON UNRESOLVED: {exc}")
     return "new", None

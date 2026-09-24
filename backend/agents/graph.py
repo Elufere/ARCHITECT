@@ -1,12 +1,15 @@
 import logging
+from uuid import uuid4
 from langgraph.graph import StateGraph, END, START
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 
-from agents.state import AgentState
+from agents.state import AgentState, DiscoveryScope
+from agents.llm_usage import usage_tracker
+from agents.interview_checkpoint import durable_node
 # Import the new micro-graph nodes
 from agents.knowledge_tracker import knowledge_tracker_node
 from agents.conversation_manager import conversation_manager_node
-from agents.interview_planner import interview_planner_node
+from agents.interview_planner import interview_planner_node, all_required_gaps_resolved
 from agents.question_generator import question_generator_node
 # Keep the existing nodes
 from agents.guardrails import guardrail_node
@@ -20,7 +23,7 @@ def route_after_plan(state: AgentState) -> str:
     After planning, check if the interview planner decided we are done.
     If so, skip question generation and go straight to compilation.
     """
-    if state.get("awaiting_confirmation"):
+    if state.get("awaiting_confirmation") and all_required_gaps_resolved(state):
         logger.info("All discovery topics completed. Routing to compilation.")
         return "compile_prd"
     
@@ -64,15 +67,29 @@ def build_graph() -> StateGraph:
     workflow = StateGraph(AgentState)
 
     # 1. Register Nodes 
-    workflow.add_node("conversation_manager", conversation_manager_node)
-    workflow.add_node("extract", knowledge_tracker_node)
-    workflow.add_node("plan", interview_planner_node)
-    workflow.add_node("generate", question_generator_node)
-    workflow.add_node("guardrail", guardrail_node)
-    workflow.add_node("compile_prd", pm_compile_node)
+    workflow.add_node("conversation_manager", durable_node("conversation_manager", conversation_manager_node,
+        lambda state: "waiting" if route_after_conversation_manager(state) == END else route_after_conversation_manager(state)))
+    workflow.add_node("extract", durable_node("extract", knowledge_tracker_node, lambda _: "plan"))
+    workflow.add_node("plan", durable_node("plan", interview_planner_node, route_after_plan))
+    workflow.add_node("generate", durable_node("generate", question_generator_node, lambda _: "guardrail"))
+    workflow.add_node("guardrail", durable_node("guardrail", guardrail_node,
+        lambda state: "waiting" if route_after_guardrail(state) == END else "generate"))
+    def compile_when_covered(state):
+        if not all_required_gaps_resolved(state):
+            raise RuntimeError("PRD compilation blocked: required discovery coverage is incomplete")
+        return pm_compile_node(state)
+    workflow.add_node("compile_prd", durable_node("compile_prd", compile_when_covered,
+        lambda state: ("phase_complete" if state["discovery_scope"] == DiscoveryScope.USER_APP else "completed")
+        if state.get("pm_is_complete") else "compile_prd"))
 
     # 2. Entry Point
-    workflow.add_edge(START, "conversation_manager")
+    def resume_at(state):
+        cursor = state.get("checkpoint_cursor", "conversation_manager")
+        if cursor == "waiting" and state.get("messages") and isinstance(state["messages"][-1], HumanMessage):
+            return "conversation_manager"
+        return END if cursor in ("waiting", "phase_complete", "completed") else cursor
+    workflow.add_conditional_edges(START, resume_at, {
+        name: name for name in ("conversation_manager", "extract", "plan", "generate", "guardrail", "compile_prd", END)})
     workflow.add_conditional_edges(
         "conversation_manager",
         route_after_conversation_manager,
@@ -108,4 +125,7 @@ def build_graph() -> StateGraph:
     # 7. Compilation Exit
     workflow.add_edge("compile_prd", END)
 
-    return workflow.compile()
+    return workflow.compile().with_config(
+        callbacks=[usage_tracker],
+        metadata={"openai_usage_session": str(uuid4())},
+    )

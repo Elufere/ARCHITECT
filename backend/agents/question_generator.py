@@ -1,5 +1,5 @@
 # agents/question_generator.py
-from langchain_ollama import ChatOllama
+from agents.llm import get_chat_model
 
 from agents.state import AgentState, DiscoveryScope, KnowledgeState
 from agents.product_model import format_product_model
@@ -105,7 +105,7 @@ permissions gap, and your question must still discover new permission details.
 
 def inference_confirmation_guidance(state: AgentState) -> str:
     """Tell the generator to refine incidental evidence rather than rediscover it."""
-    evidence = state.get("inferred_gap_evidence", [])
+    evidence = state.get("known_gap_evidence", []) + state.get("inferred_gap_evidence", [])
     return f"""
 CONFIRMATION / REFINEMENT MODE
 The following grounded information was provided incidentally while the user
@@ -114,8 +114,11 @@ answered a different question:
 
 Do not ask the normal discovery question from scratch. Reference this evidence
 in one natural question and ask the user to confirm, correct, qualify, or add
-important restrictions/details. Do not ask only "Is that correct?". This fact
-remains unconfirmed until the user responds to this question.
+important restrictions/details. Ask whether this is the complete answer for the
+active gap or whether anything should be added or corrected. Do not ask only
+"Is that correct?". Existing confirmed facts remain confirmed; deliberate coverage
+of this gap remains unresolved until the user answers. This applies equally to
+facts learned in other topics. Do not imply that incidental knowledge is absent.
 """
 
 
@@ -143,14 +146,11 @@ def question_generator_node(state: AgentState) -> dict:
     # This question needs the complete actor list, not another model decision.
     # Reuse the same wording for clarification so a following "No" still answers
     # whether ANY other users exist, rather than denying one suggested example.
-    if (current_gap == "secondary_users" and discovery_move != "confirm_inference"
+    if (current_gap == "secondary_users" and discovery_move not in ("confirm_inference", "confirm_existing")
             and not state.get("question_retry_count", 0)):
         return {"messages": [additional_actors_question(state)]}
 
-    chat_llm = ChatOllama(
-        model="qwen2.5:7b",
-        temperature=0.0,
-    )
+    chat_llm = get_chat_model(call_name="question_generator")
 
     # Get knowledge specific to current topic (and role, if applicable)
     topic_knowledge = [
@@ -176,7 +176,7 @@ def question_generator_node(state: AgentState) -> dict:
     )
     confirmation_guidance = (
         inference_confirmation_guidance(state)
-        if discovery_move == "confirm_inference" else ""
+        if discovery_move in ("confirm_inference", "confirm_existing") else ""
     )
     relevant_context = state.get("relevant_context", [])
 
@@ -283,6 +283,9 @@ Existing knowledge is authoritative context.
 Before asking a question, review all known information about the current
 topic. Do not ask the user to provide information that is already clearly
 established in the known knowledge.
+Known facts do not mean this gap was deliberately covered. When the planner
+selects confirm_existing, briefly cite the existing facts and ask whether they
+are complete or need expansion/correction, even when their content is confirmed.
 
 If some information is already known but important details remain unclear,
 ask about the missing or unclear part rather than asking the original broad

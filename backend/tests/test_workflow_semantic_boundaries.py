@@ -119,7 +119,7 @@ def test_explicit_whole_field_dependency_absence_is_retained(monkeypatch):
 
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_WORKFLOW_BOUNDARIES") != "1",
-                    reason="Requires the configured live Ollama model")
+                    reason="Requires the configured live OpenAI model (uses API credits)")
 @pytest.mark.parametrize("text", NEGATIVES)
 def test_live_nonprocess_statements(text):
     initial = state(text, "downstream_dependency")
@@ -128,7 +128,7 @@ def test_live_nonprocess_statements(text):
 
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_WORKFLOW_BOUNDARIES") != "1",
-                    reason="Requires the configured live Ollama model")
+                    reason="Requires the configured live OpenAI model (uses API credits)")
 @pytest.mark.parametrize("text,key", SINGLE_FACTS)
 def test_live_single_field_workflow(text, key):
     initial = state(text, "workflow_steps")

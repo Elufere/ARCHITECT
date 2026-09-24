@@ -47,7 +47,7 @@ def test_exact_answer_advances_even_when_incidental_audit_fails(monkeypatch, inc
         return GroundingResult(supported_ids=[], evidence_categories={},
                                rejection_reasons={str(c["id"]): "unsupported" for c in candidates})
     monkeypatch.setattr(tracker, "semantic_decision", decide)
-    monkeypatch.setattr(question_generator, "ChatOllama", lambda **_: SimpleNamespace(invoke=lambda _:
+    monkeypatch.setattr(question_generator, "get_chat_model", lambda **_: SimpleNamespace(invoke=lambda _:
         AIMessage(content="Are there actions a customer must not be allowed to perform?")))
     monkeypatch.setattr(guardrails, "evaluator_llm", SimpleNamespace(invoke=lambda _: SimpleNamespace(passed=True)))
     result = graph.build_graph().invoke(initial_state())

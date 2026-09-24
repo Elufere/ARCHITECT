@@ -1,6 +1,7 @@
 """Target explicit supersession to prior confirmed facts, never a whole field."""
 from pydantic import BaseModel, ConfigDict, Field
 
+from agents.llm_errors import raise_if_llm_failure
 from agents.extraction_passes import absence_label, canonical_role
 from agents.state import KnowledgeState
 
@@ -48,5 +49,6 @@ def correction_targets(candidate, prior, response, decide):
             return []
         return [previous[index] for index in dict.fromkeys(result.superseded_ids)]
     except Exception as exc:
+        raise_if_llm_failure(exc)
         print(f"CORRECTION REVIEW UNRESOLVED: {exc}")
         return []

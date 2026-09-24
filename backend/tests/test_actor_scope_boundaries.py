@@ -133,7 +133,7 @@ LIVE_CASES = [
 
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_ACTOR_RESOLUTION") != "1",
-                    reason="Requires the configured live Ollama model")
+                    reason="Requires the configured live OpenAI model (uses API credits)")
 @pytest.mark.parametrize("initial_discovery", [True, False])
 @pytest.mark.parametrize("text,expected", LIVE_CASES)
 def test_live_actor_surface_membership(text, expected, initial_discovery):
@@ -156,7 +156,7 @@ def test_live_actor_surface_membership(text, expected, initial_discovery):
 
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_ACTOR_RESOLUTION") != "1",
-                    reason="Requires the configured live Ollama model")
+                    reason="Requires the configured live OpenAI model (uses API credits)")
 def test_live_cross_surface_approval_is_process_knowledge():
     text = ("Payments in USER_APP remain pending until a fraud team approves them "
             "offline; the team does not use USER_APP.")

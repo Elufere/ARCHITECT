@@ -8,7 +8,9 @@ import re
 from enum import Enum
 
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
-from langchain_ollama import ChatOllama
+from agents.llm_errors import raise_if_llm_failure
+from agents.llm_errors import ExtractionFailed
+from agents.llm import get_structured_model
 from pydantic import BaseModel
 
 from agents.state import DiscoveryScope
@@ -32,7 +34,7 @@ class EvaluationSchema(BaseModel):
     explanation: str
     guidance: str
 
-evaluator_llm = ChatOllama(model="qwen2.5:7b", temperature=0).with_structured_output(EvaluationSchema)
+evaluator_llm = get_structured_model(call_name="guardrail", schema=EvaluationSchema)
 
 # ─────────────────────────────────────────────────────────────────────
 # Deterministic duplicate detection is intentionally conservative. Topic
@@ -134,6 +136,9 @@ information.
 
 Known facts for this topic:
 {known_facts}
+Known facts may have been learned incidentally. A question asking the user to
+confirm their completeness or expand them for the Current gap is valid discovery;
+knowledge presence alone does not mean the gap has been deliberately resolved.
 
 Previously asked questions for this topic:
 {previous_questions}
@@ -368,8 +373,9 @@ def evaluate_question(state: dict) -> dict:
         return {"messages": [rejection]}
 
     except Exception as e:
+        raise_if_llm_failure(e)
         logger.error(f"Evaluator failed: {e}")
-        return state
+        raise ExtractionFailed("Question evaluation failed; the question has not been approved") from e
 
 
 MAX_QUESTION_RETRIES = 2

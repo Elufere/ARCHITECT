@@ -118,7 +118,7 @@ def test_role_policy_review_failure_does_not_persist_none(monkeypatch):
 
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_ROLE_POLICY") != "1",
-                    reason="Requires the configured live Ollama model")
+                    reason="Requires the configured live OpenAI model (uses API credits)")
 @pytest.mark.parametrize("key,question,text,resolution", CASES)
 def test_live_role_policy_scope(key, question, text, resolution):
     result = tracker.knowledge_tracker_node(initial_state(text, question, key))

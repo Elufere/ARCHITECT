@@ -30,7 +30,7 @@ def no_extraction_calls(monkeypatch):
 
 def test_no_is_stored_and_planner_moves_to_responsibilities(monkeypatch):
     no_extraction_calls(monkeypatch)
-    monkeypatch.setattr(question_generator, "ChatOllama", lambda **_: SimpleNamespace(
+    monkeypatch.setattr(question_generator, "get_chat_model", lambda **_: SimpleNamespace(
         invoke=lambda _: AIMessage(content="What should a customer be able to do in the app?")))
     result = graph.build_graph().invoke(state(), config={"recursion_limit": 12})
     assert result["current_gap"] == "responsibilities::customer"
@@ -60,7 +60,7 @@ def test_actor_names_after_yes_are_extracted_and_clear_followup(monkeypatch):
     models(monkeypatch, resolution="unresolved", evidence=answer, outputs={"ACTOR": [dict(
         key="secondary_users", value="support staff", roles=["support_staff"],
         evidence=answer, confidence=1)]})
-    monkeypatch.setattr(question_generator, "ChatOllama", lambda **_: SimpleNamespace(
+    monkeypatch.setattr(question_generator, "get_chat_model", lambda **_: SimpleNamespace(
         invoke=lambda _: AIMessage(content="What should a customer be able to do in the app?")))
     result["messages"].append(HumanMessage(content=answer))
     result["turn_count"] += 1

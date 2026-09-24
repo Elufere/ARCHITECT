@@ -3,7 +3,11 @@ import json
 from typing import Tuple, get_args
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_ollama import ChatOllama
+from agents.llm_errors import raise_if_llm_failure
+from agents.llm_errors import ExtractionFailed
+from agents.discovery_coverage import (GapConfirmation, confirms_existing, facts_for_gap,
+                                       answer_receipt, acquisition_records)
+from agents.llm import get_structured_model
 from pydantic import ValidationError, create_model
 
 from agents.state import (
@@ -114,18 +118,19 @@ def extraction_models():
     global _extraction_models
     if _extraction_models is None:
         # Definitions, structured schema and overlapping evidence must fit together.
-        base = ChatOllama(model="qwen2.5:7b", temperature=0.0, timeout=60, num_ctx=8192)
         _extraction_models = {
-            name: base.with_structured_output(
-                create_model(f"{name.title()}RawPass", __base__=RawPass),
+            name: get_structured_model(
+                call_name=f"knowledge_tracker.{name}",
+                schema=create_model(f"{name.title()}RawPass", __base__=RawPass),
                 include_raw=True)
             for name, *_ in PASSES
         }
         _extraction_models.update({
-            "GAP_ANSWER": base.with_structured_output(GapAnswer, include_raw=True),
-            "GROUNDING": base.with_structured_output(GroundingResponse, include_raw=True),
-            "FACT_COMPARISON": base.with_structured_output(FactComparison, include_raw=True),
-            "CORRECTION_REVIEW": base.with_structured_output(CorrectionReview, include_raw=True),
+            "GAP_ANSWER": get_structured_model(call_name="knowledge_tracker.GAP_ANSWER", schema=GapAnswer, include_raw=True),
+            "GROUNDING": get_structured_model(call_name="knowledge_tracker.GROUNDING", schema=GroundingResponse, include_raw=True),
+            "FACT_COMPARISON": get_structured_model(call_name="knowledge_tracker.FACT_COMPARISON", schema=FactComparison, include_raw=True),
+            "CORRECTION_REVIEW": get_structured_model(call_name="knowledge_tracker.CORRECTION_REVIEW", schema=CorrectionReview, include_raw=True),
+            "GAP_CONFIRMATION": get_structured_model(call_name="knowledge_tracker.GAP_CONFIRMATION", schema=GapConfirmation, include_raw=True),
         })
     return _extraction_models
 
@@ -192,6 +197,7 @@ def semantic_decision(name, schema, instruction, payload, allow_repair=True):
                     "Supported facts need their evidence_id category; supported absences also need confirmed_absence_ids. Do not invent IDs.",
                     repair_payload, allow_repair=False)
             except Exception as exc:
+                raise_if_llm_failure(exc)
                 print(f"GROUNDING REPAIR FAILED: {exc}")
                 return decision
             decision.supported_ids = [index for index in decision.supported_ids if index not in mapping.values()]
@@ -258,8 +264,9 @@ def extract_gap_absence(user_response, state, scope):
             confidence=decision.confidence, knowledge_state=KnowledgeState.CONFIRMED,
             source_turn=state.get("turn_count", 0))
     except Exception as exc:
+        raise_if_llm_failure(exc)
         print(f"GAP ANSWER FAILED: {exc}")
-        return None
+        raise ExtractionFailed("Active-gap interpretation failed") from exc
 
 
 def confirmed_actor_context(state, scope):
@@ -370,9 +377,10 @@ def ground_batch(items, user_response, state, active_gap_review=None):
             accepted.append(item)
         return accepted
     except Exception as exc:
+        raise_if_llm_failure(exc)
         # Fail closed: a validator outage must not persist unsupported facts.
         print(f"GROUNDING FAILED: {exc}")
-        return []
+        raise ExtractionFailed("Grounding verification failed") from exc
 
 
 def extract_passes(user_response: str, state: AgentState,
@@ -406,6 +414,19 @@ Current gap: {state.get('current_gap') or 'none'} (interview focus only; never d
 Last question (context for short answers/pronouns only, never evidence): {answer_context(state)['question']}
 CONFIRMED means explicitly stated by the user. INFERRED means genuinely deduced.
 Category admission for this {name} pass happens BEFORE generating candidates:
+Role occupancy (one account acting in different capacities across or within
+transactions) belongs to multiple_roles; changing capacities over time belongs
+to role_transitions. Neither alone states a responsibility, permission or goal.
+Do NOT classify role occupancy as a responsibility unless separate evidence
+states a concrete action performed by that actor. Permissions need an explicit
+action/resource access or authority boundary, not merely a choice of role.
+Do NOT turn system behaviour into a user's responsibility. Preserving progress
+after interruption is system recovery behaviour, not a duty to resume.
+Do NOT turn a feature into a goal unless an explicit user-owned desired outcome
+is stated. Regulatory compliance requirements are constraints/rules, not role
+responsibilities or goals, unless a concrete compliance action is explicitly
+assigned to that role. Exception/recovery handling is not a normal workflow
+step unless the response separately describes its place in the actual process.
 For each exact statement ask: "Does this exact statement explicitly express a
 fact belonging to MY category?" If not, emit no candidate for that statement.
 First identify the meaning explicitly expressed, then check this pass's field
@@ -479,10 +500,12 @@ of rules or exclusions. Preserve it in value with its original meaning.
             payload = raw if isinstance(raw, RawPass) else RawPass.model_validate(raw)
             print(payload.model_dump())
         except Exception as exc:
+            raise_if_llm_failure(exc)
             print(f"{name} EXTRACTION FAILED: {exc}")
-            continue
+            raise ExtractionFailed(f"{name} extraction did not return a valid response") from exc
         pass_accepted = []
         repair_candidates = []
+        schema_rejections = []
         for raw_fact in payload.items:
             # RemainingFact already performs this one deterministic repair.
             # Trace active-answer recovery without retrying validation or using
@@ -522,6 +545,8 @@ of rules or exclusions. Preserve it in value with its original meaning.
                         raise ValueError("Goal owner does not match confirmed actor classification")
                 pass_accepted.append(item)
             except (ValidationError, ValueError) as exc:
+                if isinstance(exc, ValidationError):
+                    schema_rejections.append(str(exc))
                 print(f"{name} REJECTED: {exc}")
                 if active_format_repair:
                     print(f"ACTIVE ANSWER FORMAT FINAL REJECT: {exc}")
@@ -561,8 +586,14 @@ of rules or exclusions. Preserve it in value with its original meaning.
                     except (ValidationError, ValueError) as exc:
                         print(f"GOAL REPAIR REJECTED: {exc}")
             except Exception as exc:
+                raise_if_llm_failure(exc)
                 print(f"GOAL REPAIR FAILED: {exc}")
-        print(f"{name} ACCEPTED {pass_accepted}")
+                raise ExtractionFailed("Goal repair did not return a valid response") from exc
+            if schema_rejections and not pass_accepted:
+                print(
+                    f"{name}: all proposed candidates were rejected; "
+                    "continuing with zero accepted facts"
+                )
         accepted.extend(pass_accepted)
     return accepted
 
@@ -600,13 +631,14 @@ def knowledge_tracker_node(state: AgentState) -> dict:
     current_gap = state.get("current_gap")
     current_scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
     superseded_knowledge = list(state.get("superseded_knowledge", []))
+    confirmed_prior_answer = confirms_existing(state, semantic_decision)
 
     # A concise confirmation is meaningful only when the planner presented
     # inferred evidence for the active gap. Promote that evidence instead of
     # asking the generic question again.
     if (
-        state.get("conversation_intent") == "confirmation"
-        and state.get("next_discovery_move") == "confirm_inference"
+        confirmed_prior_answer
+        and state.get("next_discovery_move") in ("confirm_inference", "confirm_existing")
     ):
         inferred = inferred_items_for_gap(state)
         if inferred:
@@ -642,6 +674,9 @@ def knowledge_tracker_node(state: AgentState) -> dict:
                 "superseded_knowledge": superseded_knowledge,
                 "topic_status": topic_status,
                 "product_model": build_product_model(promoted, current_scope),
+                "active_answer_result": answer_receipt(state, committed_promotions, promoted, confirmed_existing=True),
+                "fact_acquisition": acquisition_records(state, promoted, committed_promotions),
+                "extraction_status": "CONFIRMED_EXISTING",
             }
 
     # When the user says a question was already answered, recover the answer
@@ -658,7 +693,7 @@ def knowledge_tracker_node(state: AgentState) -> dict:
             user_response = "\n".join(earlier_answers)
 
     print(f"Extracting knowledge for topic: {current_topic}, user response: {user_response}")
-    closed_answer = None if recovering_prior_answer else interpret_closed_answer(state)
+    closed_answer = None if recovering_prior_answer or confirmed_prior_answer else interpret_closed_answer(state)
     answer_followup = None
     if closed_answer is not None:
         # The exact generated question defines the choice's meaning. No model
@@ -672,7 +707,7 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         extracted_items = extract_passes(user_response, state, current_scope)
         # Never reinterpret historical denials as this turn's answer.
         absence = None
-        if not recovering_prior_answer:
+        if not recovering_prior_answer and not confirmed_prior_answer:
             absence = extract_gap_absence(user_response, state, current_scope)
             if absence:
                 extracted_items.append(absence)
@@ -687,6 +722,8 @@ def knowledge_tracker_node(state: AgentState) -> dict:
               f"{sum(item.topic == current_topic and item_directly_answers_gap(item, current_gap) for item in extracted_items)}")
     accepted_topics = set()
     committed_items = []
+    direct_answer_items = (facts_for_gap(state, current_topic, current_gap)
+                           if confirmed_prior_answer else [])
     blocked_actor_roles = set()
     for item in extracted_items:
         if not recovering_prior_answer and not item.source_question:
@@ -706,6 +743,7 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         if previous_absences and item.knowledge_state == KnowledgeState.CONFIRMED:
             label = item.absence or absence_label(item.value)
             if label and all((old.absence or absence_label(old.value)) == label for old in previous_absences):
+                direct_answer_items.extend(previous_absences)
                 continue  # A repeated absence keeps its original provenance.
             if not can_replace_absence(item, previous_absences, messages[-1].content,
                                        answer_context(state), semantic_decision):
@@ -716,6 +754,8 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         relation, matched = compare_candidate(item, discovered_knowledge, semantic_decision)
         print(f"KNOWLEDGE COMPARISON: {item.topic.value}.{item.key} | {relation}")
         if relation in ("exact_duplicate", "semantic_duplicate", "already_refined"):
+            if matched is not None:
+                direct_answer_items.append(matched)
             print("CANDIDATE FINAL NO NEW COMMIT (already represented):", item.model_dump(mode="json"))
             continue
         if relation == "refinement":
@@ -755,6 +795,7 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         if item.knowledge_state == KnowledgeState.CONFIRMED:
             superseded_knowledge.extend(supersession_record(old, item) for old in previous_absences)
         committed_items.append(item)
+        direct_answer_items.append(item)
         accepted_topics.add(item.topic)
     # -----------------------------
     # Merge topic status
@@ -795,4 +836,8 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         "answer_followup": answer_followup,
         "topic_status": topic_status,
         "product_model": build_product_model(discovered_knowledge, current_scope),
+        "active_answer_result": answer_receipt(state, direct_answer_items, discovered_knowledge,
+                                               confirmed_existing=confirmed_prior_answer),
+        "fact_acquisition": acquisition_records(state, discovered_knowledge, direct_answer_items),
+        "extraction_status": "SUCCESS" if extracted_items or confirmed_prior_answer else "NO_FACTS_FOUND",
     }

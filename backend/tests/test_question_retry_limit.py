@@ -24,7 +24,7 @@ def test_repeated_template_exits_graph_with_bounded_retries(monkeypatch):
     def invoke(messages):
         calls.append(messages)
         return AIMessage(content=QUESTION)
-    monkeypatch.setattr(question_generator, "ChatOllama", lambda **_: SimpleNamespace(invoke=invoke))
+    monkeypatch.setattr(question_generator, "get_chat_model", lambda **_: SimpleNamespace(invoke=invoke))
     # Isolate the generation cycle, leaving graph routing, generator, and
     # deterministic duplicate rejection real. No extraction or model server.
     monkeypatch.setattr(graph, "knowledge_tracker_node", lambda _: {})

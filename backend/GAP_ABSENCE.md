@@ -28,7 +28,7 @@ must remain unresolved. The handler does not mechanically interpret `No` as
 absence. Mixed responses still go through all extraction passes so independent
 new information can survive the audit.
 
-These decisions use the configured local `qwen2.5:7b` model and add up to two model
+These decisions use the centrally configured OpenAI model (`OPENAI_MODEL`) and add up to two model
 calls per turn. They improve grounding but remain model judgments. Deterministic
 tests in `tests/test_gap_absence.py` exercise validation, persistence, and planner
 handoff; live model checks are needed to assess semantic classification quality.

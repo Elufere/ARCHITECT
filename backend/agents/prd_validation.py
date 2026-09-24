@@ -4,6 +4,7 @@ import json
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from agents.llm_errors import raise_if_llm_failure
 from agents.discovery_fields import FIELD_DEFINITIONS
 from agents.prd_schema import ClaimVerdict, PRDDraft, SourceFact, SemanticCategories
 from agents.state import DiscoveryScope, KnowledgeItem, KnowledgeState
@@ -20,7 +21,7 @@ class PRDAuditError(RuntimeError):
 def check_context_budget(messages, schema, output_tokens):
     # UTF-8 bytes conservatively upper-bound ordinary text tokens. Include the
     # structured schema and reserve chat overhead/output rather than allowing
-    # Ollama to silently truncate source facts in a long interview.
+    # a long interview to exceed the existing compilation safety budget.
     size = sum(len(message.content.encode("utf-8")) for message in messages)
     size += len(json.dumps(schema.model_json_schema()).encode("utf-8"))
     if size > 32768 - output_tokens - 1024:
@@ -129,6 +130,7 @@ def independent_categories(classifier, content, definitions, cache):
     except PRDAuditError:
         raise
     except Exception as exc:
+        raise_if_llm_failure(exc)
         raise PRDAuditError(f"No valid independent category verdict ({type(exc).__name__}).") from exc
     cache[key] = set(categories.categories)
     return cache[key]
@@ -195,6 +197,7 @@ def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier
         except PRDAuditError:
             raise
         except Exception as exc:
+            raise_if_llm_failure(exc)
             raise PRDAuditError(f"{claim_id}: no valid semantic verdict ({type(exc).__name__}).") from exc
         checks = verdict.model_dump(exclude={"claim_id", "explanation"})
         if not all(checks.values()):

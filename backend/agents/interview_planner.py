@@ -1,5 +1,6 @@
 from agents.state import AgentState, DiscoveryScope, DiscoveryTopic, KnowledgeState, TopicMaturity, TopicStatus
 from agents.role_utils import role_identity, roles_match, split_role_labels
+from agents.discovery_coverage import coverage_key, gap_resolved, facts_for_gap, fact_id, active_question_matches
 
 # Topic ordering
 TOPIC_PREREQUISITES = {
@@ -370,7 +371,8 @@ def build_gap_info(state: AgentState, topic: DiscoveryTopic):
                 else get_confirmed_roles_for_source(state, source_key)
             )
             if not roles:
-                actor_keys = get_known_keys(state, DiscoveryTopic.USER_ROLES)
+                actor_keys = {actor_key for actor_key in ("primary_users", "secondary_users")
+                              if gap_resolved(state, DiscoveryTopic.USER_ROLES, actor_key)}
                 if (source_key and source_key in actor_keys) or (
                     source_key == "all_confirmed_roles"
                     and {"primary_users", "secondary_users"}.issubset(actor_keys)
@@ -378,17 +380,10 @@ def build_gap_info(state: AgentState, topic: DiscoveryTopic):
                     continue
                 missing_keys.append(key)
                 continue
-            known_roles_for_key = {
-                role_identity(item.role)
-                for item in state.get("discovered_knowledge", [])
-                if item.topic == topic and item.key == key
-                and item.knowledge_state == KnowledgeState.CONFIRMED
-                and item.role and item.scope == scope   
-            }
             for role in roles:
-                if role_identity(role) not in known_roles_for_key:
+                if not gap_resolved(state, topic, f"{key}::{role}"):
                     missing_keys.append(f"{key}::{role}")
-        elif key not in known_keys:
+        elif not gap_resolved(state, topic, key):
             missing_keys.append(key)
 
     if not missing_keys:
@@ -396,11 +391,12 @@ def build_gap_info(state: AgentState, topic: DiscoveryTopic):
             "current_gap": None, "current_objective": None,
             "question_hint": None, "current_role": None,
             "known_keys": known_keys, "missing_keys": [], "inferred_gap_evidence": [],
-            "relevant_context": [],
+            "relevant_context": [], "known_gap_evidence": [],
         }
 
     gap = missing_keys[0]
     inferred_evidence = inferred_evidence_for_gap(state, topic, gap)
+    known_evidence = [item.value for item in facts_for_gap(state, topic, gap)]
     context = relevant_confirmed_context(state, topic, gap)
 
     if "::" in gap:
@@ -414,6 +410,7 @@ def build_gap_info(state: AgentState, topic: DiscoveryTopic):
             "known_keys": known_keys,
             "missing_keys": missing_keys,
             "inferred_gap_evidence": inferred_evidence,
+            "known_gap_evidence": known_evidence,
             "relevant_context": context,
         }
 
@@ -426,10 +423,30 @@ def build_gap_info(state: AgentState, topic: DiscoveryTopic):
         "known_keys": known_keys,
         "missing_keys": missing_keys,
         "inferred_gap_evidence": inferred_evidence,
+        "known_gap_evidence": known_evidence,
         "relevant_context": context,
     }
 
+def all_required_gaps_resolved(state):
+    return all(not build_gap_info(state, topic)["missing_keys"] for topic in DiscoveryTopic)
+
+
 def interview_planner_node(state: AgentState) -> dict:
+    # The tracker supplies a receipt only after successful grounding and commit.
+    # Coverage is a planner decision, separate from global confirmed knowledge.
+    coverage = dict(state.get("gap_coverage", {}))
+    receipt = state.get("active_answer_result")
+    if receipt and active_question_matches(state):
+        scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+        topic, gap = state.get("current_topic"), state.get("current_gap")
+        if (receipt["scope"] == scope.value and receipt["topic"] == topic.value
+                and receipt["gap"] == gap and receipt["source_turn"] == state.get("turn_count", 0)):
+            active_ids = {fact_id(item) for item in facts_for_gap(state, topic, gap)}
+            if active_ids.intersection(receipt["fact_ids"]):
+                coverage[coverage_key(scope, topic, gap)] = {**receipt, "status": "RESOLVED"}
+                print(f"GAP RESOLVED: {scope.value}.{topic.value}.{gap} | {receipt['resolution']}")
+    state = {**state, "gap_coverage": coverage, "active_answer_result": None}
+    common = dict(gap_coverage=coverage, active_answer_result=None, awaiting_confirmation=False)
     topic_status = dict(state.get("topic_status", {}))
     topic_maturity = dict(state.get("topic_maturity", {}))
     current_topic = state.get("current_topic")
@@ -437,6 +454,15 @@ def interview_planner_node(state: AgentState) -> dict:
     print("\n=== INTERVIEW PLANNER ===")
     print("Scope:", scope.value)
     print("Current topic:", current_topic)
+    # Old in-memory/imported status flags are not deliberate coverage records.
+    for topic, status in list(topic_status.items()):
+        if status == TopicStatus.COMPLETED:
+            gaps = build_gap_info(state, DiscoveryTopic(topic))["missing_keys"]
+            if gaps:
+                print(f"=== TOPIC INVALIDATION ===\nTopic: {DiscoveryTopic(topic).value}\n"
+                      f"Old: COMPLETED\nNew: PARTIAL\nreason: deliberate gap coverage is missing\n"
+                      f"new gaps: {', '.join(gaps)}")
+                topic_status[topic] = TopicStatus.PARTIAL
 
     # --------------------------------------------------------
     # Stay on current topic, but only if it still has a real gap
@@ -449,8 +475,8 @@ def interview_planner_node(state: AgentState) -> dict:
         topic_maturity[current_topic] = maturity
         gap = build_gap_info(state, current_topic)
 
-        print("Known:", gap["known_keys"])
-        print("Missing:", gap["missing_keys"])
+        print("Knowledge present (not coverage):", gap["known_keys"])
+        print("Unresolved discovery gaps:", gap["missing_keys"])
         print("Current gap:", gap["current_gap"])
 
         # Maturity unlocks dependent topics; it is not permission to discard
@@ -459,9 +485,11 @@ def interview_planner_node(state: AgentState) -> dict:
         # such as role_transitions and permissions.
         if gap["current_gap"] is not None:
             return {
+                **common, "topic_status": topic_status,
                 "current_topic": current_topic,
                 "topic_maturity": topic_maturity,
                 "next_discovery_move": (
+                    "confirm_existing" if gap["known_gap_evidence"] else
                     "confirm_inference" if gap["inferred_gap_evidence"]
                     else "deepen_understanding"
                 ),
@@ -507,15 +535,17 @@ def interview_planner_node(state: AgentState) -> dict:
             continue
 
         print(f"\nSelected topic: {topic.value}")
-        print("Known:", gap["known_keys"])
-        print("Missing:", gap["missing_keys"])
+        print("Knowledge present (not coverage):", gap["known_keys"])
+        print("Unresolved discovery gaps:", gap["missing_keys"])
         print("Current gap:", gap["current_gap"])
 
         return {
+            **common,
             "current_topic": topic,
             "topic_status": updated,
             "topic_maturity": topic_maturity,
             "next_discovery_move": (
+                "confirm_existing" if gap["known_gap_evidence"] else
                 "confirm_inference" if gap["inferred_gap_evidence"]
                 else "establish_foundation"
             ),
@@ -523,7 +553,10 @@ def interview_planner_node(state: AgentState) -> dict:
         }
 
     # All topics exhausted — persist the completion we just marked above
+    if not all_required_gaps_resolved(state):
+        raise RuntimeError("Discovery still has unresolved required gaps; compilation is blocked")
     return {
+        **common,
         "current_topic": None,
         "topic_status": topic_status,
         "topic_maturity": topic_maturity,

@@ -1,4 +1,4 @@
-"""Standalone Ollama probe for the production RESPONSIBILITY instructions."""
+"""Opt-in OpenAI probe (uses API credits) for the production RESPONSIBILITY instructions."""
 import ast
 import json
 import sys

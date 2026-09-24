@@ -1,6 +1,6 @@
 """Responsibility prompt contract and own-quote grounding regressions.
 
-Run live model checks with RUN_LIVE_RESPONSIBILITY=1 and the configured Ollama
+Run live model checks with RUN_LIVE_RESPONSIBILITY=1 and the configured OpenAI
 model available. Deterministic tests exercise the pipeline with audit fixtures;
 they do not claim to establish a language model's semantic accuracy.
 """
@@ -74,7 +74,7 @@ def test_responsibility_own_quote_audit(monkeypatch, text, role, value, supporte
 
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_RESPONSIBILITY") != "1",
-                    reason="Requires the configured live Ollama model")
+                    reason="Requires the configured live OpenAI model (uses API credits)")
 @pytest.mark.parametrize("text,role,value,supported", CASES)
 def test_live_responsibility_extraction(text, role, value, supported):
     current = state()

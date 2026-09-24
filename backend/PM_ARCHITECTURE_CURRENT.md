@@ -1,10 +1,10 @@
 This describes the current Product Manager (PM) agent implementation in the Architect project, updated on 2026-09-23. It includes goal-owner repair, role-policy answers, controlled-question contracts, and isolation of direct-answer grounding. It describes the existing code, not a proposed redesign. Paths below are relative to the repository root.
 
-The PM conducts a structured product-discovery interview, stores evidence-backed facts, chooses the next missing requirement, asks one question, and eventually attempts to compile a PRD. It uses Python, LangGraph, LangChain's Ollama integration, and Pydantic. The named components are functions in one graph, not autonomous agents running concurrently.
+The PM conducts a structured product-discovery interview, stores evidence-backed facts, chooses the next missing requirement, asks one question, and eventually attempts to compile a PRD. It uses Python, LangGraph, LangChain's OpenAI integration, and Pydantic. The named components are functions in one graph, not autonomous agents running concurrently.
 
 1. Execution flow
 
-The terminal entry point is `backend/test_pm.py`. It creates `AgentState`, appends each human answer, increments the turn counter, and calls `graph.invoke(state)`. The graph returns after producing an accepted question or completing compilation. State remains in the CLI process between turns. `build_graph()` does not configure a checkpointer or durable conversation store.
+The terminal entry point is `backend/test_pm.py`. It creates or resumes `AgentState`, persists each submitted human answer, increments the turn counter, and calls `graph.invoke(state)`. Atomic JSON checkpoints record successful node boundaries and the next-node cursor, so recovery can resume without re-extracting committed answers. Planner-owned gap coverage is separate from global knowledge. See `DISCOVERY_RECOVERY.md` for coverage, checkpoint and retry semantics; this uses boundary snapshots rather than a LangGraph database checkpointer.
 
 ```text
 Human message
@@ -39,13 +39,13 @@ The graph is defined in `backend/agents/graph.py`. The CLI first runs USER_APP d
 | Component | Implementation |
 | --- | --- |
 | Conversation intent classification | Python regular expressions; no model call |
-| Six extraction passes | Ollama `qwen2.5:7b`, temperature 0, timeout 60 seconds, context window 8192 |
-| Active-gap interpretation and evidence grounding | Same configured Qwen model, separate structured-output calls |
+| Six extraction passes | Central OpenAI model (`OPENAI_MODEL`, default `gpt-4.1-mini`), temperature 0, timeout 60 seconds |
+| Active-gap interpretation and evidence grounding | Same centrally configured OpenAI model, separate structured-output calls |
 | Interview planner | Deterministic Python |
-| Question generation | Ollama `qwen2.5:7b`, temperature 0; secondary-user questions have a deterministic template |
-| Question evaluator | Ollama `qwen2.5:7b`, temperature 0, structured output |
-| Final PRD compilation | Configurable Ollama model (`PM_COMPILER_MODEL`, default `qwen2.5:7b`), parsed `PRDDraft` structured output |
-| PRD verification | Configurable `PM_VERIFIER_MODEL` (default `qwen2.5:7b`), independent source/claim classification plus per-claim semantic auditing |
+| Question generation | OpenAI `gpt-4.1-mini` (configurable through `OPENAI_MODEL`), temperature 0; secondary-user questions have a deterministic template |
+| Question evaluator | OpenAI `gpt-4.1-mini` (configurable through `OPENAI_MODEL`), temperature 0, structured output |
+| Final PRD compilation | Central OpenAI model (`OPENAI_MODEL`), parsed `PRDDraft` structured output |
+| PRD verification | Central OpenAI model (`OPENAI_MODEL`), independent source/claim classification plus per-claim semantic auditing |
 
 Extraction calls execute sequentially. They are not parallel agents. A typical free-form information turn with an active gap and candidate facts uses six extraction calls, one gap-interpretation call, one grounding call, one question-generation call, and one question-evaluation call: approximately ten calls before repairs. Literal choices to the application's controlled additional-users question instead use the answer contract described below. The count varies with empty candidate batches, deterministic questions, compilation, repairs, and guardrail retries.
 

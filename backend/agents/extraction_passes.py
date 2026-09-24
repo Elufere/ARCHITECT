@@ -211,6 +211,7 @@ For the pattern "patients find and book appointments with healthcare professiona
 For people booking artisans, output primary customer and artisan, with no secondary actors.
 Never use demand_side, supply_side, user, users, people or person as canonical role IDs.
 "Platform" does not imply an administrator. Use exactly one canonical role per item in roles.
+
 Do not extract responsibilities here. Also extract multiple_roles and role_transitions
 when explicitly stated, with roles=[] and aliases=[]. These are policies, not new actors.
 Examples: "Users can have both roles" -> multiple_roles with the stated positive policy;
@@ -396,6 +397,25 @@ whenever stated, even alongside a capability list. Apply each field's definition
 An approval may also be a business rule; a completion signal may also be a user
 success criterion. Shared evidence is allowed when both meanings are explicit."""),
     ("GOAL", GoalFact, DiscoveryTopic.USER_GOALS, """Extract explicit desired outcomes, success signals, and motivations.
+FOUNDER / PRODUCT-CREATOR INTENT IS NOT A USER GOAL.
+A statement describing what the speaker wants to build, create, launch,
+implement, add, or support describes product intent unless the same
+evidence explicitly identifies an outcome desired by a product actor.
+
+Examples that produce ZERO goal facts:
+- "I want to build an escrow app."
+- "I want to create a marketplace."
+- "We are building a booking platform."
+- "The product should support payments."
+
+Do not interpret the speaker as a product user merely because they say
+"I want". Do not invent an actor to make product intent satisfy a
+role-specific goal schema.
+
+A role-specific goal requires evidence that an identified product actor
+wants or needs a RESULT from using the product.
+
+If the response contains only founder/product intent, return ZERO goal items.
 primary_user_goals / secondary_user_goals: a desired RESULT that an actor wants
 or the product helps them achieve. Role-specific goals need one known canonical owner.
 Every primary_user_goals or secondary_user_goals item MUST include the JSON field
