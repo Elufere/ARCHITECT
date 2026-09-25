@@ -169,3 +169,22 @@ def test_other_scope_facts_do_not_count():
     recovery = fact(T.EXCEPTIONS, "recovery", "Retry once", scope=S.ADMIN_DASHBOARD)
     record = reconcile_requirement_coverage_record(requirement(scope=S.USER_APP), [recovery])
     assert record.status == RequirementCoverageStatus.UNSEEN
+
+
+def test_resolved_schema_gap_does_not_resolve_specific_requirement():
+    recovery = fact(T.EXCEPTIONS, "recovery", "Retry the external request once")
+    req = requirement()
+    key = requirement_store_key(S.USER_APP, req.id)
+    state = {
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [recovery],
+        "active_requirements": {key: req},
+        "requirement_coverage": {},
+        "gap_coverage": {
+            f"{S.USER_APP.value}|{T.EXCEPTIONS.value}|recovery": {"status": "RESOLVED"}
+        },
+    }
+    from agents.requirement_coverage import requirement_coverage_node
+    result = requirement_coverage_node(state)
+    assert result["requirement_coverage"][key]["status"] == RequirementCoverageStatus.KNOWN_SHALLOW.value
+    assert result["active_requirements"][key].status == RequirementStatus.ACTIVE
