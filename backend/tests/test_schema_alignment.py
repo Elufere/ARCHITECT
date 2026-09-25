@@ -49,11 +49,12 @@ def run(monkeypatch, text, outputs, *, existing=(), topic=None, gap=None, questi
     monkeypatch.setattr(tracker, "extraction_models", lambda: {
         name: SimpleNamespace(invoke=lambda messages, name=name: invoke(name, messages))
         for name in [*[p[0] for p in PASSES], "GAP_ANSWER", "GROUNDING"]})
-    state = dict(messages=[AIMessage(content=question), HumanMessage(content=text)],
+    delivered_question = question or (f"What should we know about {gap}?" if topic and gap else "")
+    state = dict(messages=[AIMessage(content=delivered_question), HumanMessage(content=text)],
                  current_topic=topic, current_gap=gap, discovered_knowledge=list(existing),
                  discovery_scope=scope, topic_status={}, topic_maturity={}, turn_count=0,
-                 asked_gap=(dict(scope=scope.value, topic=topic.value, gap=gap, question=question)
-                            if topic and gap and question else None))
+                 asked_gap=(dict(scope=scope.value, topic=topic.value, gap=gap, question=delivered_question)
+                            if topic and gap else None))
     state.update(tracker.knowledge_tracker_node(state))
     return state, calls
 
