@@ -21,6 +21,7 @@ from agents.state import (
     DiscoveryTopic as T,
     KnowledgeItem,
     KnowledgeState,
+    TopicMaturity,
 )
 
 
@@ -79,7 +80,10 @@ def planner_state(requirement=None, ranked=True):
         "discovered_knowledge": [],
         "gap_coverage": {},
         "topic_status": {},
-        "topic_maturity": {},
+        "topic_maturity": {
+            T.CORE_WORKFLOW: TopicMaturity.COHERENT,
+            T.BUSINESS_RULES: TopicMaturity.COHERENT,
+        },
         "active_answer_result": None,
         "current_topic": None,
         "planner_source": "schema",
@@ -279,3 +283,22 @@ def test_approved_requirement_question_is_recorded_for_priority_history(monkeypa
     result = guardrails.guardrail_node(state)
     assert result["requirement_question_history"][0]["candidate_id"] == cand.id
     assert result["requirement_question_history"][0]["question"] == question
+
+
+def test_requirement_candidate_waits_for_schema_prerequisites():
+    state = planner_state()
+    state["topic_maturity"] = {}
+    result = interview_planner.interview_planner_node(state)
+    assert result["planner_source"] == "schema"
+    assert result["current_topic"] == T.USER_ROLES
+
+
+def test_schema_fallback_resumes_normal_order_after_requirement_move():
+    state = planner_state(ranked=False)
+    state["planner_source"] = "requirement"
+    state["current_topic"] = T.EXCEPTIONS
+    state["topic_maturity"] = {}
+    state["active_requirements"] = {}
+    result = interview_planner.interview_planner_node(state)
+    assert result["planner_source"] == "schema"
+    assert result["current_topic"] == T.USER_ROLES
