@@ -666,6 +666,55 @@ def _plan_candidate(state: AgentState, candidate: QuestionCandidate) -> dict:
     return _model_plan(state, candidate)
 
 
+def _refresh_inquiry_frontier(state: AgentState) -> tuple[AgentState, dict]:
+    """Rebuild the derived inquiry frontier when planning is invoked directly.
+
+    The graph normally materializes these nodes before the planner. Recomputing
+    here keeps resumed legacy checkpoints and focused callers safe without
+    reintroducing schema traversal.
+    """
+    from agents.inquiries import identify_open_inquiries
+    from agents.question_candidates import build_question_candidates, filter_question_candidates
+    from agents.question_priority import prioritize_question_candidates
+
+    inquiries = identify_open_inquiries(state)
+    with_inquiries = {
+        **state,
+        "open_inquiries": [item.model_dump(mode="json") for item in inquiries],
+    }
+    candidates = build_question_candidates(with_inquiries)
+    with_candidates = {
+        **with_inquiries,
+        "question_candidates": [item.model_dump(mode="json") for item in candidates],
+    }
+    eligible, decisions = filter_question_candidates(with_candidates, candidates)
+    with_eligible = {
+        **with_candidates,
+        "eligible_question_candidates": [
+            item.model_dump(mode="json") for item in eligible
+        ],
+        "question_candidate_eligibility": {
+            candidate_id: decision.model_dump(mode="json")
+            for candidate_id, decision in decisions.items()
+        },
+    }
+    ranked, scores = prioritize_question_candidates(with_eligible, eligible)
+    updates = {
+        "open_inquiries": with_inquiries["open_inquiries"],
+        "question_candidates": with_candidates["question_candidates"],
+        "eligible_question_candidates": with_eligible["eligible_question_candidates"],
+        "question_candidate_eligibility": with_eligible["question_candidate_eligibility"],
+        "ranked_question_candidates": [
+            item.model_dump(mode="json") for item in ranked
+        ],
+        "question_candidate_priority": {
+            candidate_id: score.model_dump(mode="json")
+            for candidate_id, score in scores.items()
+        },
+    }
+    return {**with_eligible, **updates}, updates
+
+
 def interview_planner_node(state: AgentState) -> dict:
     # Deliberate answer receipts are retained as diagnostics for model-level
     # inquiries, but schema coverage no longer drives routing or completion.
@@ -711,10 +760,37 @@ def interview_planner_node(state: AgentState) -> dict:
         details = "; ".join(f"{issue.kind.value}: {issue.message}" for issue in structural)
         raise RuntimeError("Discovery consistency validation failed: " + details)
 
+    clarification = next(
+        (
+            issue for issue in validation_issues
+            if issue.severity.value == "BLOCKING"
+            and issue.resolution == ValidationResolution.USER_CLARIFICATION
+        ),
+        None,
+    )
+    if clarification is not None:
+        print("Selected validation issue:", clarification.id)
+        return {
+            "gap_coverage": coverage,
+            "active_answer_result": None,
+            "topic_status": topic_status,
+            "topic_maturity": topic_maturity,
+            "selected_inquiry": None,
+            **_validation_plan(state, clarification),
+        }
+
+    frontier_updates = {}
     ranked = [
         QuestionCandidate.model_validate(item)
         for item in state.get("ranked_question_candidates", [])
     ]
+    if not ranked:
+        state, frontier_updates = _refresh_inquiry_frontier(state)
+        ranked = [
+            QuestionCandidate.model_validate(item)
+            for item in state.get("ranked_question_candidates", [])
+        ]
+
     if ranked:
         selected = ranked[0]
         print("Selected inquiry:", selected.inquiry_id or selected.id)
@@ -723,6 +799,7 @@ def interview_planner_node(state: AgentState) -> dict:
             print("Requirement:", selected.requirement_id)
             print("Target facets:", selected.target_facets)
         return {
+            **frontier_updates,
             "gap_coverage": coverage,
             "active_answer_result": None,
             "topic_status": topic_status,
@@ -759,6 +836,7 @@ def interview_planner_node(state: AgentState) -> dict:
 
     print("No material inquiry remains. Discovery is ready to compile.")
     return {
+        **frontier_updates,
         "gap_coverage": coverage,
         "active_answer_result": None,
         "planner_source": "model",
