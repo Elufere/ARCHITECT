@@ -430,6 +430,19 @@ def build_gap_info(state: AgentState, topic: DiscoveryTopic):
     }
 
 
+
+def _requirement_topic_unlocked(
+    candidate: QuestionCandidate,
+    topic_maturity: dict,
+) -> bool:
+    prerequisites = TOPIC_PREREQUISITES.get(candidate.topic, [])
+    return all(
+        topic_maturity.get(dep, TopicMaturity.UNSEEN)
+        in {TopicMaturity.COHERENT, TopicMaturity.DECISION_READY}
+        for dep in prerequisites
+    )
+
+
 def _requirement_context(state: AgentState, candidate: QuestionCandidate) -> list[str]:
     known_ids = set(candidate.known_fact_ids)
     context = []
@@ -536,8 +549,12 @@ def interview_planner_node(state: AgentState) -> dict:
         QuestionCandidate.model_validate(item)
         for item in state.get("ranked_question_candidates", [])
     ]
-    if ranked:
-        selected = ranked[0]
+    askable_ranked = [
+        candidate for candidate in ranked
+        if _requirement_topic_unlocked(candidate, topic_maturity)
+    ]
+    if askable_ranked:
+        selected = askable_ranked[0]
         print("\nSelected requirement:", selected.requirement_id)
         print("Target facets:", selected.target_facets)
         return {
@@ -549,7 +566,11 @@ def interview_planner_node(state: AgentState) -> dict:
 
     # No requirement candidate is currently askable. Fall back to the schema
     # planner so foundational discovery can continue and potentially activate or
-    # unblock additional requirements.
+    # unblock additional requirements. If the previous move was requirement-driven,
+    # do not let that requirement's topic hijack schema traversal.
+    if state.get("planner_source") == "requirement":
+        current_topic = None
+
     # Old in-memory/imported status flags are not deliberate coverage records.
     for topic, status in list(topic_status.items()):
         if status == TopicStatus.COMPLETED:
