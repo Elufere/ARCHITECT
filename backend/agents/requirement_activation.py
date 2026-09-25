@@ -1,7 +1,7 @@
 """Deterministic activation of product-specific requirements from confirmed facts."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable, Optional, Sequence
 
 from agents.discovery_coverage import fact_id
@@ -47,7 +47,7 @@ class RequirementTemplate:
     label: str
     description: str
     facets: tuple[RequirementFacet, ...] = ()
-    priority_hints: RequirementPriorityHints = RequirementPriorityHints()
+    priority_hints: RequirementPriorityHints = field(default_factory=RequirementPriorityHints)
     dependencies: tuple[str, ...] = ()
     unlocks: tuple[str, ...] = ()
 
