@@ -8,6 +8,7 @@ from agents.discovery_coverage import fact_id
 from agents.requirements import (
     ActiveRequirement,
     RequirementActivationSource,
+    RequirementFacet,
     RequirementStatus,
     RequirementStore,
     requirement_store_key,
@@ -44,6 +45,7 @@ class RequirementTemplate:
     parent_gap: Optional[str]
     label: str
     description: str
+    facets: tuple[RequirementFacet, ...] = ()
     dependencies: tuple[str, ...] = ()
     unlocks: tuple[str, ...] = ()
 
@@ -114,6 +116,11 @@ ACTIVATION_RULES: tuple[RequirementActivationRule, ...] = (
                     "Determine what the product should do when a required external review, "
                     "approval, service, or action does not complete successfully."
                 ),
+                facets=(
+                    RequirementFacet(id="failure_condition", label="Failure condition", description="What failure, delay, or non-completion condition matters."),
+                    RequirementFacet(id="expected_behavior", label="Expected behavior", description="What the product should do when that condition occurs."),
+                    RequirementFacet(id="recovery_or_escalation", label="Recovery or escalation", description="How the workflow recovers, retries, escalates, or terminates afterward."),
+                ),
             ),
         ),
     ),
@@ -136,6 +143,10 @@ ACTIVATION_RULES: tuple[RequirementActivationRule, ...] = (
                 description=(
                     "Determine product behavior immediately before, at, and after a confirmed "
                     "deadline, expiry period, or other time boundary."
+                ),
+                facets=(
+                    RequirementFacet(id="at_boundary", label="At boundary", description="What happens when the deadline, expiry, or limit is reached."),
+                    RequirementFacet(id="after_boundary", label="After boundary", description="What state or behavior applies after the boundary has passed."),
                 ),
             ),
         ),
@@ -214,6 +225,7 @@ def reconcile_active_requirements(
                 description=template.description,
                 status=RequirementStatus.ACTIVE,
                 activation_sources=valid,
+                facets=list(template.facets),
                 dependencies=list(template.dependencies),
                 unlocks=list(template.unlocks),
             )
