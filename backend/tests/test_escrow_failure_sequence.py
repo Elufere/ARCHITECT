@@ -16,6 +16,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from agents import knowledge_tracker as tracker
 from agents.interview_planner import build_gap_info, interview_planner_node
 from agents.state import DiscoveryScope as S, DiscoveryTopic as T, TopicStatus as Status
+from coverage_test_utils import coverage_for_facts
 from test_question_retry_limit import test_repeated_template_exits_graph_with_bounded_retries as check_retry_guardrail
 
 
@@ -58,7 +59,12 @@ def replay(monkeypatch):
     def turn(name, text, outputs, *, topic=T.USER_ROLES, gap=None, reject=()):
         active.update(name=name, text=text, outputs=outputs, reject=set(reject))
         state.update(current_topic=topic, current_gap=gap, turn_count=state["turn_count"] + 1)
-        state["messages"] += [AIMessage(content="Please describe this part of the application."), HumanMessage(content=text)]
+        question = "Please describe this part of the application."
+        state["messages"] += [AIMessage(content=question), HumanMessage(content=text)]
+        state["asked_gap"] = (
+            dict(scope=state["discovery_scope"].value, topic=topic.value, gap=gap, question=question)
+            if gap else None
+        )
         out = StringIO()
         with redirect_stdout(out):
             state.update(tracker.knowledge_tracker_node(state))
@@ -82,6 +88,9 @@ def replay(monkeypatch):
         "GOAL": [raw("primary_user_goals", "payment protected until fulfillment", text, role="customer"),
                  raw("success_criteria", "fulfillment and payment release", text),
                  raw("motivations", "reduce fraud risk", text)]})
+    # This replay now explicitly models that the initial role/goal interview was
+    # already deliberately covered before testing later invalidation behavior.
+    state["gap_coverage"] = coverage_for_facts(state, T.USER_ROLES, T.USER_GOALS)
     for topic in (T.USER_ROLES, T.USER_GOALS):
         assert not build_gap_info(state, topic)["missing_keys"]
         state["current_topic"] = topic
