@@ -132,7 +132,8 @@ def test_simple_task_product_uses_model_frontier_without_dynamic_requirements():
     result = run_reasoning_frontier(state)
 
     assert result["active_requirements"] == {}
-    assert result["ranked_question_candidates"] == []
+    assert len(result["ranked_question_candidates"]) == 1
+    assert result["ranked_question_candidates"][0]["source"] == "MODEL"
     assert result["planner_source"] == "model"
     assert result["current_topic"] == T.USER_ROLES
     assert result["current_gap"] == "responsibilities::task owner"
