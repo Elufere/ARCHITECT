@@ -8,7 +8,13 @@ from agents.discovery_fields import FIELD_DEFINITIONS
 AuditField = Literal[tuple(f"{topic.value}.{key}" for topic, definitions in FIELD_DEFINITIONS.items() for key in definitions)]
 
 
-def category_contradiction(key: str, evidence: str, value: str | None = None) -> str | None:
+def category_contradiction(
+    key: str,
+    evidence: str,
+    value: str | None = None,
+    *,
+    direct_answer: bool = False,
+) -> str | None:
     """Reject narrow explicit category contradictions; never infer a positive fact.
 
     Mixed clauses remain the auditor's job. These checks do not resolve negatives,
@@ -25,7 +31,7 @@ def category_contradiction(key: str, evidence: str, value: str | None = None) ->
             r"\b(?:when|whenever|once|after|before|until|upon|if|starts?|begins?|triggers?|complete[ds]?|finished|result|status|state|requires?|depends?|unless)\b", evidence, re.I
         ):
             return "A capability list contains no explicit start/completion/state/dependency clause"
-    if key == "trigger":
+    if key == "trigger" and not direct_answer:
         explicit_start = re.search(
             r"\b(?:starts?|begins?|initiates?|triggers?|triggered|kicks?\s+off|"
             r"start\s+event|entry\s+point|first\s+starts?)\b",
@@ -35,7 +41,7 @@ def category_contradiction(key: str, evidence: str, value: str | None = None) ->
         if not explicit_start:
             return "Evidence does not explicitly establish the workflow start event"
 
-    if key == "success_criteria":
+    if key == "success_criteria" and not direct_answer:
         explicit_definition = re.search(
             r"\b(?:success\s+(?:means|is)|successful\s+when|considered\s+(?:successful|complete)|"
             r"goal\s+is\s+achieved|know\s+(?:they|we|the\s+user).*successful|"
@@ -58,7 +64,7 @@ def category_contradiction(key: str, evidence: str, value: str | None = None) ->
         if intent_words and not source_intent:
             return "Candidate invents desired-outcome intent not stated in its evidence"
 
-    if key == "permissions":
+    if key == "permissions" and not direct_answer:
         explicit_boundary = re.search(
             r"\b(?:only|cannot|can't|must\s+not|forbidden|restricted|restriction|"
             r"authorized|authorization|exclusive|exclusively|unless|except|"
@@ -101,7 +107,7 @@ def category_contradiction(key: str, evidence: str, value: str | None = None) ->
         if intent_only and not explicit_result:
             return "A desired future outcome is not an established workflow end state"
 
-    if key == "validation_rules" and not re.search(
+    if key == "validation_rules" and not direct_answer and not re.search(
         r"\b(?:valid|invalid|validate|validation|must\s+(?:be|match|contain|provide)|"
         r"required|required\s+field|rejected?\s+(?:if|when)|format|fails?\s+validation)\b",
         evidence,
@@ -109,7 +115,7 @@ def category_contradiction(key: str, evidence: str, value: str | None = None) ->
     ):
         return "Evidence states no validation condition or validation consequence"
 
-    if key == "eligibility_rules" and not re.search(
+    if key == "eligibility_rules" and not direct_answer and not re.search(
         r"\b(?:eligible|eligibility|qualified|qualification|licensed|verified|"
         r"prerequisite|must\s+be\s+(?:a|an|verified|licensed|qualified)|"
         r"only\s+.+\s+(?:can|may|are\s+allowed\s+to))\b",
@@ -118,7 +124,7 @@ def category_contradiction(key: str, evidence: str, value: str | None = None) ->
     ):
         return "Evidence states no qualification or participation prerequisite"
 
-    if key == "limits" and not re.search(
+    if key == "limits" and not direct_answer and not re.search(
         r"\b(?:limit|limited|maximum|minimum|max|min|at\s+most|at\s+least|"
         r"no\s+more\s+than|no\s+less\s+than|up\s+to|cap|capped)\b|\b\d+\b",
         evidence,
@@ -126,7 +132,7 @@ def category_contradiction(key: str, evidence: str, value: str | None = None) ->
     ):
         return "Evidence states no explicit operational limit"
 
-    if key == "visibility_rules" and not re.search(
+    if key == "visibility_rules" and not direct_answer and not re.search(
         r"\b(?:visible|visibility|view|see|shown|hidden|access\s+to|"
         r"can\s+read|cannot\s+see|only\s+.+\s+(?:see|view|access))\b",
         evidence,
@@ -134,7 +140,7 @@ def category_contradiction(key: str, evidence: str, value: str | None = None) ->
     ):
         return "Evidence states no visibility or viewing boundary"
 
-    if key == "approval_rules" and not re.search(
+    if key == "approval_rules" and not direct_answer and not re.search(
         r"\b(?:approv(?:e|es|ed|ing|al|als)|review(?:s|ed|ing)?|"
         r"authoriz(?:e|es|ed|ing|ation)|consent(?:s|ed|ing)?|"
         r"agree(?:s|d|ment|ments)?|accept(?:s|ed|ance)?|sign[ -]?off)\b",
@@ -143,7 +149,7 @@ def category_contradiction(key: str, evidence: str, value: str | None = None) ->
     ):
         return "Evidence states no approval, review, consent, agreement, or authorization rule"
 
-    if key == "ownership_rules" and not re.search(
+    if key == "ownership_rules" and not direct_answer and not re.search(
         r"\b(?:own(?:s|ed|ership)?|belongs?\s+to|control(?:s|led)?|assigned\s+to|"
         r"responsible\s+for\s+the\s+record|their\s+own)\b",
         evidence,
