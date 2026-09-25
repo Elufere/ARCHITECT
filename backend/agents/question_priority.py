@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from agents.question_candidates import QuestionCandidate
 from agents.requirement_coverage import RequirementCoverageStatus
-from agents.requirements import ActiveRequirement, RequirementStore
+from agents.requirements import ActiveRequirement, RequirementStatus, RequirementStore
 from agents.state import AgentState, DiscoveryScope, DiscoveryTopic
 
 
@@ -61,9 +61,15 @@ def _unlock_count(
     inferred = {
         downstream.id
         for downstream in requirements.values()
-        if requirement.id in downstream.dependencies
+        if downstream.status == RequirementStatus.ACTIVE
+        and requirement.id in downstream.dependencies
     }
-    declared = set(requirement.unlocks)
+    declared = {
+        requirement_id
+        for requirement_id in requirement.unlocks
+        if requirement_id in requirements
+        and requirements[requirement_id].status == RequirementStatus.ACTIVE
+    }
     return len(inferred.union(declared))
 
 
