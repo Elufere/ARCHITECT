@@ -25,9 +25,26 @@ def category_contradiction(key: str, evidence: str, value: str | None = None) ->
             r"\b(?:when|whenever|once|after|before|until|upon|if|starts?|begins?|triggers?|complete[ds]?|finished|result|status|state|requires?|depends?|unless)\b", evidence, re.I
         ):
             return "A capability list contains no explicit start/completion/state/dependency clause"
-    if key == "trigger" and re.search(r"\b(?:I|we)\s+(?:want|plan|intend)\s+to\s+(?:build|create|develop)\b", evidence, re.I):
-        if not re.search(r"\b(?:when|whenever|once|after|upon|if|starts?|begins?|triggers?)\b", evidence, re.I):
-            return "Founder intent contains no explicit workflow start event"
+    if key == "trigger":
+        explicit_start = re.search(
+            r"\b(?:starts?|begins?|initiates?|triggers?|triggered|kicks?\s+off|"
+            r"start\s+event|entry\s+point|first\s+starts?)\b",
+            evidence,
+            re.I,
+        )
+        if not explicit_start:
+            return "Evidence does not explicitly establish the workflow start event"
+
+    if key == "success_criteria":
+        explicit_definition = re.search(
+            r"\b(?:success\s+(?:means|is)|successful\s+when|considered\s+(?:successful|complete)|"
+            r"goal\s+is\s+achieved|know\s+(?:they|we|the\s+user).*successful|"
+            r"counts?\s+as\s+success)\b",
+            evidence,
+            re.I,
+        )
+        if not explicit_definition:
+            return "Evidence does not explicitly define what counts as success"
 
     if key in ("primary_user_goals", "secondary_user_goals"):
         proposed = value or ""
