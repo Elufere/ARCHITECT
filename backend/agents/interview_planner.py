@@ -738,8 +738,6 @@ def interview_planner_node(state: AgentState) -> dict:
                 )
 
     state = {**state, "gap_coverage": coverage, "active_answer_result": None}
-    topic_status = dict(state.get("topic_status", {}))
-    topic_maturity = dict(state.get("topic_maturity", {}))
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
 
     print("\n=== INTERVIEW PLANNER ===")
@@ -773,8 +771,6 @@ def interview_planner_node(state: AgentState) -> dict:
         return {
             "gap_coverage": coverage,
             "active_answer_result": None,
-            "topic_status": topic_status,
-            "topic_maturity": topic_maturity,
             "selected_inquiry": None,
             **_validation_plan(state, clarification),
         }
@@ -802,8 +798,6 @@ def interview_planner_node(state: AgentState) -> dict:
             **frontier_updates,
             "gap_coverage": coverage,
             "active_answer_result": None,
-            "topic_status": topic_status,
-            "topic_maturity": topic_maturity,
             **_plan_candidate(state, selected),
         }
 
@@ -844,8 +838,6 @@ def interview_planner_node(state: AgentState) -> dict:
         "selected_requirement_candidate": None,
         "selected_requirement_priority": None,
         "selected_validation_issue": None,
-        "topic_status": topic_status,
-        "topic_maturity": topic_maturity,
         "current_topic": None,
         "current_gap": None,
         "current_objective": None,
