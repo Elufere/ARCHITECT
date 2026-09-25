@@ -140,3 +140,14 @@ def test_default_registry_activates_external_dependency_requirement():
     })
     key = requirement_store_key(S.USER_APP, "workflow.external_dependency_failure")
     assert key in result["active_requirements"]
+
+
+def test_existing_requirement_refreshes_template_facets_on_reconciliation():
+    item = fact(T.CORE_WORKFLOW, "downstream_dependency", "A bank must approve settlement")
+    first = reconcile_active_requirements({}, [item], S.USER_APP)
+    key = requirement_store_key(S.USER_APP, "workflow.external_dependency_failure")
+    legacy = first[key].model_copy(update={"facets": []})
+    refreshed = reconcile_active_requirements({key: legacy}, [item], S.USER_APP)
+    assert {facet.id for facet in refreshed[key].facets} == {
+        "failure_condition", "expected_behavior", "recovery_or_escalation"
+    }
