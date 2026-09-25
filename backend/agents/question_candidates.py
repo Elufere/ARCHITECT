@@ -233,6 +233,18 @@ def filter_question_candidates(
         if decision.eligible:
             accepted.append(candidate)
 
+    # Avoid a permanent deadlock after an uninformative answer. Exact-target
+    # repetition is a hard filter only when another eligible requirement exists.
+    # If it is the sole blocker for the entire frontier, let prioritization apply
+    # its repetition/fatigue penalties and permit a rephrased follow-up.
+    if not accepted:
+        for candidate in candidates:
+            decision = decisions[candidate.id]
+            if decision.reasons == [CandidateBlockReason.RECENTLY_ASKED_SAME_TARGET]:
+                decision = decision.model_copy(update={"eligible": True, "reasons": []})
+                decisions[candidate.id] = decision
+                accepted.append(candidate)
+
     return accepted, decisions
 
 
