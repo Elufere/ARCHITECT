@@ -1,4 +1,4 @@
-"""Focused tests for migrating planning from schema gaps to requirement candidates."""
+"""Focused tests for requirement planning inside the model-driven inquiry frontier."""
 from types import SimpleNamespace
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -86,11 +86,11 @@ def planner_state(requirement=None, ranked=True):
         },
         "active_answer_result": None,
         "current_topic": None,
-        "planner_source": "schema",
+        "planner_source": "model",
     }
 
 
-def test_ranked_requirement_candidate_takes_precedence_over_schema_gap():
+def test_ranked_requirement_candidate_is_selected_from_inquiry_frontier():
     state = planner_state()
     result = interview_planner.interview_planner_node(state)
     assert result["planner_source"] == "requirement"
@@ -100,11 +100,11 @@ def test_ranked_requirement_candidate_takes_precedence_over_schema_gap():
     assert result["next_discovery_move"] == "requirement_discovery"
 
 
-def test_schema_planner_remains_fallback_when_no_requirement_candidate_exists():
+def test_model_frontier_replaces_schema_fallback_when_no_requirement_candidate_exists():
     state = planner_state(ranked=False)
     state["active_requirements"] = {}
     result = interview_planner.interview_planner_node(state)
-    assert result["planner_source"] == "schema"
+    assert result["planner_source"] == "model"
     assert result["selected_requirement_candidate"] is None
     assert result["current_topic"] == T.USER_ROLES
     assert result["current_gap"] == "primary_users"
@@ -168,7 +168,10 @@ def test_requirement_answer_resolves_facets_from_grounded_fact(monkeypatch):
 
 
 def test_requirement_question_receipt_does_not_resolve_parent_schema_gap():
-    req = active_requirement()
+    # Requirement questions never consume legacy schema coverage receipts.
+    # Mark the requirement resolved here so this focused planner call does not
+    # require a fabricated coverage/dependency frontier.
+    req = active_requirement(status=RequirementStatus.RESOLVED)
     key = requirement_store_key(S.USER_APP, req.id)
     item = KnowledgeItem(
         topic=T.EXCEPTIONS,
@@ -285,20 +288,21 @@ def test_approved_requirement_question_is_recorded_for_priority_history(monkeypa
     assert result["requirement_question_history"][0]["question"] == question
 
 
-def test_requirement_candidate_waits_for_schema_prerequisites():
+def test_requirement_candidate_does_not_wait_for_schema_topic_prerequisites():
     state = planner_state()
     state["topic_maturity"] = {}
     result = interview_planner.interview_planner_node(state)
-    assert result["planner_source"] == "schema"
-    assert result["current_topic"] == T.USER_ROLES
+    assert result["planner_source"] == "requirement"
+    assert result["current_topic"] == T.EXCEPTIONS
 
 
-def test_schema_fallback_resumes_normal_order_after_requirement_move():
+def test_model_frontier_resumes_after_requirement_move():
     state = planner_state(ranked=False)
     state["planner_source"] = "requirement"
     state["current_topic"] = T.EXCEPTIONS
     state["topic_maturity"] = {}
     state["active_requirements"] = {}
     result = interview_planner.interview_planner_node(state)
-    assert result["planner_source"] == "schema"
+    assert result["planner_source"] == "model"
     assert result["current_topic"] == T.USER_ROLES
+    assert result["current_gap"] == "primary_users"
