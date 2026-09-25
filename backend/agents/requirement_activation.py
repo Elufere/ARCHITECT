@@ -1,7 +1,7 @@
 """Deterministic activation of product-specific requirements from confirmed facts."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable, Optional, Sequence
 
 from agents.discovery_coverage import fact_id
@@ -9,6 +9,7 @@ from agents.requirements import (
     ActiveRequirement,
     RequirementActivationSource,
     RequirementFacet,
+    RequirementPriorityHints,
     RequirementStatus,
     RequirementStore,
     requirement_store_key,
@@ -46,6 +47,7 @@ class RequirementTemplate:
     label: str
     description: str
     facets: tuple[RequirementFacet, ...] = ()
+    priority_hints: RequirementPriorityHints = field(default_factory=RequirementPriorityHints)
     dependencies: tuple[str, ...] = ()
     unlocks: tuple[str, ...] = ()
 
@@ -226,6 +228,7 @@ def reconcile_active_requirements(
                 status=RequirementStatus.ACTIVE,
                 activation_sources=valid,
                 facets=list(template.facets),
+                priority_hints=template.priority_hints,
                 dependencies=list(template.dependencies),
                 unlocks=list(template.unlocks),
             )
@@ -256,6 +259,7 @@ def reconcile_active_requirements(
                 "label": template.label,
                 "description": template.description,
                 "facets": list(template.facets),
+                "priority_hints": template.priority_hints,
                 "dependencies": list(template.dependencies),
                 "unlocks": list(template.unlocks),
             }
