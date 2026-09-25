@@ -33,13 +33,15 @@ def lifecycle_only(knowledge, *, scope=S.USER_APP, store=None):
     )
 
 
-def test_start_state_requires_trigger_and_workflow_steps():
+def test_start_state_requires_trigger_workflow_and_explicit_stateful_end_state():
     trigger = fact(T.CORE_WORKFLOW, "trigger", "A customer submits a request")
     steps = fact(T.CORE_WORKFLOW, "workflow_steps", "Customer submits, provider reviews, customer confirms")
+    end = fact(T.CORE_WORKFLOW, "end_state", "The request becomes completed")
 
     assert lifecycle_only([trigger]) == {}
+    assert lifecycle_only([trigger, steps]) == {}
 
-    store = lifecycle_only([trigger, steps])
+    store = lifecycle_only([trigger, steps, end])
     key = requirement_store_key(S.USER_APP, "lifecycle.start_state_behavior")
     assert key in store
     assert store[key].status == RequirementStatus.ACTIVE
@@ -163,11 +165,12 @@ def test_removal_signal_matches_inflected_explicit_actions():
 def test_lifecycle_requirement_reactively_deactivates_when_trigger_is_corrected_away():
     trigger = fact(T.CORE_WORKFLOW, "trigger", "A customer submits a request")
     steps = fact(T.CORE_WORKFLOW, "workflow_steps", "Customer submits and provider reviews")
-    active = lifecycle_only([trigger, steps])
+    end = fact(T.CORE_WORKFLOW, "end_state", "The request becomes completed")
+    active = lifecycle_only([trigger, steps, end])
     key = requirement_store_key(S.USER_APP, "lifecycle.start_state_behavior")
     assert active[key].status == RequirementStatus.ACTIVE
 
-    corrected = lifecycle_only([steps], store=active)
+    corrected = lifecycle_only([steps, end], store=active)
     assert key in corrected
     assert corrected[key].status == RequirementStatus.INACTIVE
     assert corrected[key].activation_sources == []
@@ -190,15 +193,16 @@ def test_lifecycle_activation_is_scope_isolated():
 def test_default_activation_node_includes_lifecycle_rules_without_writing_facts():
     trigger = fact(T.CORE_WORKFLOW, "trigger", "A guest opens a request")
     steps = fact(T.CORE_WORKFLOW, "workflow_steps", "Guest submits, host reviews")
+    end = fact(T.CORE_WORKFLOW, "end_state", "The request becomes pending")
     state = {
         "discovery_scope": S.USER_APP,
-        "discovered_knowledge": [trigger, steps],
+        "discovered_knowledge": [trigger, steps, end],
         "active_requirements": {},
     }
     result = requirement_activation_node(state)
     key = requirement_store_key(S.USER_APP, "lifecycle.start_state_behavior")
     assert key in result["active_requirements"]
-    assert state["discovered_knowledge"] == [trigger, steps]
+    assert state["discovered_knowledge"] == [trigger, steps, end]
     assert "discovered_knowledge" not in result
 
 
@@ -212,3 +216,12 @@ def test_word_prefix_condition_handles_inflection_and_rejects_exchange():
     exchange = fact(T.CORE_WORKFLOW, "workflow_steps", "The users exchange messages")
     assert condition.matches(changed, S.USER_APP) is True
     assert condition.matches(exchange, S.USER_APP) is False
+
+
+def test_ordinary_workflow_end_without_state_language_does_not_create_core_lifecycle():
+    trigger = fact(T.CORE_WORKFLOW, "trigger", "A user opens the search page")
+    steps = fact(T.CORE_WORKFLOW, "workflow_steps", "The user searches and views matching results")
+    end = fact(T.CORE_WORKFLOW, "end_state", "The user sees a list of matching results")
+    store = lifecycle_only([trigger, steps, end])
+    assert requirement_store_key(S.USER_APP, "lifecycle.start_state_behavior") not in store
+    assert requirement_store_key(S.USER_APP, "lifecycle.state_transition_behavior") not in store
