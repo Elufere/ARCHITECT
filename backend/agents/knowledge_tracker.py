@@ -628,16 +628,8 @@ def _admit_claim_item(
     resolved_role = _canonical_claim_role(claim.role, state, scope)
     claim = claim.model_copy(update={"role": resolved_role})
 
-    if claim.absence:
-        direct_gap = bool(
-            state.get("current_topic")
-            and state.get("current_gap")
-        )
-        if direct_gap:
-            # Dedicated GAP_ANSWER semantics own active negative answers.
-            raise ValueError("Active-gap absence must be resolved by the dedicated absence interpreter")
-        if not _explicit_whole_field_absence(claim.evidence):
-            raise ValueError("Whole-field absence requires explicit negative evidence")
+    if claim.absence and not _explicit_whole_field_absence(claim.evidence):
+        raise ValueError("Whole-field absence requires explicit negative evidence")
 
     if (
         claim.kind in ("primary_actor", "secondary_actor")
@@ -690,6 +682,14 @@ def _admit_claim_item(
     valid, reason = validate_extraction(item, state["messages"][-1].content, state.get("current_gap"))
     if not valid:
         raise ValueError(reason)
+
+    if claim.absence and (
+        item.topic == state.get("current_topic")
+        and item_directly_answers_gap(item, state.get("current_gap"))
+    ):
+        # Dedicated GAP_ANSWER semantics own active negative answers so a single
+        # capture classification cannot silently close the current inquiry.
+        raise ValueError("Active-gap absence must be resolved by the dedicated absence interpreter")
 
     semantic_reason = category_contradiction(
         item.key,
