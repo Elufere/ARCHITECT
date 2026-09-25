@@ -7,6 +7,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agents import knowledge_tracker as tracker
+from agents.llm_errors import ExtractionFailed
 from agents.state import DiscoveryScope as S, DiscoveryTopic as T, KnowledgeItem
 
 
@@ -110,11 +111,13 @@ def test_scoped_prohibition_cannot_bypass_whole_field_absence_audit(monkeypatch)
     assert tracker.knowledge_tracker_node(initial)["discovered_knowledge"] == initial["discovered_knowledge"]
 
 
-def test_role_policy_review_failure_does_not_persist_none(monkeypatch):
+def test_role_policy_review_failure_fails_closed_without_committing(monkeypatch):
     key, question, text, _ = CASES[0]
     install_models(monkeypatch, text, {key: ("policy", text)}, fail_review=True)
     initial = initial_state(text, question, key)
-    assert tracker.knowledge_tracker_node(initial)["discovered_knowledge"] == initial["discovered_knowledge"]
+    with pytest.raises(ExtractionFailed):
+        tracker.knowledge_tracker_node(initial)
+    assert len(initial["discovered_knowledge"]) == 1
 
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_ROLE_POLICY") != "1",
