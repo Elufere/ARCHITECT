@@ -41,6 +41,22 @@ def category_contradiction(key: str, evidence: str, value: str | None = None) ->
         if intent_words and not source_intent:
             return "Candidate invents desired-outcome intent not stated in its evidence"
 
+    if key == "permissions":
+        capability_language = re.search(
+            r"\b(?:can|may|should\s+be\s+able\s+to|will\s+be\s+able\s+to)\b",
+            evidence,
+            re.I,
+        )
+        explicit_boundary = re.search(
+            r"\b(?:only|cannot|can't|must\s+not|forbidden|restricted|restriction|"
+            r"authorized|authorization|exclusive|exclusively|unless|except|"
+            r"access\s+(?:only|limited|restricted)|not\s+allowed|allowed\s+only)\b",
+            evidence,
+            re.I,
+        )
+        if capability_language and not explicit_boundary:
+            return "Capability language alone does not establish an authorization boundary"
+
     if key == "approval_rules" and not re.search(
         r"\b(?:approv(?:e|al|ed|ing)?|review(?:ed|ing)?|authoriz(?:e|ed|ation)|"
         r"consent|agree(?:d|ment)?|accept(?:ed|ance)?|sign[ -]?off)\b",
