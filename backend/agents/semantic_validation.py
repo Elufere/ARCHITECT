@@ -58,8 +58,9 @@ def category_contradiction(key: str, evidence: str, value: str | None = None) ->
             return "Capability language alone does not establish an authorization boundary"
 
     if key == "approval_rules" and not re.search(
-        r"\b(?:approv(?:e|al|ed|ing)?|review(?:ed|ing)?|authoriz(?:e|ed|ation)|"
-        r"consent|agree(?:d|ment)?|accept(?:ed|ance)?|sign[ -]?off)\b",
+        r"\b(?:approv(?:e|es|ed|ing|al|als)|review(?:s|ed|ing)?|"
+        r"authoriz(?:e|es|ed|ing|ation)|consent(?:s|ed|ing)?|"
+        r"agree(?:s|d|ment|ments)?|accept(?:s|ed|ance)?|sign[ -]?off)\b",
         evidence,
         re.I,
     ):
