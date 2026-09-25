@@ -200,7 +200,7 @@ def test_explicit_secondary_participant_creates_action_inquiry():
             "acquisition": "INCIDENTAL",
             "source_turn": 4,
             "active_topic": T.CORE_WORKFLOW.value,
-            "active_gap": None,
+            "active_gap": "workflow_steps",
         },
     }
 
@@ -211,6 +211,22 @@ def test_explicit_secondary_participant_creates_action_inquiry():
         and item.role == "vendor"
         for item in inquiries
     )
+
+
+def test_pending_confirmed_actor_existence_preempts_other_model_inquiries():
+    actor = fact(T.USER_ROLES, "primary_users", "customers", roles=["customer"])
+    state = state_with(actor)
+    state["answer_followup"] = {
+        "gap": "secondary_users",
+        "scope": S.USER_APP,
+        "question": "Who else will use the user app, and what will they do?",
+    }
+
+    inquiries = identify_open_inquiries(state)
+
+    assert len(inquiries) == 1
+    assert inquiries[0].anchor_gap == "secondary_users"
+    assert "confirmed additional participants" in inquiries[0].reason
 
 
 def test_negative_role_transition_policy_does_not_activate_transition_depth():
