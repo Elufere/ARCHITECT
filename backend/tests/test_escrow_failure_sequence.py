@@ -16,7 +16,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from agents import knowledge_tracker as tracker
 from agents.inquiries import identify_open_inquiries
 from agents.interview_planner import build_gap_info
-from agents.state import DiscoveryScope as S, DiscoveryTopic as T, TopicStatus as Status
+from agents.state import DiscoveryScope as S, DiscoveryTopic as T
 from test_question_retry_limit import test_repeated_template_exits_graph_with_bounded_retries as check_retry_guardrail
 
 
@@ -26,7 +26,7 @@ def raw(key, value, evidence, **extra):
 
 @pytest.fixture
 def replay(monkeypatch):
-    state = dict(messages=[], discovered_knowledge=[], topic_status={}, topic_maturity={},
+    state = dict(messages=[], discovered_knowledge=[],
                  discovery_scope=S.USER_APP, turn_count=0, current_topic=None)
     snapshots, logs, calls = {}, {}, []
     active = {}
@@ -119,7 +119,7 @@ INVARIANTS = [
     "01_actor_without_invented_responsibilities", "02_explicit_secondary_absence",
     "03_contextual_capacities", "04_incidental_participant", "05_confirmed_new_user",
     "06_role_policies", "07_motivation_isolation", "08_workflow_not_goal",
-    "09_canonical_rule_key", "10_no_duplicate_growth", "11_schema_status_not_control",
+    "09_canonical_rule_key", "10_no_duplicate_growth", "11_no_topic_lifecycle_state",
     "12_new_actor_reopens_model_frontier", "13_approval_fact_not_schema_reasked", "14_no_formatting_question_loop",
 ]
 
@@ -147,7 +147,8 @@ def test_escrow_failure_sequence(replay, invariant, monkeypatch):
         assert any(i.key == "secondary_users" and i.absence == "none" for i in items("participant"))
     elif number == 5:
         assert roles("new_actor") == {"customer", "vendor"}
-        assert all(states["new_actor"]["topic_status"][t] == Status.PARTIAL for t in (T.USER_ROLES, T.USER_GOALS))
+        assert "topic_status" not in states["new_actor"]
+        assert "topic_maturity" not in states["new_actor"]
         assert not any(i.key == "secondary_users" and i.absence for i in items("new_actor"))
         assert states["new_actor"]["superseded_knowledge"]
     elif number == 6:
@@ -168,13 +169,11 @@ def test_escrow_failure_sequence(replay, invariant, monkeypatch):
         assert items("repeat") == items("approval")
         assert f"Knowledge count: {len(items('approval'))}" in logs["repeat"]
     elif number == 11:
-        # Legacy topic flags remain extraction diagnostics only. They should not
-        # become sticky completion state or trigger reopening churn.
+        # Topic lifecycle state is gone from the runtime entirely.
         for step in ("participant", "motivation", "workflow", "approval", "repeat"):
-            assert all(
-                states[step]["topic_status"].get(t) != Status.COMPLETED
-                for t in (T.USER_ROLES, T.USER_GOALS)
-            )
+            assert "topic_status" not in states[step]
+            assert "topic_maturity" not in states[step]
+            assert "TOPIC STATUS" not in logs[step]
             assert "TOPIC INVALIDATION" not in logs[step]
     elif number == 12:
         # A newly confirmed participant must create model uncertainty even though
