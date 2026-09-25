@@ -1,12 +1,16 @@
 """Focused tests for active-requirement facet coverage."""
 import pytest
+from langchain_core.messages import AIMessage, HumanMessage
 
+from agents import requirement_coverage as coverage_module
 from agents.discovery_coverage import fact_id
+from agents.llm_errors import ExtractionFailed
 from agents.requirement_coverage import (
     RequirementCoverageAssessment,
     RequirementCoverageStatus,
     RequirementFacetState,
     apply_requirement_coverage_assessment,
+    assess_selected_requirement_answer,
     reconcile_requirement_coverage,
     reconcile_requirement_coverage_record,
 )
@@ -188,3 +192,83 @@ def test_resolved_schema_gap_does_not_resolve_specific_requirement():
     result = requirement_coverage_node(state)
     assert result["requirement_coverage"][key]["status"] == RequirementCoverageStatus.KNOWN_SHALLOW.value
     assert result["active_requirements"][key].status == RequirementStatus.ACTIVE
+
+
+class _CoverageAssessor:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = 0
+
+    def invoke(self, _messages):
+        response = self.responses[self.calls]
+        self.calls += 1
+        return response
+
+
+def _selected_requirement_state(req, response_fact, question="What happens next?"):
+    key = requirement_store_key(S.USER_APP, req.id)
+    response_fact = response_fact.model_copy(update={
+        "source_turn": 5,
+        "source_question": question,
+    })
+    return key, {
+        "planner_source": "requirement",
+        "selected_requirement_candidate": {
+            "requirement_key": key,
+            "target_facets": ["expected_behavior"],
+        },
+        "messages": [
+            AIMessage(content=question),
+            HumanMessage(content=response_fact.evidence),
+        ],
+        "discovered_knowledge": [response_fact],
+        "turn_count": 5,
+    }
+
+
+def test_invalid_requirement_coverage_assessment_gets_one_repair(monkeypatch):
+    req = requirement()
+    response_fact = fact(T.EXCEPTIONS, "recovery", "Retry the external request once")
+    identity = fact_id(response_fact.model_copy(update={
+        "source_turn": 5,
+        "source_question": "What happens next?",
+    }))
+    key, state = _selected_requirement_state(req, response_fact)
+    assessor = _CoverageAssessor([
+        RequirementCoverageAssessment(
+            covered_facets={"expected_behavior": ["invented-fact-id"]}
+        ),
+        RequirementCoverageAssessment(
+            covered_facets={"expected_behavior": [identity]}
+        ),
+    ])
+    monkeypatch.setattr(coverage_module, "requirement_coverage_assessor", lambda: assessor)
+
+    updated_store, updated_coverage = assess_selected_requirement_answer(
+        state, {key: req}, {}
+    )
+
+    assert assessor.calls == 2
+    record = updated_coverage[key]
+    assert record["facets"]["expected_behavior"]["state"] == RequirementFacetState.COVERED.value
+    assert updated_store[key].status == RequirementStatus.ACTIVE
+
+
+def test_requirement_coverage_repair_still_fails_closed(monkeypatch):
+    req = requirement()
+    response_fact = fact(T.EXCEPTIONS, "recovery", "Retry the external request once")
+    key, state = _selected_requirement_state(req, response_fact)
+    assessor = _CoverageAssessor([
+        RequirementCoverageAssessment(
+            covered_facets={"expected_behavior": ["invented-first"]}
+        ),
+        RequirementCoverageAssessment(
+            covered_facets={"expected_behavior": ["invented-second"]}
+        ),
+    ])
+    monkeypatch.setattr(coverage_module, "requirement_coverage_assessor", lambda: assessor)
+
+    with pytest.raises(ExtractionFailed, match="after one repair attempt"):
+        assess_selected_requirement_answer(state, {key: req}, {})
+
+    assert assessor.calls == 2
