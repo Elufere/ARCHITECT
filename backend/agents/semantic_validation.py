@@ -8,7 +8,7 @@ from agents.discovery_fields import FIELD_DEFINITIONS
 AuditField = Literal[tuple(f"{topic.value}.{key}" for topic, definitions in FIELD_DEFINITIONS.items() for key in definitions)]
 
 
-def category_contradiction(key: str, evidence: str) -> str | None:
+def category_contradiction(key: str, evidence: str, value: str | None = None) -> str | None:
     """Reject narrow explicit category contradictions; never infer a positive fact.
 
     Mixed clauses remain the auditor's job. These checks do not resolve negatives,
@@ -28,6 +28,35 @@ def category_contradiction(key: str, evidence: str) -> str | None:
     if key == "trigger" and re.search(r"\b(?:I|we)\s+(?:want|plan|intend)\s+to\s+(?:build|create|develop)\b", evidence, re.I):
         if not re.search(r"\b(?:when|whenever|once|after|upon|if|starts?|begins?|triggers?)\b", evidence, re.I):
             return "Founder intent contains no explicit workflow start event"
+
+    if key in ("primary_user_goals", "secondary_user_goals"):
+        proposed = value or ""
+        intent_words = re.search(r"\b(?:wants?|aims?|goal|objective|seeks?|hopes?|needs?)\b", proposed, re.I)
+        source_intent = re.search(
+            r"\b(?:wants?|aims?|goal|objective|seeks?|hopes?|needs?|helps?|purpose|"
+            r"so that|in order to|achieve|outcome|result|benefit|problem|protect|avoid|reduce)\b",
+            evidence,
+            re.I,
+        )
+        if intent_words and not source_intent:
+            return "Candidate invents desired-outcome intent not stated in its evidence"
+
+    if key == "approval_rules" and not re.search(
+        r"\b(?:approv(?:e|al|ed|ing)?|review(?:ed|ing)?|authoriz(?:e|ed|ation)|"
+        r"consent|agree(?:d|ment)?|accept(?:ed|ance)?|sign[ -]?off)\b",
+        evidence,
+        re.I,
+    ):
+        return "Evidence states no approval, review, consent, agreement, or authorization rule"
+
+    if key == "ownership_rules" and not re.search(
+        r"\b(?:own(?:s|ed|ership)?|belongs?\s+to|control(?:s|led)?|assigned\s+to|"
+        r"responsible\s+for\s+the\s+record|their\s+own)\b",
+        evidence,
+        re.I,
+    ):
+        return "Evidence states no ownership or control assignment rule"
+
     return None
 
 
