@@ -135,5 +135,6 @@ def test_legacy_checkpoint_without_requirements_loads_empty_store(tmp_path, monk
     save_checkpoint(state)
     loaded = load_checkpoint(session_id)
     assert loaded["active_requirements"] == {}
+    assert loaded["requirement_coverage"] == {}
     assert loaded["requirement_dependency_state"] == {}
     assert loaded["eligible_requirement_keys"] == []
