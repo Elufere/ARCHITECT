@@ -78,10 +78,32 @@ def _confirmed(state: AgentState, *, topic=None, key=None, role=None) -> list[Kn
     return result
 
 
+def _foundation_facts(state: AgentState, *, topic, key, role=None) -> list[KnowledgeItem]:
+    """Facts trusted to satisfy a foundational model decision.
+
+    Direct answers count. Facts volunteered before an active inquiry (for
+    example in the raw idea) count. Incidental cross-category extraction during
+    another inquiry remains useful context but does not silently skip the next
+    foundational question.
+    """
+    result = []
+    acquisition = state.get("fact_acquisition", {})
+    for item in _confirmed(state, topic=topic, key=key, role=role):
+        record = acquisition.get(fact_id(item))
+        if record is None:
+            result.append(item)  # compatibility with imported/tests lacking acquisition metadata
+            continue
+        if record.get("acquisition") == "DIRECT" or record.get("active_gap") is None:
+            result.append(item)
+    return result
+
+
 def _primary_roles(state: AgentState) -> list[str]:
     roles: list[str] = []
     seen = set()
-    for item in _confirmed(state, topic=DiscoveryTopic.USER_ROLES, key="primary_users"):
+    for item in _foundation_facts(
+        state, topic=DiscoveryTopic.USER_ROLES, key="primary_users"
+    ):
         if item.absence:
             continue
         for role in item.roles or []:
@@ -117,7 +139,7 @@ def _model_inquiries(state: AgentState) -> list[ProductInquiry]:
 
     missing_responsibilities = [
         role for role in roles
-        if not _confirmed(
+        if not _foundation_facts(
             state,
             topic=DiscoveryTopic.USER_ROLES,
             key="responsibilities",
@@ -148,7 +170,7 @@ def _model_inquiries(state: AgentState) -> list[ProductInquiry]:
 
     missing_goals = [
         role for role in roles
-        if not _confirmed(
+        if not _foundation_facts(
             state,
             topic=DiscoveryTopic.USER_GOALS,
             key="primary_user_goals",
@@ -177,7 +199,7 @@ def _model_inquiries(state: AgentState) -> list[ProductInquiry]:
             for role in missing_goals
         ]
 
-    workflow = _confirmed(
+    workflow = _foundation_facts(
         state,
         topic=DiscoveryTopic.CORE_WORKFLOW,
         key="workflow_steps",
@@ -200,12 +222,12 @@ def _model_inquiries(state: AgentState) -> list[ProductInquiry]:
             business_risk=0.8,
         )]
 
-    completion = _confirmed(
+    completion = _foundation_facts(
         state,
         topic=DiscoveryTopic.CORE_WORKFLOW,
         key="completion_condition",
     )
-    end_state = _confirmed(
+    end_state = _foundation_facts(
         state,
         topic=DiscoveryTopic.CORE_WORKFLOW,
         key="end_state",
