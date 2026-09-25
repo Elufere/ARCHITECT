@@ -16,6 +16,7 @@ from agents.extraction_passes import PASSES
 from agents.interview_planner import DISCOVERY_TASKS, build_gap_info, interview_planner_node
 from agents.question_generator import permission_discovery_guidance
 from agents.state import DiscoveryScope as S, DiscoveryTopic as T, KnowledgeItem, KnowledgeState as K, TOPIC_KEY_MAP, TopicStatus
+from coverage_test_utils import coverage_for_facts
 from replay_schema_alignment import CARE, NO_OTHERS
 
 
@@ -72,7 +73,8 @@ def test_careconnect_shared_evidence_and_two_turn_planner_progression(monkeypatc
     }
     state, calls = run(monkeypatch, CARE, outputs)
     state.update(interview_planner_node(state))
-    assert state["current_gap"] == "secondary_users"
+    assert state["current_gap"] == "primary_users"
+    assert state["next_discovery_move"] == "confirm_existing"
     assert all(f"responsibilities::{r}" in state["missing_keys"] for r in ("patient", "healthcare_provider"))
     shared = [i for i in state["discovered_knowledge"] if i.evidence == patient]
     assert {(i.topic, i.key) for i in shared} == {(T.USER_ROLES, "responsibilities"), (T.CORE_WORKFLOW, "workflow_steps")}
@@ -87,6 +89,11 @@ def test_careconnect_shared_evidence_and_two_turn_planner_progression(monkeypatc
     next_state, _ = run(monkeypatch, NO_OTHERS, polluted, existing=state["discovered_knowledge"],
         topic=T.USER_ROLES, gap="secondary_users", question="Are there any other users?", absence="none",
         reject=[("workflow_steps", "patients and professionals use the app"), ("primary_user_goals", "find and book appointments")])
+    prior = coverage_for_facts(state, T.USER_ROLES)
+    next_state["gap_coverage"] = {
+        key: value for key, value in prior.items()
+        if key.endswith("|primary_users")
+    }
     next_state.update(interview_planner_node(next_state))
     assert next_state["current_gap"] == "responsibilities::patient"
     assert len(next_state["discovered_knowledge"]) == 7
