@@ -273,7 +273,10 @@ LIFECYCLE_ACTIVATION_RULES: tuple[RequirementActivationRule, ...] = (
             FactCondition(
                 topic=DiscoveryTopic.USER_ROLES,
                 key="role_transitions",
-                value_word_prefixes=("switch", "chang", "transition", "move"),
+                value_word_prefixes=(
+                    "switch", "chang", "transition", "move", "becom",
+                    "promot", "demot", "convert",
+                ),
                 value_excludes_word_prefixes=(
                     "cannot", "never", "not", "no", "fixed", "prohibit",
                     "forbid", "unchang",
