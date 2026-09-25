@@ -155,13 +155,16 @@ Previously asked questions for this topic:
 Your job is to determine whether the question is asking specifically about
 the Current objective.
 
-When Planner source is "schema", the Current schema gap is the exact field
-being discovered.
+When Planner source is "model", the Current gap is only an extraction anchor.
+Validate the question against the Current objective. Do not require neighboring
+schema fields to be covered, and do not reject a useful question merely because
+its natural wording crosses a field boundary while resolving the selected
+product uncertainty.
 
-When Planner source is "requirement", the schema gap is ONLY an extraction
-anchor. Validate the question against the Selected requirement context and
-target facets instead. A valid requirement question may naturally span more
-than one schema field if all parts directly serve the selected requirement.
+When Planner source is "requirement", the gap is ONLY an extraction anchor.
+Validate the question against the Selected requirement context and target facets
+instead. A valid requirement question may naturally span more than one field if
+all parts directly serve the selected requirement.
 
 When Planner source is "validation", the question must neutrally resolve the
 supplied contradiction. It may quote or summarize the two incompatible confirmed
@@ -170,9 +173,7 @@ silently merge them, or drift into unrelated discovery.
 
 Reject if the question:
 - changes to another topic
-- asks about a different field within the same topic (e.g. asks about
-  responsibilities when the gap is permissions, or asks about goals when
-  the gap is success_criteria)
+- drifts to a different product decision that does not help resolve the Current objective
 - asks multiple unrelated objectives; closely related target facets of one selected requirement are allowed
 - asks implementation
 - asks architecture
@@ -298,7 +299,7 @@ def evaluate_question(state: dict) -> dict:
     current_gap = state.get("current_gap")
     current_objective = state.get("current_objective")
     question_hint = state.get("question_hint")
-    planner_source = state.get("planner_source", "schema")
+    planner_source = state.get("planner_source", "model")
     selected_requirement = state.get("selected_requirement_candidate") or {}
     requirement_context = "None"
     validation_context = "None"
