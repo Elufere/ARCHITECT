@@ -1,21 +1,9 @@
-from agents.state import AgentState, DiscoveryScope, DiscoveryTopic, KnowledgeState, TopicMaturity, TopicStatus
+from agents.state import AgentState, DiscoveryScope, DiscoveryTopic, KnowledgeState
 from agents.role_utils import role_identity, roles_match, split_role_labels
 from agents.discovery_coverage import coverage_key, gap_resolved, facts_for_gap, fact_id, active_question_matches
 from agents.question_candidates import QuestionCandidate
 from agents.requirements import RequirementStatus
 from agents.consistency_validation import DiscoveryValidationIssue, ValidationIssueKind, ValidationResolution
-
-# Topic ordering
-TOPIC_PREREQUISITES = {
-    DiscoveryTopic.USER_ROLES: [],
-    DiscoveryTopic.USER_GOALS: [DiscoveryTopic.USER_ROLES],
-    DiscoveryTopic.CORE_WORKFLOW: [DiscoveryTopic.USER_ROLES, DiscoveryTopic.USER_GOALS],
-    DiscoveryTopic.BUSINESS_RULES: [DiscoveryTopic.CORE_WORKFLOW],
-    DiscoveryTopic.CONSTRAINTS: [DiscoveryTopic.BUSINESS_RULES],
-    DiscoveryTopic.MVP_SCOPE: [DiscoveryTopic.BUSINESS_RULES],
-    DiscoveryTopic.EXCEPTIONS: [DiscoveryTopic.CORE_WORKFLOW, DiscoveryTopic.BUSINESS_RULES],
-    DiscoveryTopic.EDGE_CASES: [DiscoveryTopic.EXCEPTIONS],
-}
 
 # Required knowledge for each topic
 DISCOVERY_TASKS = {
@@ -215,34 +203,6 @@ INTERNAL_ROLE_TERMS = {
 }
 
 
-
-def assess_topic_maturity(state: AgentState, topic: DiscoveryTopic) -> TopicMaturity:
-    """Assess whether a concept can safely unlock dependent discovery."""
-    known = get_known_keys(state, topic)
-    if not known:
-        return TopicMaturity.UNSEEN
-    # Empty role sets can legitimately waive per-role fields. Completed coverage
-    # must still unlock dependent topics without manufacturing placeholder facts.
-    if not build_gap_info(state, topic)["missing_keys"]:
-        return TopicMaturity.DECISION_READY
-
-    if topic == DiscoveryTopic.CORE_WORKFLOW:
-        required = {"workflow_steps", "completion_condition"}
-        return TopicMaturity.COHERENT if required.issubset(known) else TopicMaturity.SKETCHED
-
-    coherence_requirements = {
-        DiscoveryTopic.USER_ROLES: {"primary_users", "responsibilities"},
-        DiscoveryTopic.USER_GOALS: {"primary_user_goals", "success_criteria"},
-        DiscoveryTopic.BUSINESS_RULES: {"validation_rules", "approval_rules"},
-        DiscoveryTopic.CONSTRAINTS: {"legal_constraints"},
-        DiscoveryTopic.MVP_SCOPE: {"must_have_features"},
-        DiscoveryTopic.EXCEPTIONS: {"user_cancellations", "recovery"},
-        DiscoveryTopic.EDGE_CASES: {"boundary_conditions"},
-    }
-    required = coherence_requirements.get(topic, set())
-    if required and required.issubset(known):
-        return TopicMaturity.COHERENT
-    return TopicMaturity.MENTIONED if len(known) == 1 else TopicMaturity.SKETCHED
 
 def get_roles_in_discovery_order(state: AgentState, topic: DiscoveryTopic) -> list[str]:
     """Keep the founder's role order and defer confirmed internal roles.
@@ -487,22 +447,6 @@ def _validation_plan(state: AgentState, issue: DiscoveryValidationIssue) -> dict
 
 def consistency_resolved(state: AgentState) -> bool:
     return not state.get("validation_blocking", False)
-
-
-def _requirement_topic_unlocked(
-    state: AgentState,
-    candidate: QuestionCandidate,
-    topic_maturity: dict,
-) -> bool:
-    prerequisites = TOPIC_PREREQUISITES.get(candidate.topic, [])
-    for dep in prerequisites:
-        maturity = topic_maturity.get(dep)
-        if maturity is None:
-            maturity = assess_topic_maturity(state, dep)
-            topic_maturity[dep] = maturity
-        if maturity not in {TopicMaturity.COHERENT, TopicMaturity.DECISION_READY}:
-            return False
-    return True
 
 
 def _requirement_context(state: AgentState, candidate: QuestionCandidate) -> list[str]:
