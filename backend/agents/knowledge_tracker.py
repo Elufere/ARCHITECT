@@ -561,8 +561,10 @@ def _canonical_claim_role(role: str | None, state: AgentState, scope: DiscoveryS
             canonical_id = canonical_role(canonical)
             if normalized == canonical_id:
                 return canonical_id
-            aliases = (item.aliases or {}).get(canonical, [])
-            aliases += (item.aliases or {}).get(canonical_id, [])
+            aliases = [
+                *(item.aliases or {}).get(canonical, []),
+                *(item.aliases or {}).get(canonical_id, []),
+            ]
             if normalized in {canonical_role(alias) for alias in aliases}:
                 return canonical_id
     return normalized
