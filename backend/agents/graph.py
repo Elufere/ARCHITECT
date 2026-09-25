@@ -9,6 +9,7 @@ from agents.interview_checkpoint import durable_node
 # Import the new micro-graph nodes
 from agents.knowledge_tracker import knowledge_tracker_node
 from agents.requirement_activation import requirement_activation_node
+from agents.requirement_coverage import requirement_coverage_node
 from agents.requirement_dependencies import requirement_dependency_node
 from agents.conversation_manager import conversation_manager_node
 from agents.interview_planner import interview_planner_node, all_required_gaps_resolved
@@ -72,7 +73,8 @@ def build_graph() -> StateGraph:
     workflow.add_node("conversation_manager", durable_node("conversation_manager", conversation_manager_node,
         lambda state: "waiting" if route_after_conversation_manager(state) == END else route_after_conversation_manager(state)))
     workflow.add_node("extract", durable_node("extract", knowledge_tracker_node, lambda _: "activate_requirements"))
-    workflow.add_node("activate_requirements", durable_node("activate_requirements", requirement_activation_node, lambda _: "resolve_requirements"))
+    workflow.add_node("activate_requirements", durable_node("activate_requirements", requirement_activation_node, lambda _: "cover_requirements"))
+    workflow.add_node("cover_requirements", durable_node("cover_requirements", requirement_coverage_node, lambda _: "resolve_requirements"))
     workflow.add_node("resolve_requirements", durable_node("resolve_requirements", requirement_dependency_node, lambda _: "plan"))
     workflow.add_node("plan", durable_node("plan", interview_planner_node, route_after_plan))
     workflow.add_node("generate", durable_node("generate", question_generator_node, lambda _: "guardrail"))
@@ -93,16 +95,17 @@ def build_graph() -> StateGraph:
             return "conversation_manager"
         return END if cursor in ("waiting", "phase_complete", "completed") else cursor
     workflow.add_conditional_edges(START, resume_at, {
-        name: name for name in ("conversation_manager", "extract", "activate_requirements", "resolve_requirements", "plan", "generate", "guardrail", "compile_prd", END)})
+        name: name for name in ("conversation_manager", "extract", "activate_requirements", "cover_requirements", "resolve_requirements", "plan", "generate", "guardrail", "compile_prd", END)})
     workflow.add_conditional_edges(
         "conversation_manager",
         route_after_conversation_manager,
         {"extract": "extract", "plan": "plan", END: END},
     )
 
-    # 3. Extract -> Requirement activation -> Dependency resolution -> Plan
+    # 3. Extract -> Requirement activation -> Coverage -> Dependency resolution -> Plan
     workflow.add_edge("extract", "activate_requirements")
-    workflow.add_edge("activate_requirements", "resolve_requirements")
+    workflow.add_edge("activate_requirements", "cover_requirements")
+    workflow.add_edge("cover_requirements", "resolve_requirements")
     workflow.add_edge("resolve_requirements", "plan")
 
     # 4. Plan -> Compile OR Generate

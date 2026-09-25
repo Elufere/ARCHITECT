@@ -146,6 +146,7 @@ class AgentState(TypedDict):
     discovered_knowledge: List[KnowledgeItem]
     superseded_knowledge: List[dict]
     active_requirements: Dict[str, "ActiveRequirement"]
+    requirement_coverage: Dict[str, dict]
     requirement_dependency_state: Dict[str, dict]
     eligible_requirement_keys: List[str]
     topic_status: Dict[DiscoveryTopic, TopicStatus]
