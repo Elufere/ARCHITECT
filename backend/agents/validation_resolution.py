@@ -12,6 +12,7 @@ from agents.discovery_coverage import fact_id
 from agents.evidence_spans import recover_evidence_span
 from agents.llm import get_structured_model
 from agents.llm_errors import ExtractionFailed, raise_if_llm_failure
+from agents.product_model import build_product_model
 from agents.state import AgentState, KnowledgeState
 
 
@@ -209,7 +210,17 @@ def validation_resolution_node(state: AgentState) -> dict:
         item for item in knowledge
         if fact_id(item) not in superseded
     ]
+    acquisition = {
+        identity: record
+        for identity, record in state.get("fact_acquisition", {}).items()
+        if identity not in superseded
+    }
     return {
         "discovered_knowledge": updated,
         "superseded_knowledge": superseded_knowledge,
+        "fact_acquisition": acquisition,
+        "product_model": build_product_model(
+            updated,
+            state.get("discovery_scope"),
+        ),
     }
