@@ -11,6 +11,7 @@ from agents.knowledge_tracker import knowledge_tracker_node
 from agents.requirement_activation import requirement_activation_node
 from agents.requirement_coverage import requirement_coverage_node
 from agents.requirement_dependencies import requirement_dependency_node
+from agents.consistency_validation import consistency_validation_node
 from agents.question_candidates import question_candidate_builder_node, question_candidate_filter_node
 from agents.question_priority import question_candidate_priority_node
 from agents.conversation_manager import conversation_manager_node
@@ -77,7 +78,8 @@ def build_graph() -> StateGraph:
     workflow.add_node("extract", durable_node("extract", knowledge_tracker_node, lambda _: "activate_requirements"))
     workflow.add_node("activate_requirements", durable_node("activate_requirements", requirement_activation_node, lambda _: "cover_requirements"))
     workflow.add_node("cover_requirements", durable_node("cover_requirements", requirement_coverage_node, lambda _: "resolve_requirements"))
-    workflow.add_node("resolve_requirements", durable_node("resolve_requirements", requirement_dependency_node, lambda _: "build_candidates"))
+    workflow.add_node("resolve_requirements", durable_node("resolve_requirements", requirement_dependency_node, lambda _: "validate_consistency"))
+    workflow.add_node("validate_consistency", durable_node("validate_consistency", consistency_validation_node, lambda _: "build_candidates"))
     workflow.add_node("build_candidates", durable_node("build_candidates", question_candidate_builder_node, lambda _: "filter_candidates"))
     workflow.add_node("filter_candidates", durable_node("filter_candidates", question_candidate_filter_node, lambda _: "prioritize_candidates"))
     workflow.add_node("prioritize_candidates", durable_node("prioritize_candidates", question_candidate_priority_node, lambda _: "plan"))
@@ -100,7 +102,7 @@ def build_graph() -> StateGraph:
             return "conversation_manager"
         return END if cursor in ("waiting", "phase_complete", "completed") else cursor
     workflow.add_conditional_edges(START, resume_at, {
-        name: name for name in ("conversation_manager", "extract", "activate_requirements", "cover_requirements", "resolve_requirements", "build_candidates", "filter_candidates", "prioritize_candidates", "plan", "generate", "guardrail", "compile_prd", END)})
+        name: name for name in ("conversation_manager", "extract", "activate_requirements", "cover_requirements", "resolve_requirements", "validate_consistency", "build_candidates", "filter_candidates", "prioritize_candidates", "plan", "generate", "guardrail", "compile_prd", END)})
     workflow.add_conditional_edges(
         "conversation_manager",
         route_after_conversation_manager,
@@ -111,7 +113,8 @@ def build_graph() -> StateGraph:
     workflow.add_edge("extract", "activate_requirements")
     workflow.add_edge("activate_requirements", "cover_requirements")
     workflow.add_edge("cover_requirements", "resolve_requirements")
-    workflow.add_edge("resolve_requirements", "build_candidates")
+    workflow.add_edge("resolve_requirements", "validate_consistency")
+    workflow.add_edge("validate_consistency", "build_candidates")
     workflow.add_edge("build_candidates", "filter_candidates")
     workflow.add_edge("filter_candidates", "prioritize_candidates")
     workflow.add_edge("prioritize_candidates", "plan")
