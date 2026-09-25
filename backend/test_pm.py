@@ -74,7 +74,7 @@ def new_session():
     state = AgentState(session_id=str(uuid4()), messages=[HumanMessage(content=idea, id=str(uuid4()))],
         raw_idea=idea, prd_contract=None, pm_is_complete=False,
         discovery_scope=DiscoveryScope.USER_APP, turn_count=0, awaiting_confirmation=False,
-        discovered_knowledge=[], superseded_knowledge=[], active_requirements={}, topic_status={}, topic_maturity={}, product_model={},
+        discovered_knowledge=[], superseded_knowledge=[], active_requirements={}, requirement_dependency_state={}, eligible_requirement_keys=[], topic_status={}, topic_maturity={}, product_model={},
         gap_coverage={}, fact_acquisition={}, asked_gap=None, active_answer_result=None,
         checkpoint_cursor="conversation_manager", interview_status="PROCESSING_ANSWER", extraction_status="PENDING",
         current_topic=None, current_gap=None, current_objective=None, question_hint=None,
@@ -98,7 +98,8 @@ def run_session(state):
                          prd_contract=None, topic_status={}, topic_maturity={}, current_topic=None,
                          current_gap=None, current_role=None, asked_gap=None, active_answer_result=None,
                          awaiting_confirmation=False, next_discovery_move=None, checkpoint_cursor="plan",
-                         interview_status="ACTIVE", answer_followup=None)
+                         interview_status="ACTIVE", answer_followup=None,
+                         requirement_dependency_state={}, eligible_requirement_keys=[])
             state["product_model"] = build_product_model(state["discovered_knowledge"], DiscoveryScope.ADMIN_DASHBOARD)
             save_checkpoint(state)
             state = run_phase(graph, state, "ADMIN_DASHBOARD DISCOVERY")
