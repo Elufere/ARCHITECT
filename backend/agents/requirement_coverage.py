@@ -228,10 +228,14 @@ def reconcile_requirement_coverage_record(
         for facet_id, old in existing.facets.items():
             if facet_id not in facets:
                 continue
-            if old.state == RequirementFacetState.NOT_APPLICABLE:
-                facets[facet_id] = old
-                continue
             kept = [identity for identity in old.fact_ids if identity in valid]
+            if old.state == RequirementFacetState.NOT_APPLICABLE:
+                facets[facet_id] = FacetCoverage(
+                    facet_id=facet_id,
+                    state=RequirementFacetState.NOT_APPLICABLE if kept else RequirementFacetState.UNKNOWN,
+                    fact_ids=kept,
+                )
+                continue
             facets[facet_id] = FacetCoverage(
                 facet_id=facet_id,
                 state=RequirementFacetState.COVERED if kept else RequirementFacetState.UNKNOWN,
