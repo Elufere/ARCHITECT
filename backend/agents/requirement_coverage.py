@@ -330,6 +330,92 @@ out of both mappings. Assess only the target facet IDs.
 """
 
 
+REQUIREMENT_COVERAGE_REPAIR_INSTRUCTION = """
+The previous requirement-facet assessment was invalid. Repair only the response
+format/protocol. Do not add new product knowledge. Use ONLY the supplied target
+facet IDs and ONLY the supplied confirmed fact IDs. A facet may be omitted when
+the evidence does not establish it. Return no explanation outside the structured
+assessment.
+"""
+
+
+def _normalize_requirement_coverage_assessment(result) -> RequirementCoverageAssessment:
+    return (
+        result
+        if isinstance(result, RequirementCoverageAssessment)
+        else RequirementCoverageAssessment.model_validate(result)
+    )
+
+
+def _validate_requirement_coverage_protocol(
+    requirement: ActiveRequirement,
+    assessment: RequirementCoverageAssessment,
+    target_facets: Sequence[str],
+    allowed_fact_ids: Sequence[str],
+) -> None:
+    outside = (
+        set(assessment.covered_facets)
+        | set(assessment.not_applicable_facets)
+    ) - set(target_facets)
+    if outside:
+        raise ValueError(f"Coverage assessment returned non-target facets: {sorted(outside)}")
+    validate_coverage_assessment(requirement, assessment, allowed_fact_ids)
+
+
+def _assess_requirement_facets_with_repair(
+    payload: dict,
+    requirement: ActiveRequirement,
+    target_facets: Sequence[str],
+    allowed_fact_ids: Sequence[str],
+) -> RequirementCoverageAssessment:
+    messages = [
+        SystemMessage(content=REQUIREMENT_COVERAGE_INSTRUCTION),
+        HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+    ]
+    try:
+        assessment = _normalize_requirement_coverage_assessment(
+            requirement_coverage_assessor().invoke(messages)
+        )
+        _validate_requirement_coverage_protocol(
+            requirement, assessment, target_facets, allowed_fact_ids
+        )
+        return assessment
+    except Exception as first_exc:
+        raise_if_llm_failure(first_exc)
+        print(f"REQUIREMENT COVERAGE REPAIR: {first_exc}")
+
+    repair_payload = {
+        **payload,
+        "repair": {
+            "allowed_target_facets": list(target_facets),
+            "allowed_fact_ids": list(allowed_fact_ids),
+            "instruction": (
+                "Return only supported mappings using these exact IDs. "
+                "Omit any unresolved facet."
+            ),
+        },
+    }
+    try:
+        repaired = _normalize_requirement_coverage_assessment(
+            requirement_coverage_assessor().invoke([
+                SystemMessage(content=(
+                    REQUIREMENT_COVERAGE_INSTRUCTION
+                    + REQUIREMENT_COVERAGE_REPAIR_INSTRUCTION
+                )),
+                HumanMessage(content=json.dumps(repair_payload, ensure_ascii=False)),
+            ])
+        )
+        _validate_requirement_coverage_protocol(
+            requirement, repaired, target_facets, allowed_fact_ids
+        )
+        return repaired
+    except Exception as second_exc:
+        raise_if_llm_failure(second_exc)
+        raise ExtractionFailed(
+            "Requirement facet coverage assessment failed after one repair attempt"
+        ) from second_exc
+
+
 def _latest_question_and_answer(state: AgentState) -> tuple[str, str] | None:
     messages = state.get("messages", [])
     if not messages or not isinstance(messages[-1], HumanMessage):
@@ -429,41 +515,32 @@ def assess_selected_requirement_answer(
         if facet.id in target_facets
     }
 
-    try:
-        assessment = requirement_coverage_assessor().invoke([
-            SystemMessage(content=REQUIREMENT_COVERAGE_INSTRUCTION),
-            HumanMessage(content=json.dumps({
-                "question": question,
-                "latest_response": answer,
-                "requirement_id": requirement.id,
-                "requirement": requirement.description or requirement.label,
-                "target_facets": target,
-                "confirmed_facts": supplied_facts,
-            }, ensure_ascii=False)),
-        ])
-        if not isinstance(assessment, RequirementCoverageAssessment):
-            assessment = RequirementCoverageAssessment.model_validate(assessment)
-        outside = (
-            set(assessment.covered_facets)
-            | set(assessment.not_applicable_facets)
-        ) - set(target_facets)
-        if outside:
-            raise ValueError(f"Coverage assessment returned non-target facets: {sorted(outside)}")
+    payload = {
+        "question": question,
+        "latest_response": answer,
+        "requirement_id": requirement.id,
+        "requirement": requirement.description or requirement.label,
+        "target_facets": target,
+        "confirmed_facts": supplied_facts,
+    }
+    assessment = _assess_requirement_facets_with_repair(
+        payload,
+        requirement,
+        target_facets,
+        allowed_ids,
+    )
 
-        existing_payload = coverage.get(requirement_key)
-        existing = (
-            RequirementCoverageRecord.model_validate(existing_payload)
-            if existing_payload else None
-        )
-        record = apply_requirement_coverage_assessment(
-            requirement,
-            knowledge,
-            assessment,
-            existing,
-        )
-    except Exception as exc:
-        raise_if_llm_failure(exc)
-        raise ExtractionFailed("Requirement facet coverage assessment failed") from exc
+    existing_payload = coverage.get(requirement_key)
+    existing = (
+        RequirementCoverageRecord.model_validate(existing_payload)
+        if existing_payload else None
+    )
+    record = apply_requirement_coverage_assessment(
+        requirement,
+        knowledge,
+        assessment,
+        existing,
+    )
 
     updated_coverage = dict(coverage)
     updated_coverage[requirement_key] = record.model_dump(mode="json")
