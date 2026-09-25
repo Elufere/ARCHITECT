@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal, Optional, Dict, List, Union, TYPE_CHECKING
+from typing import Annotated, Literal, Optional, Dict, List, Union
 from pydantic import BaseModel, model_validator
 from typing_extensions import TypedDict
 from enum import Enum
 from langgraph.graph.message import add_messages
 from agents.prd_schema import PRDContract
-
-if TYPE_CHECKING:
-    from agents.requirements import ActiveRequirement
+from agents.requirements import ActiveRequirement
 
 
 class DiscoveryTopic(str, Enum):
