@@ -243,7 +243,8 @@ def test_contradiction_preempts_candidates_then_user_clarification_heals_graph(m
 
     assert conflicted["validation_blocking"] is True
     assert conflicted["validation_candidate_blocking"] is True
-    assert conflicted["ranked_question_candidates"] == []
+    assert len(conflicted["ranked_question_candidates"]) == 1
+    assert conflicted["ranked_question_candidates"][0]["source"] == "VALIDATION"
     assert conflicted["planner_source"] == "validation"
     issue = conflicted["selected_validation_issue"]
 
