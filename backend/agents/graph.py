@@ -33,7 +33,7 @@ def route_after_plan(state: AgentState) -> str:
     If so, skip question generation and go straight to compilation.
     """
     if state.get("awaiting_confirmation") and all_discovery_resolved(state):
-        logger.info("All discovery topics completed. Routing to compilation.")
+        logger.info("No material inquiry remains. Routing to compilation.")
         return "compile_prd"
     
     # Otherwise, generate questions for the planned topic
