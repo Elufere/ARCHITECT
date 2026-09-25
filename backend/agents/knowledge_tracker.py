@@ -27,7 +27,20 @@ from agents.evidence_spans import recover_evidence_span
 from agents.knowledge_duplicates import FactComparison, compare_candidate
 from agents.knowledge_corrections import CorrectionReview, correction_targets
 from agents.role_utils import roles_match, split_role_labels
-from agents.extraction_passes import PASSES, RawPass, ActorFact, OwnedFact, GoalFact, normalize_fact, canonical_role, absence_label
+from agents.extraction_passes import (
+    PASSES,
+    RawPass,
+    RawClaims,
+    NeutralClaim,
+    CLAIM_CAPTURE_INSTRUCTION,
+    ActorFact,
+    OwnedFact,
+    GoalFact,
+    normalize_fact,
+    canonical_role,
+    absence_label,
+    claim_to_fact,
+)
 
 # ──────────────────────────────────────────────
 # Evidence Validation
