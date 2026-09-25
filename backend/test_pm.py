@@ -83,7 +83,7 @@ def new_session():
         selected_requirement_candidate=None, selected_requirement_priority=None,
         validation_issues=[], validation_pair_cache={}, validation_blocking=False,
         validation_candidate_blocking=False, selected_validation_issue=None,
-        topic_status={}, topic_maturity={}, product_model={},
+        product_model={},
         gap_coverage={}, fact_acquisition={}, asked_gap=None, active_answer_result=None,
         checkpoint_cursor="conversation_manager", interview_status="PROCESSING_ANSWER", extraction_status="PENDING",
         current_topic=None, current_gap=None, current_objective=None, question_hint=None,
@@ -104,7 +104,7 @@ def run_session(state):
         if choice == "y":
             # Global knowledge/acquisition/coverage survive; coverage is scope-keyed.
             state.update(discovery_scope=DiscoveryScope.ADMIN_DASHBOARD, pm_is_complete=False,
-                         prd_contract=None, topic_status={}, topic_maturity={}, current_topic=None,
+                         prd_contract=None, current_topic=None,
                          current_gap=None, current_role=None, asked_gap=None, active_answer_result=None,
                          awaiting_confirmation=False, next_discovery_move=None, checkpoint_cursor="infer_implications",
                          interview_status="ACTIVE", answer_followup=None,
