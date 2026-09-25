@@ -970,11 +970,15 @@ def knowledge_tracker_node(state: AgentState) -> dict:
             absence = extract_gap_absence(user_response, state, current_scope)
             if absence:
                 extracted_items.append(absence)
-        before_grounding = list(extracted_items)
-        extracted_items = ground_items(extracted_items, user_response, state, absence)
-        for rejected in before_grounding:
-            if rejected not in extracted_items:
-                print("CANDIDATE FINAL REJECT (grounding):", rejected.model_dump(mode="json"))
+        if getattr(extracted_items, "grounding_required", True):
+            before_grounding = list(extracted_items)
+            extracted_items = ground_items(extracted_items, user_response, state, absence)
+            for rejected in before_grounding:
+                if rejected not in extracted_items:
+                    print("CANDIDATE FINAL REJECT (grounding):", rejected.model_dump(mode="json"))
+        else:
+            extracted_items = list(extracted_items)
+            print(f"CLAIM ADMISSION: {len(extracted_items)} fact(s) accepted without cross-category grounding")
     discovered_knowledge = list(state.get("discovered_knowledge", []))
     if current_gap:
         print(f"ACTIVE ANSWER: gap={current_gap} accepted_facts="
