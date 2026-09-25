@@ -1,6 +1,8 @@
 from agents.state import AgentState, DiscoveryScope, DiscoveryTopic, KnowledgeState, TopicMaturity, TopicStatus
 from agents.role_utils import role_identity, roles_match, split_role_labels
 from agents.discovery_coverage import coverage_key, gap_resolved, facts_for_gap, fact_id, active_question_matches
+from agents.question_candidates import QuestionCandidate
+from agents.requirements import RequirementStatus
 
 # Topic ordering
 TOPIC_PREREQUISITES = {
@@ -427,16 +429,91 @@ def build_gap_info(state: AgentState, topic: DiscoveryTopic):
         "relevant_context": context,
     }
 
+
+def _requirement_context(state: AgentState, candidate: QuestionCandidate) -> list[str]:
+    known_ids = set(candidate.known_fact_ids)
+    context = []
+    for item in state.get("discovered_knowledge", []):
+        if fact_id(item) in known_ids:
+            label = f"{item.topic.value}.{item.key}"
+            if item.role:
+                label += f"[{item.role}]"
+            context.append(f"{label}: {item.value}")
+    return context[:12]
+
+
+def _requirement_plan(state: AgentState, candidate: QuestionCandidate) -> dict:
+    requirement = state.get("active_requirements", {}).get(candidate.requirement_key)
+    if requirement is None or requirement.status != RequirementStatus.ACTIVE:
+        raise RuntimeError(f"Ranked requirement candidate is stale: {candidate.requirement_key}")
+
+    facet_map = {facet.id: facet for facet in requirement.facets}
+    target_descriptions = [
+        facet_map[facet_id].description
+        for facet_id in candidate.target_facets
+        if facet_id in facet_map
+    ]
+    target_labels = [
+        facet_map[facet_id].label
+        for facet_id in candidate.target_facets
+        if facet_id in facet_map
+    ]
+    objective = requirement.description or requirement.label
+    if target_descriptions:
+        objective += " Focus on: " + "; ".join(target_descriptions)
+
+    parent_gap = requirement.parent_gap
+    return {
+        "planner_source": "requirement",
+        "selected_requirement_candidate": candidate.model_dump(mode="json"),
+        "selected_requirement_priority": state.get("question_candidate_priority", {}).get(candidate.id),
+        "current_topic": candidate.topic,
+        "current_gap": parent_gap,
+        "current_objective": objective,
+        "question_hint": (
+            "Ask one natural product question about this requirement. "
+            + ("Cover these unresolved aspects together where natural: " + ", ".join(target_labels) + ". "
+               if target_labels else "")
+            + "Use existing evidence as context, not as proof that the requirement is complete."
+        ),
+        "current_role": None,
+        "known_keys": list(get_known_keys(state, candidate.topic)),
+        "missing_keys": [],
+        "inferred_gap_evidence": [],
+        "known_gap_evidence": [],
+        "relevant_context": _requirement_context(state, candidate),
+        "next_discovery_move": (
+            "requirement_expansion"
+            if candidate.coverage_status.value in {"KNOWN_SHALLOW", "NEEDS_EXPANSION"}
+            else "requirement_discovery"
+        ),
+        "awaiting_confirmation": False,
+    }
+
+
+def active_requirements_resolved(state: AgentState) -> bool:
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    return not any(
+        requirement.scope == scope and requirement.status == RequirementStatus.ACTIVE
+        for requirement in state.get("active_requirements", {}).values()
+    )
+
+
+def all_discovery_resolved(state: AgentState) -> bool:
+    return all_required_gaps_resolved(state) and active_requirements_resolved(state)
+
+
 def all_required_gaps_resolved(state):
     return all(not build_gap_info(state, topic)["missing_keys"] for topic in DiscoveryTopic)
 
 
 def interview_planner_node(state: AgentState) -> dict:
     # The tracker supplies a receipt only after successful grounding and commit.
-    # Coverage is a planner decision, separate from global confirmed knowledge.
+    # Schema-gap coverage and requirement coverage are separate. A requirement
+    # question must never resolve its broad parent schema gap by accident.
     coverage = dict(state.get("gap_coverage", {}))
     receipt = state.get("active_answer_result")
-    if receipt and active_question_matches(state):
+    if state.get("planner_source") != "requirement" and receipt and active_question_matches(state):
         scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
         topic, gap = state.get("current_topic"), state.get("current_gap")
         if (receipt["scope"] == scope.value and receipt["topic"] == topic.value
@@ -454,6 +531,25 @@ def interview_planner_node(state: AgentState) -> dict:
     print("\n=== INTERVIEW PLANNER ===")
     print("Scope:", scope.value)
     print("Current topic:", current_topic)
+
+    ranked = [
+        QuestionCandidate.model_validate(item)
+        for item in state.get("ranked_question_candidates", [])
+    ]
+    if ranked:
+        selected = ranked[0]
+        print("\nSelected requirement:", selected.requirement_id)
+        print("Target facets:", selected.target_facets)
+        return {
+            **common,
+            "topic_status": topic_status,
+            "topic_maturity": topic_maturity,
+            **_requirement_plan(state, selected),
+        }
+
+    # No requirement candidate is currently askable. Fall back to the schema
+    # planner so foundational discovery can continue and potentially activate or
+    # unblock additional requirements.
     # Old in-memory/imported status flags are not deliberate coverage records.
     for topic, status in list(topic_status.items()):
         if status == TopicStatus.COMPLETED:
@@ -485,7 +581,10 @@ def interview_planner_node(state: AgentState) -> dict:
         # such as role_transitions and permissions.
         if gap["current_gap"] is not None:
             return {
-                **common, "topic_status": topic_status,
+                **common, "planner_source": "schema",
+                "selected_requirement_candidate": None,
+                "selected_requirement_priority": None,
+                "topic_status": topic_status,
                 "current_topic": current_topic,
                 "topic_maturity": topic_maturity,
                 "next_discovery_move": (
@@ -541,6 +640,9 @@ def interview_planner_node(state: AgentState) -> dict:
 
         return {
             **common,
+            "planner_source": "schema",
+            "selected_requirement_candidate": None,
+            "selected_requirement_priority": None,
             "current_topic": topic,
             "topic_status": updated,
             "topic_maturity": topic_maturity,
@@ -554,9 +656,22 @@ def interview_planner_node(state: AgentState) -> dict:
 
     # All topics exhausted — persist the completion we just marked above
     if not all_required_gaps_resolved(state):
-        raise RuntimeError("Discovery still has unresolved required gaps; compilation is blocked")
+        raise RuntimeError("Discovery still has unresolved required schema gaps; compilation is blocked")
+    if not active_requirements_resolved(state):
+        blocked = [
+            requirement.id
+            for requirement in state.get("active_requirements", {}).values()
+            if requirement.scope == scope and requirement.status == RequirementStatus.ACTIVE
+        ]
+        raise RuntimeError(
+            "Discovery has unresolved active requirements but none are currently askable: "
+            + ", ".join(blocked)
+        )
     return {
         **common,
+        "planner_source": "schema",
+        "selected_requirement_candidate": None,
+        "selected_requirement_priority": None,
         "current_topic": None,
         "topic_status": topic_status,
         "topic_maturity": topic_maturity,
