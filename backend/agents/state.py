@@ -158,6 +158,10 @@ class AgentState(TypedDict):
     planner_source: str
     selected_requirement_candidate: Optional[dict]
     selected_requirement_priority: Optional[dict]
+    validation_issues: List[dict]
+    validation_pair_cache: Dict[str, dict]
+    validation_blocking: bool
+    selected_validation_issue: Optional[dict]
     topic_status: Dict[DiscoveryTopic, TopicStatus]
     current_topic: Optional[DiscoveryTopic]
     topic_dependencies: Dict[DiscoveryTopic, List[DiscoveryTopic]]
