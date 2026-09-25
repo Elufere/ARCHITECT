@@ -247,8 +247,21 @@ def reconcile_active_requirements(
         elif not has_valid_activation:
             status = RequirementStatus.INACTIVE
 
+        structural = {}
+        template = templates_by_key.get(key)
+        if template is not None:
+            structural = {
+                "topic": template.topic,
+                "parent_gap": template.parent_gap,
+                "label": template.label,
+                "description": template.description,
+                "facets": list(template.facets),
+                "dependencies": list(template.dependencies),
+                "unlocks": list(template.unlocks),
+            }
+
         updated[key] = current.model_copy(
-            update={"activation_sources": preserved, "status": status}
+            update={"activation_sources": preserved, "status": status, **structural}
         )
 
     return updated
