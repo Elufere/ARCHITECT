@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Any, Iterable, Optional, Sequence
 
 from agents.discovery_coverage import fact_id
@@ -23,7 +24,7 @@ class FactCondition:
     key: str
     require_substantive: bool = True
     value_equals: Optional[str] = None
-    value_contains_any: tuple[str, ...] = ()
+    value_word_prefixes: tuple[str, ...] = ()
 
     def matches(self, item: KnowledgeItem, scope: DiscoveryScope) -> bool:
         if (
@@ -38,10 +39,14 @@ class FactCondition:
         normalized = item.value.strip().lower()
         if self.value_equals is not None and normalized != self.value_equals.strip().lower():
             return False
-        if self.value_contains_any and not any(
-            token.lower() in normalized for token in self.value_contains_any
-        ):
-            return False
+        if self.value_word_prefixes:
+            words = re.findall(r"[a-z0-9]+", normalized)
+            if not any(
+                word.startswith(prefix.lower())
+                for word in words
+                for prefix in self.value_word_prefixes
+            ):
+                return False
         return True
 
 
@@ -305,10 +310,10 @@ LIFECYCLE_ACTIVATION_RULES: tuple[RequirementActivationRule, ...] = (
         id="lifecycle.modification.v1",
         description="Explicit edit/update/modify behavior implies lifecycle rules around changes to existing state.",
         when=(
-            FactCondition(topic=DiscoveryTopic.USER_ROLES, key="responsibilities", value_contains_any=("edit", "update", "modify", "change")),
-            FactCondition(topic=DiscoveryTopic.USER_ROLES, key="permissions", value_contains_any=("edit", "update", "modify", "change")),
-            FactCondition(topic=DiscoveryTopic.CORE_WORKFLOW, key="workflow_steps", value_contains_any=("edit", "update", "modify", "change")),
-            FactCondition(topic=DiscoveryTopic.BUSINESS_RULES, key="ownership_rules", value_contains_any=("edit", "update", "modify", "change")),
+            FactCondition(topic=DiscoveryTopic.USER_ROLES, key="responsibilities", value_word_prefixes=("edit", "updat", "modif", "chang")),
+            FactCondition(topic=DiscoveryTopic.USER_ROLES, key="permissions", value_word_prefixes=("edit", "updat", "modif", "chang")),
+            FactCondition(topic=DiscoveryTopic.CORE_WORKFLOW, key="workflow_steps", value_word_prefixes=("edit", "updat", "modif", "chang")),
+            FactCondition(topic=DiscoveryTopic.BUSINESS_RULES, key="ownership_rules", value_word_prefixes=("edit", "updat", "modif", "chang")),
         ),
         match_all=False,
         activates=(
@@ -332,10 +337,10 @@ LIFECYCLE_ACTIVATION_RULES: tuple[RequirementActivationRule, ...] = (
         id="lifecycle.removal.v1",
         description="Explicit delete/disable/archive behavior implies lifecycle rules for removal and historical effects.",
         when=(
-            FactCondition(topic=DiscoveryTopic.USER_ROLES, key="responsibilities", value_contains_any=("delete", "disable", "archive", "deactivate", "remove")),
-            FactCondition(topic=DiscoveryTopic.USER_ROLES, key="permissions", value_contains_any=("delete", "disable", "archive", "deactivate", "remove")),
-            FactCondition(topic=DiscoveryTopic.CORE_WORKFLOW, key="workflow_steps", value_contains_any=("delete", "disable", "archive", "deactivate", "remove")),
-            FactCondition(topic=DiscoveryTopic.BUSINESS_RULES, key="ownership_rules", value_contains_any=("delete", "disable", "archive", "deactivate", "remove")),
+            FactCondition(topic=DiscoveryTopic.USER_ROLES, key="responsibilities", value_word_prefixes=("delet", "disabl", "archiv", "deactiv", "remov")),
+            FactCondition(topic=DiscoveryTopic.USER_ROLES, key="permissions", value_word_prefixes=("delet", "disabl", "archiv", "deactiv", "remov")),
+            FactCondition(topic=DiscoveryTopic.CORE_WORKFLOW, key="workflow_steps", value_word_prefixes=("delet", "disabl", "archiv", "deactiv", "remov")),
+            FactCondition(topic=DiscoveryTopic.BUSINESS_RULES, key="ownership_rules", value_word_prefixes=("delet", "disabl", "archiv", "deactiv", "remov")),
         ),
         match_all=False,
         activates=(
