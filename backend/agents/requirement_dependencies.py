@@ -27,6 +27,7 @@ class DependencyBlockReason(str, Enum):
 class RequirementDependencyDecision(BaseModel):
     requirement_id: str
     scope: DiscoveryScope
+    requirement_status: RequirementStatus
     eligible: bool
     dependencies: List[str] = Field(default_factory=list)
     blocking_dependencies: Dict[str, DependencyBlockReason] = Field(default_factory=dict)
@@ -110,6 +111,7 @@ def resolve_requirement_dependencies(
             decisions[requirement_id] = RequirementDependencyDecision(
                 requirement_id=requirement_id,
                 scope=scope,
+                requirement_status=requirement.status,
                 eligible=False,
                 dependencies=list(requirement.dependencies),
                 blocking_dependencies=blocking,
@@ -144,6 +146,7 @@ def resolve_requirement_dependencies(
         decisions[requirement_id] = RequirementDependencyDecision(
             requirement_id=requirement_id,
             scope=scope,
+            requirement_status=requirement.status,
             eligible=not blocking,
             dependencies=list(requirement.dependencies),
             blocking_dependencies=blocking,
