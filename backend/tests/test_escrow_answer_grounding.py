@@ -55,7 +55,8 @@ def test_exact_answer_advances_even_when_incidental_audit_fails(monkeypatch, inc
     monkeypatch.setattr(guardrails, "evaluator_llm", SimpleNamespace(invoke=lambda _: SimpleNamespace(passed=True)))
     result = graph.build_graph().invoke(initial_state())
     assert len(audits) == 2
-    assert result["current_gap"] == "permissions::customer"
+    assert result["planner_source"] == "model"
+    assert result["current_gap"] == "primary_user_goals::customer"
     assert result["question_retry_count"] == 0
     duties = [i for i in result["discovered_knowledge"] if i.key == "responsibilities"]
     assert len(duties) == 2 and all(i.role == "customer" for i in duties)
