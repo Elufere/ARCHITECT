@@ -5,6 +5,7 @@ import pytest
 from langchain_core.messages import HumanMessage
 
 from agents import knowledge_tracker as tracker
+from agents.llm_errors import ExtractionFailed
 from agents.state import DiscoveryScope, DiscoveryTopic, KnowledgeItem
 
 
@@ -94,16 +95,16 @@ def test_admin(monkeypatch):
     assert {r.role for r in records if r.key == "responsibilities"} == {"artisan", "admin"}
 
 
-def test_partial_failure_and_bad_sibling(monkeypatch, capsys):
-    records = run(monkeypatch, ADMIN, {
-        "ACTOR": ValueError("malformed structured output"),
-        "RESPONSIBILITY": [item("responsibilities", "accept jobs", "Artisans accept jobs", role="artisan"),
-                           item("permissions", "invented", "fabricated quote", role="admin")],
-    })
-    # With actor extraction unavailable, an unregistered owner cannot be persisted.
-    assert records == []
+def test_structured_pass_failure_stops_turn_at_durable_boundary(monkeypatch, capsys):
+    with pytest.raises(ExtractionFailed):
+        run(monkeypatch, ADMIN, {
+            "ACTOR": ValueError("malformed structured output"),
+            "RESPONSIBILITY": [item("responsibilities", "accept jobs", "Artisans accept jobs", role="artisan"),
+                               item("permissions", "invented", "fabricated quote", role="admin")],
+        })
     output = capsys.readouterr().out
-    assert "ACTOR EXTRACTION FAILED" in output and "RESPONSIBILITY REJECTED" in output
+    assert "ACTOR EXTRACTION FAILED" in output
+    assert "RESPONSIBILITY REJECTED" not in output
 
 
 @pytest.mark.parametrize("text,actors,goal_role,goal_value,goal_evidence", [
