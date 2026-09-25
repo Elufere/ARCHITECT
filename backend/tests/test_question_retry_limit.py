@@ -31,7 +31,10 @@ def test_repeated_template_exits_graph_with_bounded_retries(monkeypatch):
     monkeypatch.setattr(graph, "interview_planner_node", lambda _: {})
     initial = state()
     result = graph.build_graph().invoke(initial, config={"recursion_limit": 20})
-    assert len(calls) == guardrails.MAX_QUESTION_RETRIES
+    # MAX_QUESTION_RETRIES counts regeneration attempts after the initial
+    # generated draft, so a model-driven question can invoke the generator once
+    # initially plus the bounded retry budget.
+    assert len(calls) == 1 + guardrails.MAX_QUESTION_RETRIES
     assert "already asked" in calls[0][0].content
     assert isinstance(result["messages"][-1], AIMessage)
     assert result["messages"][-1].content.startswith("I'm having trouble")
