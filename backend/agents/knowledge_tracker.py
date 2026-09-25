@@ -417,7 +417,7 @@ def ground_items(items, user_response, state, active_gap_review=None):
 def ground_batch(items, user_response, state, active_gap_review=None):
     eligible = []
     for item in items:
-        reason = category_contradiction(item.key, item.evidence)
+        reason = category_contradiction(item.key, item.evidence, item.value)
         if reason:
             print(f"CATEGORY REJECTED: {item.topic.value}.{item.key} owner={item.role} | {reason}")
         else:
