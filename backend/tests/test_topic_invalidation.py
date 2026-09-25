@@ -114,14 +114,17 @@ def test_noninvalidating_information_keeps_completed_topics(monkeypatch, capsys,
     assert "TOPIC INVALIDATION" not in capsys.readouterr().out
 
 
-def test_planner_reopens_completed_status_when_required_deliberate_coverage_is_missing(capsys):
+def test_planner_uses_model_uncertainty_without_reopening_topic_status(capsys):
     initial = completed_state()
     initial["discovered_knowledge"].append(actor())
     assert build_gap_info(initial, T.USER_ROLES)["missing_keys"]
     plan = interview_planner_node(initial)
-    assert plan["topic_status"][T.USER_ROLES] == Status.PARTIAL
-    assert plan["topic_status"][T.USER_GOALS] == Status.PARTIAL
-    assert "reason: deliberate gap coverage is missing" in capsys.readouterr().out
+    assert plan["planner_source"] == "model"
+    assert plan["current_topic"] == T.USER_ROLES
+    assert plan["current_gap"] == "responsibilities::vendor"
+    # Legacy topic status is no longer a planner control signal.
+    assert plan["topic_status"][T.USER_ROLES] == Status.COMPLETED
+    assert "deliberate gap coverage is missing" not in capsys.readouterr().out
 
 
 def test_new_actor_with_incidental_role_facts_still_reopens_deliberate_coverage(monkeypatch, capsys):
