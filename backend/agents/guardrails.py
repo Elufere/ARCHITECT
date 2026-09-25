@@ -134,6 +134,9 @@ Current schema gap / extraction anchor:
 Selected requirement context:
 {requirement_context}
 
+Validation context:
+{validation_context}
+
 Question:
 {agent_output}
 
@@ -159,6 +162,11 @@ When Planner source is "requirement", the schema gap is ONLY an extraction
 anchor. Validate the question against the Selected requirement context and
 target facets instead. A valid requirement question may naturally span more
 than one schema field if all parts directly serve the selected requirement.
+
+When Planner source is "validation", the question must neutrally resolve the
+supplied contradiction. It may quote or summarize the two incompatible confirmed
+statements and ask which CURRENT rule/decision applies. It must not choose a side,
+silently merge them, or drift into unrelated discovery.
 
 Reject if the question:
 - changes to another topic
@@ -293,10 +301,17 @@ def evaluate_question(state: dict) -> dict:
     planner_source = state.get("planner_source", "schema")
     selected_requirement = state.get("selected_requirement_candidate") or {}
     requirement_context = "None"
+    validation_context = "None"
     if planner_source == "requirement":
         requirement_context = (
             f"requirement_id={selected_requirement.get('requirement_id')}; "
             f"target_facets={selected_requirement.get('target_facets', [])}"
+        )
+    if planner_source == "validation":
+        validation_issue = state.get("selected_validation_issue") or {}
+        validation_context = (
+            f"issue={validation_issue.get('message')}; "
+            f"conflicting_values={validation_issue.get('fact_values', [])}"
         )
 
     # Internal roles are prohibited only when the model invents them.  Once a
@@ -368,6 +383,7 @@ def evaluate_question(state: dict) -> dict:
                 current_gap=current_gap,
                 current_objective=current_objective,
                 requirement_context=requirement_context,
+                validation_context=validation_context,
                 agent_output=last_message.content,
                 known_facts="\n".join(
                     f"- {item.key}: {item.value}"
