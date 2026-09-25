@@ -420,14 +420,19 @@ def evaluate_question(state: dict) -> dict:
 
 
 def _record_requirement_question(state: dict, question: str) -> list[dict]:
+    """Record delivered inquiry questions.
+
+    The legacy state key is retained for checkpoint compatibility, but entries
+    now represent model, requirement, and validation inquiries.
+    """
     history = list(state.get("requirement_question_history", []))
-    if state.get("planner_source") != "requirement":
-        return history
-    candidate = state.get("selected_requirement_candidate") or {}
+    candidate = state.get("selected_inquiry") or state.get("selected_requirement_candidate") or {}
     if not candidate:
         return history
     entry = {
         "candidate_id": candidate.get("id"),
+        "inquiry_id": candidate.get("inquiry_id") or candidate.get("id"),
+        "source": candidate.get("source") or state.get("planner_source"),
         "requirement_key": candidate.get("requirement_key"),
         "requirement_id": candidate.get("requirement_id"),
         "target_facets": list(candidate.get("target_facets") or []),
@@ -440,16 +445,18 @@ def _record_requirement_question(state: dict, question: str) -> list[dict]:
         "turn": state.get("turn_count", 0),
     }
     signature = (
-        entry["candidate_id"],
+        entry["inquiry_id"],
         entry["question"],
         entry["turn"],
     )
     if not any(
-        (item.get("candidate_id"), item.get("question"), item.get("turn")) == signature
+        (item.get("inquiry_id") or item.get("candidate_id"), item.get("question"), item.get("turn"))
+        == signature
         for item in history
     ):
         history.append(entry)
     return history
+
 
 MAX_QUESTION_RETRIES = 2
 
