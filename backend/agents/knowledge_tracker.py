@@ -17,12 +17,10 @@ from agents.state import (
     KnowledgeItem,
     KnowledgeState,
     TOPIC_KEY_MAP,
-    TopicStatus,
 )
 from agents.semantic_validation import GapAnswer, GroundingResult, GroundingResponse, GAP_INSTRUCTION, ROLE_POLICY_INSTRUCTION, GROUNDING_INSTRUCTION, category_contradiction
 from agents.discovery_fields import OVERLAP_RULES, field_contract
 from agents.product_model import build_product_model
-from agents.topic_lifecycle import invalidate_completed_topics
 from agents.absence_supersession import matching_absences, can_replace_absence, supersession_record
 from agents.answer_contract import interpret_closed_answer
 from agents.evidence_spans import recover_evidence_span
@@ -719,9 +717,6 @@ def knowledge_tracker_node(state: AgentState) -> dict:
     print("\n===== KNOWLEDGE TRACKER INPUT =====")
     print("Current topic:", state.get("current_topic"))
     print("Turn:", state.get("turn_count"))
-    print("Incoming topic status:")
-    for topic in DiscoveryTopic:
-        print(f"  {topic.value}: {state.get('topic_status', {}).get(topic)}")
     print("Knowledge count:", len(state.get("discovered_knowledge", [])))
     print("===================================\n")
 
@@ -771,17 +766,9 @@ def knowledge_tracker_node(state: AgentState) -> dict:
                 promoted.append(replacement)
                 committed_promotions.append(replacement)
             promoted = [item for item in promoted if item not in replaced_absences]
-            print("\n===== TOPIC STATUS MERGE =====")
-            topic_status = dict(state.get("topic_status", {}))
-            if current_topic and topic_status.get(current_topic) != TopicStatus.COMPLETED:
-                topic_status[current_topic] = TopicStatus.PARTIAL
-            topic_status = invalidate_completed_topics(
-                state, promoted,
-                committed_promotions, topic_status)
             return {
                 "discovered_knowledge": promoted,
                 "superseded_knowledge": superseded_knowledge,
-                "topic_status": topic_status,
                 "product_model": build_product_model(promoted, current_scope),
                 "active_answer_result": answer_receipt(state, committed_promotions, promoted, confirmed_existing=True),
                 "fact_acquisition": acquisition_records(state, promoted, committed_promotions),
@@ -829,7 +816,6 @@ def knowledge_tracker_node(state: AgentState) -> dict:
     if current_gap:
         print(f"ACTIVE ANSWER: gap={current_gap} accepted_facts="
               f"{sum(item.topic == current_topic and item_directly_answers_gap(item, current_gap) for item in extracted_items)}")
-    accepted_topics = set()
     committed_items = []
     direct_answer_items = (facts_for_gap(state, current_topic, current_gap)
                            if confirmed_prior_answer else [])
@@ -904,37 +890,8 @@ def knowledge_tracker_node(state: AgentState) -> dict:
             superseded_knowledge.extend(supersession_record(old, item) for old in previous_absences)
         committed_items.append(item)
         direct_answer_items.append(item)
-        accepted_topics.add(item.topic)
-    # -----------------------------
-    # Merge topic status
-    # -----------------------------
-    print("\n===== TOPIC STATUS MERGE =====")
-
-    topic_status = dict(state.get("topic_status", {}))
-
-    for topic in accepted_topics:
-        old = topic_status.get(topic)
-
-        print(f"\nTopic: {topic.value}")
-        print(f"  Old status : {old}")
-
-        if old != TopicStatus.COMPLETED:
-            topic_status[topic] = TopicStatus.PARTIAL
-
-        print(f"  New status : {topic_status.get(topic)}")
-
-    topic_status = invalidate_completed_topics(
-        state, discovered_knowledge, committed_items, topic_status)
-
-    print("================================\n")
-
     print("\n===== KNOWLEDGE TRACKER OUTPUT =====")
     print("Current topic:", current_topic)
-    print("Outgoing topic status:")
-
-    for topic in DiscoveryTopic:
-        print(f"  {topic.value}: {topic_status.get(topic)}")
-
     print("Knowledge count:", len(discovered_knowledge))
     print("====================================\n")
 
@@ -942,7 +899,6 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         "discovered_knowledge": discovered_knowledge,
         "superseded_knowledge": superseded_knowledge,
         "answer_followup": answer_followup,
-        "topic_status": topic_status,
         "product_model": build_product_model(discovered_knowledge, current_scope),
         "active_answer_result": answer_receipt(state, direct_answer_items, discovered_knowledge,
                                                confirmed_existing=confirmed_prior_answer),
