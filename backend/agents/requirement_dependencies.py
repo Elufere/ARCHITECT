@@ -107,17 +107,6 @@ def resolve_requirement_dependencies(
     for requirement_id, requirement in requirements.items():
         blocking: Dict[str, DependencyBlockReason] = {}
 
-        if requirement.status != RequirementStatus.ACTIVE:
-            decisions[requirement_id] = RequirementDependencyDecision(
-                requirement_id=requirement_id,
-                scope=scope,
-                requirement_status=requirement.status,
-                eligible=False,
-                dependencies=list(requirement.dependencies),
-                blocking_dependencies=blocking,
-            )
-            continue
-
         if requirement_id in cycles:
             blocking[requirement_id] = DependencyBlockReason.CYCLE
 
@@ -147,7 +136,7 @@ def resolve_requirement_dependencies(
             requirement_id=requirement_id,
             scope=scope,
             requirement_status=requirement.status,
-            eligible=not blocking,
+            eligible=requirement.status == RequirementStatus.ACTIVE and not blocking,
             dependencies=list(requirement.dependencies),
             blocking_dependencies=blocking,
         )
