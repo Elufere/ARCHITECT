@@ -286,3 +286,35 @@ def test_direct_actor_answer_can_establish_membership_without_repeating_app_word
     assert len(batch) == 1
     assert batch[0].key == "secondary_users"
     assert batch[0].roles == ["vendor"]
+
+
+def test_active_gap_absence_is_not_committed_by_claim_capture(monkeypatch):
+    text = "No other users."
+    calls = []
+    production_models(monkeypatch, [
+        claim(
+            "secondary_actor",
+            "none",
+            text,
+            absence="none",
+        ),
+    ], calls)
+
+    batch = tracker.extract_passes(
+        text,
+        dict(
+            messages=[
+                AIMessage(content="Besides customers, will anyone else use the app?"),
+                HumanMessage(content=text),
+            ],
+            discovery_scope=S.USER_APP,
+            discovered_knowledge=[actor("customer")],
+            current_topic=T.USER_ROLES,
+            current_gap="secondary_users",
+            turn_count=2,
+        ),
+        S.USER_APP,
+    )
+
+    assert batch == []
+    assert getattr(batch, "grounding_required") is False
