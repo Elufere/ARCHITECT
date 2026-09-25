@@ -125,7 +125,7 @@ _extraction_models = None
 
 
 def extraction_models():
-    """Create one structured model per pass and reuse it across turns."""
+    """Create the production claim model plus legacy/test compatibility models."""
     global _extraction_models
     if _extraction_models is None:
         # Definitions, structured schema and overlapping evidence must fit together.
@@ -137,6 +137,11 @@ def extraction_models():
             for name, *_ in PASSES
         }
         _extraction_models.update({
+            "CLAIMS": get_structured_model(
+                call_name="knowledge_tracker.CLAIMS",
+                schema=RawClaims,
+                include_raw=True,
+            ),
             "GAP_ANSWER": get_structured_model(call_name="knowledge_tracker.GAP_ANSWER", schema=GapAnswer, include_raw=True),
             "GROUNDING": get_structured_model(call_name="knowledge_tracker.GROUNDING", schema=GroundingResponse, include_raw=True),
             "FACT_COMPARISON": get_structured_model(call_name="knowledge_tracker.FACT_COMPARISON", schema=FactComparison, include_raw=True),
