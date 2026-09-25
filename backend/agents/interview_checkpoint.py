@@ -89,6 +89,8 @@ def load_checkpoint(session_id):
         key: ActiveRequirement.model_validate(item)
         for key, item in state.get("active_requirements", {}).items()
     }
+    state.setdefault("requirement_dependency_state", {})
+    state.setdefault("eligible_requirement_keys", [])
     if state.get("prd_contract"):
         state["prd_contract"] = PRDContract.model_validate(state["prd_contract"])
     if (state.get("answer_followup") or {}).get("scope"):
