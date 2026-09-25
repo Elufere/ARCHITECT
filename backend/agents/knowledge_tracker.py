@@ -29,7 +29,7 @@ from agents.evidence_spans import recover_evidence_span
 from agents.knowledge_duplicates import FactComparison, compare_candidate
 from agents.knowledge_corrections import CorrectionReview, correction_targets
 from agents.role_utils import roles_match, split_role_labels
-from agents.extraction_passes import PASSES, RawPass, OwnedFact, GoalFact, normalize_fact, canonical_role, absence_label
+from agents.extraction_passes import PASSES, RawPass, ActorFact, OwnedFact, GoalFact, normalize_fact, canonical_role, absence_label
 
 # ──────────────────────────────────────────────
 # Evidence Validation
@@ -281,6 +281,59 @@ def confirmed_actor_context(state, scope):
             if item.scope == scope and item.topic == DiscoveryTopic.USER_ROLES
             and item.key in ("primary_users", "secondary_users", "multiple_roles", "role_transitions")
             and item.knowledge_state == KnowledgeState.CONFIRMED and not item.absence]
+
+
+def actor_identity_candidate_allowed(fact: ActorFact, state: AgentState, scope: DiscoveryScope) -> bool:
+    """Reject redundant actor declarations extracted from non-identity prose.
+
+    Once a canonical actor is already known in the same classification, later
+    capability/rule/workflow sentences must not be re-admitted as actor facts.
+    A later answer may still:
+    - answer an actor discovery gap directly,
+    - introduce a genuinely new canonical actor,
+    - reclassify an existing actor, or
+    - explicitly establish a new alias/capacity relationship.
+
+    Alias updates require the source quote itself to contain both the existing
+    canonical actor label and at least one proposed alias. Prior context may
+    resolve identity, but it cannot turn an alias-only capability sentence into
+    a fresh actor declaration.
+    """
+    if fact.key not in ("primary_users", "secondary_users") or fact.absence:
+        return True
+
+    role = canonical_role(fact.roles[0])
+    prior = [
+        item for item in state.get("discovered_knowledge", [])
+        if item.scope == scope
+        and item.topic == DiscoveryTopic.USER_ROLES
+        and item.key in ("primary_users", "secondary_users")
+        and item.knowledge_state == KnowledgeState.CONFIRMED
+        and not item.absence
+        and role in [canonical_role(value) for value in (item.roles or [])]
+    ]
+    if not prior:
+        return True
+
+    gap = (state.get("current_gap") or "").split("::", 1)[0]
+    if state.get("current_topic") == DiscoveryTopic.USER_ROLES and gap in ("primary_users", "secondary_users"):
+        return True
+
+    # A classification change is not a redundant redeclaration. It still goes
+    # through normal grounding/correction review downstream.
+    if any(item.key != fact.key for item in prior):
+        return True
+
+    if not fact.aliases:
+        return False
+
+    normalized_evidence = re.sub(r"[^a-z0-9]+", " ", fact.evidence.lower()).strip()
+
+    def mentions(label: str) -> bool:
+        phrase = " ".join(canonical_role(label).split("_"))
+        return bool(phrase) and re.search(rf"\b{re.escape(phrase)}\b", normalized_evidence) is not None
+
+    return mentions(role) and any(mentions(alias) for alias in fact.aliases)
 
 
 def ground_items(items, user_response, state, active_gap_review=None):
@@ -541,6 +594,8 @@ of rules or exclusions. Preserve it in value with its original meaning.
                 valid, reason = validate_extraction(item, user_response, state.get("current_gap"))
                 if not valid:
                     raise ValueError(reason)
+                if isinstance(fact, ActorFact) and not actor_identity_candidate_allowed(fact, state, scope):
+                    raise ValueError("Existing actor cannot be redeclared from non-identity evidence")
                 if isinstance(fact, (OwnedFact, GoalFact)) and item.role:
                     if item.role not in primary + secondary:
                         raise ValueError("Owner is not a confirmed actor")
@@ -771,8 +826,7 @@ def knowledge_tracker_node(state: AgentState) -> dict:
             replaced = []
             if relation == "correction" and matched in state.get("discovered_knowledge", []):
                 replaced.append(matched)
-            if (state.get("is_correction") or relation in ("correction", "contradiction")
-                    or item.key in ("primary_users", "secondary_users")):
+            if state.get("is_correction") or relation in ("correction", "contradiction"):
                 replaced.extend(correction_targets(item, state.get("discovered_knowledge", []),
                                                   messages[-1].content, semantic_decision))
             for old in replaced:
