@@ -168,7 +168,7 @@ def test_appointment_time_constraint_activates_boundary_lifecycle_and_waits_for_
     assert result["current_gap"] == "boundary_conditions"
 
 
-def test_marketplace_mutability_activates_modification_and_removal_and_prioritizes_risk():
+def test_marketplace_mutability_activates_both_and_prioritizes_lower_question_cost():
     ownership = fact(
         T.BUSINESS_RULES,
         "ownership_rules",
@@ -184,8 +184,29 @@ def test_marketplace_mutability_activates_modification_and_removal_and_prioritiz
     assert {modification, removal}.issubset(result["active_requirements"])
     ranked = [item["requirement_key"] for item in result["ranked_question_candidates"]]
     assert removal in ranked and modification in ranked
-    assert ranked.index(removal) < ranked.index(modification)
-    assert result["selected_requirement_candidate"]["requirement_key"] == removal
+    assert ranked.index(modification) < ranked.index(removal)
+
+    scores = result["question_candidate_priority"]
+    modification_candidate = next(
+        item for item in result["ranked_question_candidates"]
+        if item["requirement_key"] == modification
+    )
+    removal_candidate = next(
+        item for item in result["ranked_question_candidates"]
+        if item["requirement_key"] == removal
+    )
+    modification_score = scores[modification_candidate["id"]]
+    removal_score = scores[removal_candidate["id"]]
+
+    # Removal has higher architecture/risk hints, but it asks about four
+    # unresolved facets rather than three. Fix 7 intentionally applies a larger
+    # breadth/question-cost penalty, which makes modification the better next
+    # question in this otherwise-equal context.
+    assert removal_score["components"]["business_risk"] > modification_score["components"]["business_risk"]
+    assert removal_score["components"]["architecture_impact"] > modification_score["components"]["architecture_impact"]
+    assert removal_score["components"]["question_cost_penalty"] > modification_score["components"]["question_cost_penalty"]
+    assert modification_score["score"] > removal_score["score"]
+    assert result["selected_requirement_candidate"]["requirement_key"] == modification
     assert result["planner_source"] == "requirement"
 
 
