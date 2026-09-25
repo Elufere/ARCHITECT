@@ -6,6 +6,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agents import knowledge_tracker as tracker
+from agents.llm_errors import ExtractionFailed
 from agents.interview_planner import build_gap_info, get_confirmed_roles_for_source, interview_planner_node
 from agents.state import DiscoveryScope as Scope, DiscoveryTopic as Topic, KnowledgeItem, KnowledgeState
 
@@ -124,12 +125,20 @@ def test_invalid_or_unowned_gap_cannot_create_absence(monkeypatch, gap, topic):
     assert not calls
 
 
-@pytest.mark.parametrize("options", [dict(evidence="invented"), dict(confidence=0.5),
-    dict(failure="GAP_ANSWER"), dict(failure="GROUNDING"), dict(supported=[])])
-def test_validation_failure_does_not_persist_absence(monkeypatch, options):
+@pytest.mark.parametrize("options", [dict(evidence="invented"), dict(confidence=0.5), dict(supported=[])])
+def test_rejected_or_low_confidence_absence_does_not_persist(monkeypatch, options):
     models(monkeypatch, **options)
     initial = state()
     assert tracker.knowledge_tracker_node(initial)["discovered_knowledge"] == initial["discovered_knowledge"]
+
+
+@pytest.mark.parametrize("failure", ["GAP_ANSWER", "GROUNDING"])
+def test_validator_outage_fails_closed_without_persisting_absence(monkeypatch, failure):
+    models(monkeypatch, failure=failure)
+    initial = state()
+    with pytest.raises(ExtractionFailed):
+        tracker.knowledge_tracker_node(initial)
+    assert len(initial["discovered_knowledge"]) == 2
 
 
 def test_repeat_absence_is_idempotent_and_positive_correction_replaces_it(monkeypatch):
@@ -180,12 +189,14 @@ def test_absence_replaces_prior_values_but_keeps_independent_new_facts(monkeypat
     assert any(i.value == "shorter waiting times" for i in result["discovered_knowledge"])
 
 
-def test_grounding_failure_preserves_existing_fact_during_correction(monkeypatch):
+def test_grounding_failure_preserves_existing_fact_by_failing_before_commit(monkeypatch):
     models(monkeypatch, failure="GROUNDING")
     initial = state()
     initial["is_correction"] = True
     initial["discovered_knowledge"].append(KnowledgeItem(topic=Topic.USER_ROLES,
         scope=Scope.USER_APP, key="secondary_users", roles=["admin"], value="admin",
         evidence="admin", confidence=1))
-    result = tracker.knowledge_tracker_node(initial)
-    assert result["discovered_knowledge"] == initial["discovered_knowledge"]
+    before = list(initial["discovered_knowledge"])
+    with pytest.raises(ExtractionFailed):
+        tracker.knowledge_tracker_node(initial)
+    assert initial["discovered_knowledge"] == before
