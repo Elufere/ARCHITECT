@@ -105,6 +105,8 @@ def load_checkpoint(session_id):
     state.setdefault("open_inquiries", [])
     state.setdefault("selected_inquiry", None)
     state.setdefault("planner_source", "model")
+    if state.get("planner_source") == "schema":
+        state["planner_source"] = "model"
     state.setdefault("selected_requirement_candidate", None)
     state.setdefault("selected_requirement_priority", None)
     state.setdefault("validation_issues", [])
