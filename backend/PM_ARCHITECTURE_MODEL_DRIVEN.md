@@ -43,6 +43,17 @@ SELECT NEXT ACTION
     └── COMPILE
 ```
 
+## Runtime state cleanup
+
+`DiscoveryTopic` remains only as a semantic taxonomy for facts and compilation.
+The live interview no longer carries `topic_status` or `topic_maturity`, does
+not mark topics COMPLETE/PARTIAL, and does not reopen topics when knowledge
+changes. The former `topic_lifecycle.py` invalidation engine has been removed.
+
+New knowledge changes the derived product model and inquiry frontier directly.
+For example, discovering a new `vendor` participant creates an inquiry about
+that participant's actions; it does not reopen USER_ROLES or USER_GOALS.
+
 ## Layer boundaries
 
 ### Confirmed facts
