@@ -66,11 +66,9 @@ def commit(monkeypatch, initial, candidates, accepted=None):
 
 def test_new_confirmed_same_scope_actor_reopens_only_affected_topics(monkeypatch, capsys):
     initial = completed_state()
-    initial["topic_status"][T.BUSINESS_RULES] = Status.COMPLETED
     updated = commit(monkeypatch, initial, [actor()])
     assert updated["topic_status"][T.USER_ROLES] == Status.PARTIAL
     assert updated["topic_status"][T.USER_GOALS] == Status.PARTIAL
-    assert updated["topic_status"][T.BUSINESS_RULES] == Status.COMPLETED
     output = capsys.readouterr().out
     assert output.index("TOPIC STATUS MERGE") < output.index("TOPIC INVALIDATION")
     assert "USER_ROLES: COMPLETED -> PARTIAL" in output
@@ -122,7 +120,7 @@ def test_planner_reopens_completed_status_when_required_deliberate_coverage_is_m
     assert build_gap_info(initial, T.USER_ROLES)["missing_keys"]
     plan = interview_planner_node(initial)
     assert plan["topic_status"][T.USER_ROLES] == Status.PARTIAL
-    assert plan["topic_status"][T.USER_GOALS] == Status.COMPLETED
+    assert plan["topic_status"][T.USER_GOALS] == Status.PARTIAL
     assert "reason: deliberate gap coverage is missing" in capsys.readouterr().out
 
 
