@@ -92,7 +92,7 @@ def test_role_alias_is_accepted_when_user_says_administrators():
     assert valid, reason
 
 
-def test_coherent_topic_is_not_completed_while_schema_gaps_remain():
+def test_schema_gaps_do_not_force_questions_once_actor_actions_are_known():
     state = {
         "discovery_scope": DiscoveryScope.USER_APP,
         "discovered_knowledge": [
@@ -115,8 +115,9 @@ def test_coherent_topic_is_not_completed_while_schema_gaps_remain():
     }
     state["gap_coverage"] = coverage_for_facts(state, DiscoveryTopic.USER_ROLES)
     result = interview_planner_node(state)
-    assert result["current_topic"] == DiscoveryTopic.USER_ROLES
-    assert result["current_gap"] == "permissions::hosts"
+    assert result["planner_source"] == "model"
+    assert result["current_topic"] == DiscoveryTopic.USER_GOALS
+    assert result["current_gap"] == "primary_user_goals::hosts"
 
 
 def test_negative_phrase_marks_the_current_gap_known(monkeypatch):
@@ -308,7 +309,7 @@ def test_active_gap_cannot_supply_a_missing_goal_owner():
     assert not item_directly_answers_gap(item, "primary_user_goals::buyer")
 
 
-def test_inferred_gap_uses_confirmation_move_without_counting_as_complete():
+def test_inferred_schema_policy_does_not_force_confirmation_when_higher_value_inquiry_exists():
     state = {
         "discovery_scope": DiscoveryScope.USER_APP,
         "discovered_knowledge": [
@@ -335,7 +336,9 @@ def test_inferred_gap_uses_confirmation_move_without_counting_as_complete():
     assert gap["current_gap"] == "multiple_roles"
     assert gap["inferred_gap_evidence"] == ["A customer can be buyer or seller by deal."]
     plan = interview_planner_node(state)
-    assert plan["next_discovery_move"] == "confirm_inference"
+    assert plan["planner_source"] == "model"
+    assert plan["current_gap"] == "primary_user_goals::buyer"
+    assert plan["next_discovery_move"] == "resolve_model_uncertainty"
 
 
 def goal_fact(key: str, value: str, role: str) -> KnowledgeItem:
