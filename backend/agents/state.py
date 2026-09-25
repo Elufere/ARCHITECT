@@ -163,10 +163,7 @@ class AgentState(TypedDict):
     validation_blocking: bool
     validation_candidate_blocking: bool
     selected_validation_issue: Optional[dict]
-    topic_status: Dict[DiscoveryTopic, TopicStatus]
     current_topic: Optional[DiscoveryTopic]
-    topic_dependencies: Dict[DiscoveryTopic, List[DiscoveryTopic]]
-    topic_maturity: Dict[DiscoveryTopic, TopicMaturity]
     product_model: Dict[str, Any]
 
     current_gap: Optional[str]
