@@ -18,8 +18,11 @@ from agents.requirements import ActiveRequirement
 from agents.state import DiscoveryScope, DiscoveryTopic, KnowledgeItem, TopicMaturity, TopicStatus
 
 
-CURSORS = {"conversation_manager", "extract", "resolve_validation_answer", "activate_requirements", "cover_requirements", "resolve_requirements", "validate_consistency", "build_candidates", "filter_candidates", "prioritize_candidates", "plan", "generate", "guardrail", "compile_prd",
-           "waiting", "phase_complete", "completed"}
+CURSORS = {"conversation_manager", "extract", "resolve_validation_answer", "infer_implications",
+           "activate_requirements", "cover_requirements", "resolve_requirements",
+           "validate_consistency", "identify_inquiries", "build_candidates",
+           "filter_candidates", "prioritize_candidates", "plan", "generate",
+           "guardrail", "compile_prd", "waiting", "phase_complete", "completed"}
 
 
 def checkpoint_directory():
@@ -166,7 +169,17 @@ def durable_node(name, node, next_node):
             merged["messages"] = add_messages(deepcopy(state.get("messages", [])), update["messages"])
         cursor = next_node(merged)
         status = {"conversation_manager": "PROCESSING_ANSWER", "extract": "PROCESSING_ANSWER",
-                  "resolve_validation_answer": "RESOLVING_DISCOVERY_CONFLICT", "activate_requirements": "PROCESSING_REQUIREMENTS", "cover_requirements": "ASSESSING_REQUIREMENT_COVERAGE", "resolve_requirements": "RESOLVING_REQUIREMENTS", "validate_consistency": "VALIDATING_DISCOVERY_STATE", "build_candidates": "BUILDING_QUESTION_CANDIDATES", "filter_candidates": "FILTERING_QUESTION_CANDIDATES", "prioritize_candidates": "PRIORITIZING_QUESTION_CANDIDATES", "plan": "ACTIVE", "generate": "GENERATING_QUESTION", "guardrail": "VALIDATING_QUESTION",
+                  "resolve_validation_answer": "RESOLVING_DISCOVERY_CONFLICT",
+                  "infer_implications": "INFERRING_PRODUCT_IMPLICATIONS",
+                  "activate_requirements": "PROCESSING_REQUIREMENTS",
+                  "cover_requirements": "ASSESSING_REQUIREMENT_COVERAGE",
+                  "resolve_requirements": "RESOLVING_REQUIREMENTS",
+                  "validate_consistency": "VALIDATING_DISCOVERY_STATE",
+                  "identify_inquiries": "IDENTIFYING_PRODUCT_INQUIRIES",
+                  "build_candidates": "BUILDING_QUESTION_CANDIDATES",
+                  "filter_candidates": "FILTERING_QUESTION_CANDIDATES",
+                  "prioritize_candidates": "PRIORITIZING_QUESTION_CANDIDATES",
+                  "plan": "ACTIVE", "generate": "GENERATING_QUESTION", "guardrail": "VALIDATING_QUESTION",
                   "compile_prd": "COMPILING_PRD", "waiting": "WAITING_FOR_USER",
                   "phase_complete": "AWAITING_PHASE_CHOICE", "completed": "COMPLETED"}[cursor]
         metadata = dict(checkpoint_cursor=cursor, interview_status=status)
