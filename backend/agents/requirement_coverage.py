@@ -7,13 +7,19 @@ that more specific requirement resolved.
 from __future__ import annotations
 
 from enum import Enum
+import json
 from typing import Dict, Iterable, List, Sequence
 
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field, model_validator
 
 from agents.discovery_coverage import fact_id
+from agents.llm import get_structured_model
+from agents.llm_errors import ExtractionFailed, raise_if_llm_failure
+from agents.question_candidates import QuestionCandidate
 from agents.requirements import (
     ActiveRequirement,
+    RequirementEvidenceRef,
     RequirementFacet,
     RequirementStatus,
     RequirementStore,
@@ -287,6 +293,185 @@ def apply_requirement_coverage_assessment(
     })
 
 
+
+_requirement_coverage_assessor = None
+
+
+def requirement_coverage_assessor():
+    global _requirement_coverage_assessor
+    if _requirement_coverage_assessor is None:
+        _requirement_coverage_assessor = get_structured_model(
+            call_name="requirement_coverage.assess",
+            schema=RequirementCoverageAssessment,
+        )
+    return _requirement_coverage_assessor
+
+
+REQUIREMENT_COVERAGE_INSTRUCTION = """Assess ONLY the selected product requirement facets.
+
+You are given:
+- the exact PM question,
+- the user's latest response,
+- a requirement description,
+- the unresolved target facets,
+- grounded confirmed facts with stable fact IDs.
+
+A facet is COVERED only when one or more supplied facts explicitly establish the
+information described by that facet and the latest answer supports using those
+facts for this requirement. Do not infer missing behavior from the fact that the
+requirement was activated. Do not treat a broad parent schema fact as complete
+unless its actual content establishes the facet.
+
+A facet is NOT_APPLICABLE only when the supplied facts explicitly establish that
+the facet does not apply. Silence, uncertainty, "I don't know", or lack of detail
+is not NOT_APPLICABLE.
+
+Return fact IDs exactly as supplied. Do not invent IDs. Leave unresolved facets
+out of both mappings. Assess only the target facet IDs.
+"""
+
+
+def _latest_question_and_answer(state: AgentState) -> tuple[str, str] | None:
+    messages = state.get("messages", [])
+    if not messages or not isinstance(messages[-1], HumanMessage):
+        return None
+    answer = messages[-1].content
+    question = next(
+        (message.content for message in reversed(messages[:-1]) if isinstance(message, AIMessage)),
+        "",
+    )
+    return question, answer
+
+
+def _attach_current_turn_requirement_evidence(
+    requirement: ActiveRequirement,
+    knowledge: Sequence[KnowledgeItem],
+    *,
+    turn: int,
+    question: str,
+) -> ActiveRequirement:
+    refs = list(requirement.evidence_refs)
+    seen = {ref.fact_id for ref in refs}
+    for item in knowledge:
+        if (
+            item.scope == requirement.scope
+            and item.knowledge_state == KnowledgeState.CONFIRMED
+            and item.source_turn == turn
+            and (not item.source_question or item.source_question == question)
+        ):
+            identity = fact_id(item)
+            if identity not in seen:
+                seen.add(identity)
+                refs.append(RequirementEvidenceRef(
+                    fact_id=identity,
+                    source_turn=item.source_turn,
+                    note="direct answer to selected requirement question",
+                ))
+    return requirement.model_copy(update={"evidence_refs": refs})
+
+
+def assess_selected_requirement_answer(
+    state: AgentState,
+    store: RequirementStore,
+    coverage: Dict[str, dict],
+) -> tuple[RequirementStore, Dict[str, dict]]:
+    if state.get("planner_source") != "requirement":
+        return store, coverage
+
+    selected = state.get("selected_requirement_candidate")
+    exchange = _latest_question_and_answer(state)
+    if not selected or exchange is None:
+        return store, coverage
+
+    candidate = QuestionCandidate.model_validate(selected)
+    requirement = store.get(candidate.requirement_key)
+    if requirement is None or requirement.status != RequirementStatus.ACTIVE:
+        return store, coverage
+
+    question, answer = exchange
+    knowledge = state.get("discovered_knowledge", [])
+    requirement = _attach_current_turn_requirement_evidence(
+        requirement,
+        knowledge,
+        turn=state.get("turn_count", 0),
+        question=question,
+    )
+    updated_store = dict(store)
+    updated_store[candidate.requirement_key] = requirement
+
+    allowed_ids = candidate_fact_ids(requirement, knowledge)
+    if not allowed_ids:
+        return updated_store, coverage
+
+    fact_index = _confirmed_fact_index(knowledge, requirement.scope)
+    supplied_facts = [
+        {
+            "fact_id": identity,
+            "topic": fact_index[identity].topic.value,
+            "key": fact_index[identity].key,
+            "value": fact_index[identity].value,
+            "evidence": fact_index[identity].evidence,
+            "source_turn": fact_index[identity].source_turn,
+        }
+        for identity in allowed_ids
+        if identity in fact_index
+    ]
+    target = {
+        facet.id: {
+            "label": facet.label,
+            "description": facet.description,
+        }
+        for facet in requirement.facets
+        if facet.id in candidate.target_facets
+    }
+
+    try:
+        assessment = requirement_coverage_assessor().invoke([
+            SystemMessage(content=REQUIREMENT_COVERAGE_INSTRUCTION),
+            HumanMessage(content=json.dumps({
+                "question": question,
+                "latest_response": answer,
+                "requirement_id": requirement.id,
+                "requirement": requirement.description or requirement.label,
+                "target_facets": target,
+                "confirmed_facts": supplied_facts,
+            }, ensure_ascii=False)),
+        ])
+        if not isinstance(assessment, RequirementCoverageAssessment):
+            assessment = RequirementCoverageAssessment.model_validate(assessment)
+        outside = (
+            set(assessment.covered_facets)
+            | set(assessment.not_applicable_facets)
+        ) - set(candidate.target_facets)
+        if outside:
+            raise ValueError(f"Coverage assessment returned non-target facets: {sorted(outside)}")
+
+        existing_payload = coverage.get(candidate.requirement_key)
+        existing = (
+            RequirementCoverageRecord.model_validate(existing_payload)
+            if existing_payload else None
+        )
+        record = apply_requirement_coverage_assessment(
+            requirement,
+            knowledge,
+            assessment,
+            existing,
+        )
+    except Exception as exc:
+        raise_if_llm_failure(exc)
+        raise ExtractionFailed("Requirement facet coverage assessment failed") from exc
+
+    updated_coverage = dict(coverage)
+    updated_coverage[candidate.requirement_key] = record.model_dump(mode="json")
+    updated_store[candidate.requirement_key] = requirement.model_copy(update={
+        "status": (
+            RequirementStatus.RESOLVED
+            if record.status == RequirementCoverageStatus.RESOLVED
+            else RequirementStatus.ACTIVE
+        )
+    })
+    return updated_store, updated_coverage
+
 def reconcile_requirement_coverage(
     store: RequirementStore,
     knowledge: Sequence[KnowledgeItem],
@@ -332,11 +517,19 @@ def reconcile_requirement_coverage(
 
 def requirement_coverage_node(state: AgentState) -> dict:
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    store = dict(state.get("active_requirements", {}))
+    coverage = dict(state.get("requirement_coverage", {}))
+
+    # When the previous planner move was requirement-driven, first map the
+    # grounded answer to the selected requirement facets. This never marks the
+    # broad parent schema gap resolved.
+    store, coverage = assess_selected_requirement_answer(state, store, coverage)
+
     store, coverage = reconcile_requirement_coverage(
-        state.get("active_requirements", {}),
+        store,
         state.get("discovered_knowledge", []),
         scope,
-        state.get("requirement_coverage", {}),
+        coverage,
     )
     return {
         "active_requirements": store,
