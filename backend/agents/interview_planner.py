@@ -593,7 +593,7 @@ def interview_planner_node(state: AgentState) -> dict:
     # question must never resolve its broad parent schema gap by accident.
     coverage = dict(state.get("gap_coverage", {}))
     receipt = state.get("active_answer_result")
-    if state.get("planner_source") == "schema" and receipt and active_question_matches(state):
+    if state.get("planner_source", "schema") == "schema" and receipt and active_question_matches(state):
         scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
         topic, gap = state.get("current_topic"), state.get("current_gap")
         if (receipt["scope"] == scope.value and receipt["topic"] == topic.value
