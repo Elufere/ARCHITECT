@@ -83,6 +83,16 @@ CLARIFICATION_QUESTIONS = {
 
 
 def clarification_question(state):
+    if state.get("planner_source") == "validation":
+        issue = state.get("selected_validation_issue") or {}
+        values = [str(value).strip() for value in issue.get("fact_values", []) if str(value).strip()]
+        if len(values) >= 2:
+            return (
+                f"I have two conflicting rules recorded: '{values[0]}' and '{values[1]}'. "
+                "Which one should apply now, or what is the current rule?"
+            )
+        return "I have conflicting product information recorded. What is the current rule that should apply?"
+
     key, _, role = (state.get("current_gap") or "").partition("::")
     if key == "secondary_users":
         return secondary_users_question(state)

@@ -18,8 +18,9 @@ def answer(monkeypatch, candidate, **kwargs):
 def test_repaired_answer_commits_and_planner_moves_past_gap(monkeypatch, capsys):
     candidate = raw("BUSINESS_RULES.approval_rules", TEXT, TEXT, topic="BUSINESS_RULES")
     state, calls = answer(monkeypatch, candidate)
-    assert "approval_rules" not in build_gap_info(state, T.BUSINESS_RULES)["missing_keys"]
+    assert "approval_rules" in build_gap_info(state, T.BUSINESS_RULES)["missing_keys"]
     state.update(interview_planner_node(state))
+    assert "approval_rules" not in build_gap_info(state, T.BUSINESS_RULES)["missing_keys"]
     assert state["current_gap"] != "approval_rules"
     item = state["discovered_knowledge"][0]
     assert item.key == "approval_rules" and item.value == TEXT and item.evidence == TEXT

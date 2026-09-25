@@ -303,7 +303,12 @@ def ground_items(items, user_response, state, active_gap_review=None):
         *state.get("discovered_knowledge", []),
         *(item for item in accepted if item.topic == DiscoveryTopic.USER_ROLES
           and item.key in ("primary_users", "secondary_users"))]}
-    accepted += ground_batch(remaining, user_response, context_state)
+    try:
+        accepted += ground_batch(remaining, user_response, context_state)
+    except ExtractionFailed as exc:
+        # The active answer was already grounded independently. Fail closed on
+        # unrelated incidental candidates without discarding the valid answer.
+        print(f"INCIDENTAL GROUNDING FAILED: {exc}")
     return [item for item in items if item in accepted]
 
 

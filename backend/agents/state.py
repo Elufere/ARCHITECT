@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal, Optional, Dict, List, Union, TYPE_CHECKING
+from typing import Annotated, Literal, Optional, Dict, List, Union, Any
 from pydantic import BaseModel, model_validator
 from typing_extensions import TypedDict
 from enum import Enum
 from langgraph.graph.message import add_messages
 from agents.prd_schema import PRDContract
-
-if TYPE_CHECKING:
-    from agents.requirements import ActiveRequirement
 
 
 class DiscoveryTopic(str, Enum):
@@ -145,7 +142,7 @@ class AgentState(TypedDict):
 
     discovered_knowledge: List[KnowledgeItem]
     superseded_knowledge: List[dict]
-    active_requirements: Dict[str, "ActiveRequirement"]
+    active_requirements: Dict[str, Any]
     requirement_coverage: Dict[str, dict]
     requirement_dependency_state: Dict[str, dict]
     eligible_requirement_keys: List[str]
@@ -158,6 +155,11 @@ class AgentState(TypedDict):
     planner_source: str
     selected_requirement_candidate: Optional[dict]
     selected_requirement_priority: Optional[dict]
+    validation_issues: List[dict]
+    validation_pair_cache: Dict[str, dict]
+    validation_blocking: bool
+    validation_candidate_blocking: bool
+    selected_validation_issue: Optional[dict]
     topic_status: Dict[DiscoveryTopic, TopicStatus]
     current_topic: Optional[DiscoveryTopic]
     topic_dependencies: Dict[DiscoveryTopic, List[DiscoveryTopic]]

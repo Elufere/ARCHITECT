@@ -6,6 +6,7 @@ from langchain_core.messages import HumanMessage
 
 from agents import knowledge_tracker as tracker
 from agents.interview_planner import build_gap_info, interview_planner_node
+from coverage_test_utils import coverage_for_facts
 from agents.state import (
     DiscoveryScope as S, DiscoveryTopic as T, KnowledgeItem, KnowledgeState as K,
     TopicStatus as Status, TopicMaturity,
@@ -39,6 +40,7 @@ def completed_state():
                    topic_status={T.USER_ROLES: Status.COMPLETED, T.USER_GOALS: Status.COMPLETED},
                    topic_maturity={T.USER_ROLES: TopicMaturity.DECISION_READY,
                                    T.USER_GOALS: TopicMaturity.DECISION_READY}, turn_count=3)
+    initial["gap_coverage"] = coverage_for_facts(initial, T.USER_ROLES, T.USER_GOALS)
     assert not build_gap_info(initial, T.USER_ROLES)["missing_keys"]
     assert not build_gap_info(initial, T.USER_GOALS)["missing_keys"]
     return initial
@@ -64,11 +66,9 @@ def commit(monkeypatch, initial, candidates, accepted=None):
 
 def test_new_confirmed_same_scope_actor_reopens_only_affected_topics(monkeypatch, capsys):
     initial = completed_state()
-    initial["topic_status"][T.BUSINESS_RULES] = Status.COMPLETED
     updated = commit(monkeypatch, initial, [actor()])
     assert updated["topic_status"][T.USER_ROLES] == Status.PARTIAL
     assert updated["topic_status"][T.USER_GOALS] == Status.PARTIAL
-    assert updated["topic_status"][T.BUSINESS_RULES] == Status.COMPLETED
     output = capsys.readouterr().out
     assert output.index("TOPIC STATUS MERGE") < output.index("TOPIC INVALIDATION")
     assert "USER_ROLES: COMPLETED -> PARTIAL" in output
@@ -114,24 +114,27 @@ def test_noninvalidating_information_keeps_completed_topics(monkeypatch, capsys,
     assert "TOPIC INVALIDATION" not in capsys.readouterr().out
 
 
-def test_planner_cannot_reopen_from_existing_gaps_alone(capsys):
+def test_planner_reopens_completed_status_when_required_deliberate_coverage_is_missing(capsys):
     initial = completed_state()
     initial["discovered_knowledge"].append(actor())
     assert build_gap_info(initial, T.USER_ROLES)["missing_keys"]
     plan = interview_planner_node(initial)
-    assert plan["topic_status"][T.USER_ROLES] == Status.COMPLETED
-    assert plan["topic_status"][T.USER_GOALS] == Status.COMPLETED
-    assert "TOPIC INVALIDATION" not in capsys.readouterr().out
+    assert plan["topic_status"][T.USER_ROLES] == Status.PARTIAL
+    assert plan["topic_status"][T.USER_GOALS] == Status.PARTIAL
+    assert "reason: deliberate gap coverage is missing" in capsys.readouterr().out
 
 
-def test_new_actor_with_full_coverage_in_same_commit_needs_no_reopening(monkeypatch, capsys):
+def test_new_actor_with_incidental_role_facts_still_reopens_deliberate_coverage(monkeypatch, capsys):
     updated = commit(monkeypatch, completed_state(), [
         actor(), fact(T.USER_ROLES, "responsibilities", "fulfil orders", role="vendor"),
         fact(T.USER_ROLES, "permissions", "manage assigned orders only", role="vendor"),
         fact(T.USER_GOALS, "secondary_user_goals", "complete deliveries", role="vendor"),
     ])
-    assert all(status == Status.COMPLETED for status in updated["topic_status"].values())
-    assert "TOPIC INVALIDATION" not in capsys.readouterr().out
+    assert updated["topic_status"][T.USER_ROLES] == Status.PARTIAL
+    assert updated["topic_status"][T.USER_GOALS] == Status.PARTIAL
+    output = capsys.readouterr().out
+    assert "new gaps: responsibilities::vendor, permissions::vendor" in output
+    assert "new gaps: secondary_user_goals::vendor" in output
 
 
 def test_correction_reopens_only_newly_invalidated_goal_coverage(monkeypatch, capsys):
@@ -195,10 +198,27 @@ def test_spelling_change_does_not_turn_existing_gaps_into_new_coverage(monkeypat
 
 def test_explicit_confirmation_of_inferred_actor_uses_merge_boundary(monkeypatch, capsys):
     monkeypatch.setattr(tracker, "can_replace_absence", lambda *_: True)
+    monkeypatch.setattr(
+        tracker,
+        "semantic_decision",
+        lambda name, *_: (
+            tracker.GapConfirmation(confirmed=True, evidence="Yes.", confidence=1)
+            if name == "GAP_CONFIRMATION"
+            else tracker.FactComparison(relation="new", confidence=1)
+        ),
+    )
     initial = completed_state()
     initial["discovered_knowledge"].append(actor(knowledge_state=K.INFERRED))
-    initial.update(conversation_intent="confirmation", next_discovery_move="confirm_inference",
-                   current_topic=T.USER_ROLES, current_gap="secondary_users")
+    question = "Should vendors also use the same app?"
+    initial.update(
+        messages=[tracker.AIMessage(content=question), tracker.HumanMessage(content="Yes.")],
+        conversation_intent="confirmation",
+        next_discovery_move="confirm_inference",
+        current_topic=T.USER_ROLES,
+        current_gap="secondary_users",
+        asked_gap=dict(scope=S.USER_APP.value, topic=T.USER_ROLES.value,
+                       gap="secondary_users", question=question),
+    )
     result = tracker.knowledge_tracker_node(initial)
     assert result["topic_status"][T.USER_ROLES] == Status.PARTIAL
     assert result["topic_status"][T.USER_GOALS] == Status.PARTIAL

@@ -70,8 +70,8 @@ def test_careconnect_initial_turn(monkeypatch):
     assert all(i.knowledge_state == KnowledgeState.CONFIRMED for i in items)
     gaps = build_gap_info(result, DiscoveryTopic.USER_ROLES)
     assert "primary_users" in gaps["known_keys"]
-    assert "responsibilities::patient" not in gaps["missing_keys"]
-    assert "responsibilities::healthcare_provider" not in gaps["missing_keys"]
+    assert "responsibilities::patient" in gaps["missing_keys"]
+    assert "responsibilities::healthcare_provider" in gaps["missing_keys"]
 
 
 def test_permission_and_capability_are_separate(monkeypatch):

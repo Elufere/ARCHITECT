@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from agents.extraction_passes import PASSES, RemainingFact
-from agents.interview_planner import build_gap_info
+from agents.interview_planner import build_gap_info, interview_planner_node
 from agents.state import DiscoveryTopic as T, TOPIC_KEY_MAP
 from test_schema_alignment import FIELD_EXAMPLES, raw, run
 
@@ -58,6 +58,7 @@ def test_prefixed_output_survives_commit_and_closes_its_gap(monkeypatch, topic, 
         topic=topic, gap=key)
     records = state["discovered_knowledge"]
     assert len(records) == 1
+    state.update(interview_planner_node(state))
     assert (records[0].topic, records[0].key, records[0].evidence) == (topic, key, text)
     assert key not in build_gap_info(state, topic)["missing_keys"]
     assert [name for name, _ in calls].count("RULES") == 1

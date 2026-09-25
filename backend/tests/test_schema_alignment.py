@@ -16,6 +16,7 @@ from agents.extraction_passes import PASSES
 from agents.interview_planner import DISCOVERY_TASKS, build_gap_info, interview_planner_node
 from agents.question_generator import permission_discovery_guidance
 from agents.state import DiscoveryScope as S, DiscoveryTopic as T, KnowledgeItem, KnowledgeState as K, TOPIC_KEY_MAP, TopicStatus
+from coverage_test_utils import coverage_for_facts
 from replay_schema_alignment import CARE, NO_OTHERS
 
 
@@ -49,9 +50,12 @@ def run(monkeypatch, text, outputs, *, existing=(), topic=None, gap=None, questi
     monkeypatch.setattr(tracker, "extraction_models", lambda: {
         name: SimpleNamespace(invoke=lambda messages, name=name: invoke(name, messages))
         for name in [*[p[0] for p in PASSES], "GAP_ANSWER", "GROUNDING"]})
-    state = dict(messages=[AIMessage(content=question), HumanMessage(content=text)],
+    delivered_question = question or (f"What should we know about {gap}?" if topic and gap else "")
+    state = dict(messages=[AIMessage(content=delivered_question), HumanMessage(content=text)],
                  current_topic=topic, current_gap=gap, discovered_knowledge=list(existing),
-                 discovery_scope=scope, topic_status={}, topic_maturity={}, turn_count=0)
+                 discovery_scope=scope, topic_status={}, topic_maturity={}, turn_count=0,
+                 asked_gap=(dict(scope=scope.value, topic=topic.value, gap=gap, question=delivered_question)
+                            if topic and gap else None))
     state.update(tracker.knowledge_tracker_node(state))
     return state, calls
 
@@ -69,8 +73,9 @@ def test_careconnect_shared_evidence_and_two_turn_planner_progression(monkeypatc
     }
     state, calls = run(monkeypatch, CARE, outputs)
     state.update(interview_planner_node(state))
-    assert state["current_gap"] == "secondary_users"
-    assert all(f"responsibilities::{r}" not in state["missing_keys"] for r in ("patient", "healthcare_provider"))
+    assert state["current_gap"] == "primary_users"
+    assert state["next_discovery_move"] == "confirm_existing"
+    assert all(f"responsibilities::{r}" in state["missing_keys"] for r in ("patient", "healthcare_provider"))
     shared = [i for i in state["discovered_knowledge"] if i.evidence == patient]
     assert {(i.topic, i.key) for i in shared} == {(T.USER_ROLES, "responsibilities"), (T.CORE_WORKFLOW, "workflow_steps")}
     assert len(state["discovered_knowledge"]) == 6
@@ -84,8 +89,13 @@ def test_careconnect_shared_evidence_and_two_turn_planner_progression(monkeypatc
     next_state, _ = run(monkeypatch, NO_OTHERS, polluted, existing=state["discovered_knowledge"],
         topic=T.USER_ROLES, gap="secondary_users", question="Are there any other users?", absence="none",
         reject=[("workflow_steps", "patients and professionals use the app"), ("primary_user_goals", "find and book appointments")])
+    prior = coverage_for_facts(state, T.USER_ROLES)
+    next_state["gap_coverage"] = {
+        key: value for key, value in prior.items()
+        if key.endswith("|primary_users")
+    }
     next_state.update(interview_planner_node(next_state))
-    assert next_state["current_gap"] == "permissions::patient"
+    assert next_state["current_gap"] == "responsibilities::patient"
     assert len(next_state["discovered_knowledge"]) == 7
     assert next_state["discovered_knowledge"][-1].absence == "none"
 
@@ -99,9 +109,9 @@ def test_careconnect_shared_evidence_and_two_turn_planner_progression(monkeypatc
     ("Roles never change.", "role_transitions"),
     ("Users cannot switch roles.", "role_transitions"),
 ])
-def test_role_policies_have_an_existing_pass_and_satisfy_gap_without_active_focus(monkeypatch, text, key):
+def test_role_policies_are_known_but_do_not_create_deliberate_coverage_without_active_focus(monkeypatch, text, key):
     state, _ = run(monkeypatch, text, {"ACTOR": [raw(key, text, text)]})
-    assert key not in build_gap_info(state, T.USER_ROLES)["missing_keys"]
+    assert key in build_gap_info(state, T.USER_ROLES)["missing_keys"]
     item = state["discovered_knowledge"][0]
     assert item.roles is None and item.role is None and item.knowledge_state == K.CONFIRMED
 
@@ -109,6 +119,7 @@ def test_role_policies_have_an_existing_pass_and_satisfy_gap_without_active_focu
 def test_short_positive_policy_answer_uses_question_context(monkeypatch):
     state, calls = run(monkeypatch, "Yes.", {"ACTOR": [raw("multiple_roles", "One account can hold both roles", "Yes.")]},
         topic=T.USER_ROLES, gap="multiple_roles", question="Can one account hold both roles?")
+    state.update(interview_planner_node(state))
     assert "multiple_roles" not in build_gap_info(state, T.USER_ROLES)["missing_keys"]
     assert "Can one account hold both roles?" in calls[0][1][0].content
 
@@ -123,7 +134,7 @@ def test_permissions_are_not_capabilities(monkeypatch):
     assert {(i.key, i.value) for i in facts} == {("responsibilities", "upload shipment evidence"), ("permissions", "cannot release escrow funds")}
     assert not any(i.absence for i in facts)
     gaps = build_gap_info(state, T.USER_ROLES)["missing_keys"]
-    assert "permissions::seller" not in gaps and "responsibilities::seller" not in gaps
+    assert "permissions::seller" in gaps and "responsibilities::seller" in gaps
 
 
 def test_workflow_and_outcome_are_distinct(monkeypatch):
@@ -135,7 +146,7 @@ def test_workflow_and_outcome_are_distinct(monkeypatch):
         "GOAL": [raw("primary_user_goals", "safely complete a purchase", text, role="buyer")],
     }, existing=[actor("buyer")])
     assert len([i for i in state["discovered_knowledge"] if i.key == "primary_user_goals"]) == 1
-    assert "primary_user_goals::buyer" not in build_gap_info(state, T.USER_GOALS)["missing_keys"]
+    assert "primary_user_goals::buyer" in build_gap_info(state, T.USER_GOALS)["missing_keys"]
 
 
 @pytest.mark.parametrize("topic,gap,text", [
@@ -153,6 +164,7 @@ def test_negative_answers_satisfy_exact_gap(monkeypatch, topic, gap, text):
     is_policy = gap in ("multiple_roles", "role_transitions")
     state, _ = run(monkeypatch, text, {}, existing=[actor("patient")], topic=topic, gap=gap,
                    absence="policy" if is_policy else "none")
+    state.update(interview_planner_node(state))
     assert gap not in build_gap_info(state, topic)["missing_keys"]
     item = state["discovered_knowledge"][-1]
     assert item.topic == topic and item.scope == S.USER_APP
@@ -166,7 +178,7 @@ def test_initial_secondary_absence_is_representable_without_active_gap(monkeypat
     text = "There are no secondary users."
     state, _ = run(monkeypatch, text, {"ACTOR": [raw("secondary_users", "none", text, absence="none")]})
     assert state["discovered_knowledge"][0].roles == []
-    assert "secondary_users" not in build_gap_info(state, T.USER_ROLES)["missing_keys"]
+    assert "secondary_users" in build_gap_info(state, T.USER_ROLES)["missing_keys"]
 
 
 @pytest.mark.parametrize("key,text", [("success_criteria", "Success means the appointment is confirmed."),
@@ -174,7 +186,7 @@ def test_initial_secondary_absence_is_representable_without_active_gap(monkeypat
 def test_global_goal_fields_do_not_require_invented_actor(monkeypatch, key, text):
     state, _ = run(monkeypatch, text, {"GOAL": [raw(key, text, text)]})
     assert state["discovered_knowledge"][0].role is None
-    assert key not in build_gap_info(state, T.USER_GOALS)["missing_keys"]
+    assert key in build_gap_info(state, T.USER_GOALS)["missing_keys"]
 
 
 def test_primary_actor_cannot_get_secondary_goal_when_no_secondary_actors(monkeypatch):
@@ -193,7 +205,7 @@ def test_exception_edge_case_and_rule_overlap(monkeypatch, text, pairs):
     state, calls = run(monkeypatch, text, {"RULES": [raw(key, text, text, topic=topic.value) for topic, key in pairs]})
     assert {(i.topic, i.key) for i in state["discovered_knowledge"]} == set(pairs)
     for topic, key in pairs:
-        assert key not in build_gap_info(state, topic)["missing_keys"]
+        assert key in build_gap_info(state, topic)["missing_keys"]
         assert FIELD_DEFINITIONS[topic][key] in dict((n, m[0].content) for n, m in calls)["GROUNDING"]
 
 
@@ -202,7 +214,7 @@ def test_mvp_exclusion_is_not_absence_of_exclusions(monkeypatch):
     state, _ = run(monkeypatch, text, {"RULES": [raw("out_of_scope", "payments excluded from version one", text, topic="MVP_SCOPE")]})
     item = state["discovered_knowledge"][0]
     assert item.absence is None and "payments" in item.value
-    assert "out_of_scope" not in build_gap_info(state, T.MVP_SCOPE)["missing_keys"]
+    assert "out_of_scope" in build_gap_info(state, T.MVP_SCOPE)["missing_keys"]
 
 
 def test_actor_topic_scope_ownership_boundaries_and_legacy_spelling(monkeypatch):
@@ -210,21 +222,21 @@ def test_actor_topic_scope_ownership_boundaries_and_legacy_spelling(monkeypatch)
     state, _ = run(monkeypatch, text, {"RESPONSIBILITY": [raw("responsibilities", "manage schedules", text, role="healthcare_provider")]},
         existing=[actor("healthcare provider"), actor("patient")])
     missing = build_gap_info(state, T.USER_ROLES)["missing_keys"]
-    assert "responsibilities::healthcare provider" not in missing
+    assert "responsibilities::healthcare provider" in missing
     assert "responsibilities::patient" in missing
     other_scope = {**state, "discovery_scope": S.ADMIN_DASHBOARD}
     assert "responsibilities" in build_gap_info(other_scope, T.USER_ROLES)["missing_keys"]
     assert "manage schedules" not in permission_discovery_guidance(other_scope, "healthcare_provider")
 
 
-def test_existing_gaps_do_not_silently_reopen_a_completed_topic():
-    # Only a new commit may invalidate completion, not a planner snapshot.
+def test_serialized_completed_status_without_deliberate_coverage_is_reopened():
     state = dict(discovery_scope=S.USER_APP, current_topic=None,
                  discovered_knowledge=[actor("patient")], topic_maturity={},
                  topic_status={T.USER_ROLES: TopicStatus.COMPLETED})
     plan = interview_planner_node(state)
-    assert plan["current_topic"] != T.USER_ROLES
-    assert plan["topic_status"][T.USER_ROLES] == TopicStatus.COMPLETED
+    assert plan["current_topic"] == T.USER_ROLES
+    assert plan["topic_status"][T.USER_ROLES] == TopicStatus.PARTIAL
+    assert plan["current_gap"] == "primary_users"
 
 
 def test_every_planner_field_has_storage_extraction_and_shared_semantics():
@@ -322,7 +334,7 @@ def test_every_required_field_round_trips_through_its_pass_and_planner(monkeypat
     state, calls = run(monkeypatch, text, {pass_name: [raw(key, text, text, **fields)]}, existing=existing)
     assert any(i.key == key and i.topic == topic and i.evidence == text for i in state["discovered_knowledge"])
     gap = f"{key}::{role}" if "role" in fields else key
-    assert gap not in build_gap_info(state, topic)["missing_keys"]
+    assert gap in build_gap_info(state, topic)["missing_keys"]
     prompt = dict((name, messages[0].content) for name, messages in calls)[pass_name]
     assert FIELD_DEFINITIONS[topic][key] in prompt
 
@@ -335,5 +347,5 @@ def test_empty_actor_sets_waive_role_gaps_and_unlock_next_topic():
                            roles=[] if key.endswith("users") else None, confidence=1)
              for key in ("primary_users", "secondary_users", "multiple_roles", "role_transitions")]
     state = dict(discovery_scope=S.USER_APP, discovered_knowledge=items)
-    assert not build_gap_info(state, T.USER_ROLES)["missing_keys"]
-    assert assess_topic_maturity(state, T.USER_ROLES) == TopicMaturity.DECISION_READY
+    assert build_gap_info(state, T.USER_ROLES)["missing_keys"]
+    assert assess_topic_maturity(state, T.USER_ROLES) != TopicMaturity.DECISION_READY

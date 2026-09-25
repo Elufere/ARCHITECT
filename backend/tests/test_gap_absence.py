@@ -6,7 +6,8 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agents import knowledge_tracker as tracker
-from agents.interview_planner import build_gap_info, get_confirmed_roles_for_source
+from agents.llm_errors import ExtractionFailed
+from agents.interview_planner import build_gap_info, get_confirmed_roles_for_source, interview_planner_node
 from agents.state import DiscoveryScope as Scope, DiscoveryTopic as Topic, KnowledgeItem, KnowledgeState
 
 
@@ -19,10 +20,12 @@ def actor(role="patient", scope=Scope.USER_APP):
 
 
 def state(text=ANSWER, gap="secondary_users", topic=Topic.USER_ROLES):
-    return dict(messages=[AIMessage(content="Are there any other users besides patients and healthcare professionals?"),
-                          HumanMessage(content=text)], current_topic=topic, current_gap=gap,
+    question = "Are there any other users besides patients and healthcare professionals?"
+    return dict(messages=[AIMessage(content=question), HumanMessage(content=text)], current_topic=topic, current_gap=gap,
                 discovery_scope=Scope.USER_APP, discovered_knowledge=[actor(), actor("healthcare_provider")],
-                topic_status={}, turn_count=1)
+                topic_status={}, turn_count=1,
+                asked_gap=(dict(scope=Scope.USER_APP.value, topic=topic.value, gap=gap, question=question)
+                           if topic and gap else None))
 
 
 def models(monkeypatch, resolution="none", evidence=ANSWER, outputs=None, supported=None,
@@ -68,6 +71,7 @@ def test_careconnect_absence_closes_gap_and_rejects_unrelated_claims(monkeypatch
     assert absence.evidence == ANSWER and absence.source_turn == 1
     assert absence.knowledge_state == KnowledgeState.CONFIRMED
     merged = {**initial, **result}
+    merged.update(interview_planner_node(merged))
     assert "secondary_users" not in build_gap_info(merged, Topic.USER_ROLES)["missing_keys"]
     assert get_confirmed_roles_for_source(merged, "secondary_users") == []
     assert "secondary_user_goals" not in build_gap_info(merged, Topic.USER_GOALS)["missing_keys"]
@@ -96,7 +100,9 @@ def test_generic_gap_mapping(monkeypatch, gap, topic, text, resolution):
     assert item.role == (gap.split("::")[1] if "::" in gap else None)
     assert item.topic == topic and item.scope == Scope.USER_APP
     assert item.absence == resolution
-    assert gap not in build_gap_info({**initial, **result}, topic)["missing_keys"]
+    merged = {**initial, **result}
+    merged.update(interview_planner_node(merged))
+    assert gap not in build_gap_info(merged, topic)["missing_keys"]
 
 
 @pytest.mark.parametrize("text", ["I don't know.", "No admins, but support staff will use it.",
@@ -119,12 +125,20 @@ def test_invalid_or_unowned_gap_cannot_create_absence(monkeypatch, gap, topic):
     assert not calls
 
 
-@pytest.mark.parametrize("options", [dict(evidence="invented"), dict(confidence=0.5),
-    dict(failure="GAP_ANSWER"), dict(failure="GROUNDING"), dict(supported=[])])
-def test_validation_failure_does_not_persist_absence(monkeypatch, options):
+@pytest.mark.parametrize("options", [dict(evidence="invented"), dict(confidence=0.5), dict(supported=[])])
+def test_rejected_or_low_confidence_absence_does_not_persist(monkeypatch, options):
     models(monkeypatch, **options)
     initial = state()
     assert tracker.knowledge_tracker_node(initial)["discovered_knowledge"] == initial["discovered_knowledge"]
+
+
+@pytest.mark.parametrize("failure", ["GAP_ANSWER", "GROUNDING"])
+def test_validator_outage_fails_closed_without_persisting_absence(monkeypatch, failure):
+    models(monkeypatch, failure=failure)
+    initial = state()
+    with pytest.raises(ExtractionFailed):
+        tracker.knowledge_tracker_node(initial)
+    assert len(initial["discovered_knowledge"]) == 2
 
 
 def test_repeat_absence_is_idempotent_and_positive_correction_replaces_it(monkeypatch):
@@ -175,12 +189,14 @@ def test_absence_replaces_prior_values_but_keeps_independent_new_facts(monkeypat
     assert any(i.value == "shorter waiting times" for i in result["discovered_knowledge"])
 
 
-def test_grounding_failure_preserves_existing_fact_during_correction(monkeypatch):
+def test_grounding_failure_preserves_existing_fact_by_failing_before_commit(monkeypatch):
     models(monkeypatch, failure="GROUNDING")
     initial = state()
     initial["is_correction"] = True
     initial["discovered_knowledge"].append(KnowledgeItem(topic=Topic.USER_ROLES,
         scope=Scope.USER_APP, key="secondary_users", roles=["admin"], value="admin",
         evidence="admin", confidence=1))
-    result = tracker.knowledge_tracker_node(initial)
-    assert result["discovered_knowledge"] == initial["discovered_knowledge"]
+    before = list(initial["discovered_knowledge"])
+    with pytest.raises(ExtractionFailed):
+        tracker.knowledge_tracker_node(initial)
+    assert initial["discovered_knowledge"] == before

@@ -147,3 +147,8 @@ def test_legacy_checkpoint_without_requirements_loads_empty_store(tmp_path, monk
     assert loaded["planner_source"] == "schema"
     assert loaded["selected_requirement_candidate"] is None
     assert loaded["selected_requirement_priority"] is None
+    assert loaded["validation_issues"] == []
+    assert loaded["validation_pair_cache"] == {}
+    assert loaded["validation_blocking"] is False
+    assert loaded["validation_candidate_blocking"] is False
+    assert loaded["selected_validation_issue"] is None

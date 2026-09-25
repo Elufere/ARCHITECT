@@ -13,7 +13,7 @@ from agents import knowledge_tracker as tracker
 from agents.conversation_manager import classify_turn, conversation_manager_node
 from agents.conversation_language import CLARIFICATION_QUESTIONS
 from agents.extraction_passes import ActorFact, PASSES
-from agents.interview_planner import build_gap_info, get_confirmed_roles_for_source
+from agents.interview_planner import build_gap_info, get_confirmed_roles_for_source, interview_planner_node
 from agents.question_generator import question_generator_node
 from agents.semantic_validation import GroundingResult, category_contradiction
 from agents.state import DiscoveryScope as S, DiscoveryTopic as T, KnowledgeItem, TOPIC_KEY_MAP
@@ -99,7 +99,7 @@ def test_explicit_whole_field_absence_survives_separate_check(monkeypatch, topic
     candidate = item(topic, key, "none", text)
     accepted, _ = audit(monkeypatch, [candidate], text, [0], [0])
     assert len(accepted) == 1 and accepted[0].absence == "none"
-    assert key not in build_gap_info(dict(discovered_knowledge=accepted), topic)["missing_keys"]
+    assert key in build_gap_info(dict(discovered_knowledge=accepted), topic)["missing_keys"]
 
 
 def test_actor_pass_cannot_hide_none_behind_null_absence():
@@ -173,6 +173,7 @@ def test_short_no_after_clarification_resolves_gap_but_named_denial_does_not(mon
     clarification = conversation_manager_node(state)["messages"][-1].content
     resolved, _ = run(monkeypatch, "No.", {}, existing=actors, topic=T.USER_ROLES,
         gap="secondary_users", question=clarification, absence="none")
+    resolved.update(interview_planner_node(resolved))
     assert "secondary_users" not in build_gap_info(resolved, T.USER_ROLES)["missing_keys"]
     partial, _ = run(monkeypatch, "No caregivers.", {}, existing=actors, topic=T.USER_ROLES,
         gap="secondary_users", question=clarification, absence="unresolved")

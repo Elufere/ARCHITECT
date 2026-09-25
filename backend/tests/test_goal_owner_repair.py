@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from agents import knowledge_tracker as tracker
+from agents.llm_errors import ExtractionFailed
 from agents.interview_planner import build_gap_info
 from agents.state import DiscoveryScope as S, DiscoveryTopic as T, KnowledgeItem
 
@@ -40,26 +41,30 @@ def replay(monkeypatch, repaired, initial=None):
     return items, calls, state
 
 
-def test_missing_owner_repaired_and_goal_gap_clears(monkeypatch):
+def test_missing_owner_repaired_without_fabricating_deliberate_gap_coverage(monkeypatch):
     items, calls, state = replay(monkeypatch, [goal(role="customer")])
     assert len(calls) == 2
     assert [item.role for item in items] == ["customer"]
     assert "requires an owner" in calls[1][0].content
     assert calls[1][-1].content == SOURCE
     state["discovered_knowledge"].extend(items)
-    assert "primary_user_goals::customer" not in build_gap_info(state, T.USER_GOALS)["missing_keys"]
+    assert "primary_user_goals::customer" in build_gap_info(state, T.USER_GOALS)["missing_keys"]
 
 
 @pytest.mark.parametrize("repair", [
     [goal()], [goal(role="seller")],
     [dict(goal(role="customer"), key="secondary_user_goals")],
     [dict(goal(role="customer"), evidence="fabricated quote")],
-    TimeoutError("provider unavailable"),
 ])
 def test_invalid_repair_stops_without_fabricating_owner(monkeypatch, repair):
     items, calls, _ = replay(monkeypatch, repair)
     assert items == []
     assert len(calls) == 2
+
+
+def test_provider_failure_during_owner_repair_fails_closed(monkeypatch):
+    with pytest.raises(ExtractionFailed):
+        replay(monkeypatch, TimeoutError("provider unavailable"))
 
 
 def test_valid_goals_need_no_repair(monkeypatch):
