@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from agents.prd_schema import PRDContract
 from agents.requirements import ActiveRequirement
-from agents.state import DiscoveryScope, DiscoveryTopic, KnowledgeItem, TopicMaturity, TopicStatus
+from agents.state import DiscoveryScope, DiscoveryTopic, KnowledgeItem
 
 
 CURSORS = {"conversation_manager", "extract", "resolve_validation_answer", "infer_implications",
@@ -85,8 +85,10 @@ def load_checkpoint(session_id):
     state["discovery_scope"] = DiscoveryScope(state["discovery_scope"])
     if state.get("current_topic"):
         state["current_topic"] = DiscoveryTopic(state["current_topic"])
-    state["topic_status"] = {DiscoveryTopic(key): TopicStatus(value) for key, value in state.get("topic_status", {}).items()}
-    state["topic_maturity"] = {DiscoveryTopic(key): TopicMaturity(value) for key, value in state.get("topic_maturity", {}).items()}
+    # Legacy checkpoints may still contain topic_status/topic_maturity. They are
+    # deliberately discarded: topics are taxonomy labels, not interview state.
+    state.pop("topic_status", None)
+    state.pop("topic_maturity", None)
     state["discovered_knowledge"] = [KnowledgeItem.model_validate(item) for item in state.get("discovered_knowledge", [])]
     state["active_requirements"] = {
         key: ActiveRequirement.model_validate(item)
