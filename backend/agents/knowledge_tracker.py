@@ -578,6 +578,25 @@ def _canonical_claim_role(role: str | None, state: AgentState, scope: DiscoveryS
     return normalized
 
 
+def _explicit_current_surface_membership(evidence: str, scope: DiscoveryScope) -> bool:
+    text = evidence.lower()
+    scope_label = scope.value.lower()
+    human_scope = scope_label.replace("_", " ")
+    return bool(
+        re.search(
+            rf"\b(?:uses?|using|logs?\s+into|signs?\s+into|access(?:es)?|"
+            rf"interacts?\s+with|works?\s+in)\b[^.]*\b(?:app|application|platform|"
+            rf"dashboard|{re.escape(scope_label)}|{re.escape(human_scope)})\b",
+            text,
+        )
+        or re.search(
+            rf"\b(?:through|inside|within|on)\s+(?:the\s+)?(?:{re.escape(scope_label)}|"
+            rf"{re.escape(human_scope)}|app|application|platform|dashboard)\b",
+            text,
+        )
+    )
+
+
 def _explicit_other_surface(evidence: str, scope: DiscoveryScope) -> bool:
     text = evidence.lower()
     current = scope.value.lower()
@@ -604,9 +623,38 @@ def _admit_claim_item(
         claim.kind in ("primary_actor", "secondary_actor")
         and claim.knowledge_state == KnowledgeState.CONFIRMED
         and not claim.absence
-        and _explicit_other_surface(claim.evidence, scope)
     ):
-        raise ValueError("Explicit other-surface participant cannot become a current-scope actor")
+        if _explicit_other_surface(claim.evidence, scope):
+            raise ValueError("Explicit other-surface participant cannot become a current-scope actor")
+
+        existing_primary, existing_secondary = _existing_actor_sets(state, scope)
+        existing_roles = existing_primary | existing_secondary
+        role = canonical_role(claim.role or "")
+        direct_actor_answer = (
+            state.get("current_topic") == DiscoveryTopic.USER_ROLES
+            and (state.get("current_gap") or "").split("::", 1)[0]
+            in ("primary_users", "secondary_users")
+        )
+        is_new_role = bool(role and role not in existing_roles)
+        # Initial primary participants may be established by explicit core-value
+        # participation. Later additions, and secondary actors at any time, need
+        # explicit current-surface membership unless the PM asked for actors.
+        requires_membership = (
+            is_new_role
+            and (
+                bool(existing_roles)
+                or claim.kind == "secondary_actor"
+                or state.get("turn_count", 0) > 0
+            )
+        )
+        if (
+            requires_membership
+            and not direct_actor_answer
+            and not _explicit_current_surface_membership(claim.evidence, scope)
+        ):
+            raise ValueError(
+                "New actor requires explicit current-scope membership; process participation alone is insufficient"
+            )
 
     converted = claim_to_fact(
         claim,
