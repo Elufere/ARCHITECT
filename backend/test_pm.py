@@ -74,7 +74,7 @@ def new_session():
     state = AgentState(session_id=str(uuid4()), messages=[HumanMessage(content=idea, id=str(uuid4()))],
         raw_idea=idea, prd_contract=None, pm_is_complete=False,
         discovery_scope=DiscoveryScope.USER_APP, turn_count=0, awaiting_confirmation=False,
-        discovered_knowledge=[], superseded_knowledge=[], topic_status={}, topic_maturity={}, product_model={},
+        discovered_knowledge=[], superseded_knowledge=[], active_requirements={}, topic_status={}, topic_maturity={}, product_model={},
         gap_coverage={}, fact_acquisition={}, asked_gap=None, active_answer_result=None,
         checkpoint_cursor="conversation_manager", interview_status="PROCESSING_ANSWER", extraction_status="PENDING",
         current_topic=None, current_gap=None, current_objective=None, question_hint=None,
