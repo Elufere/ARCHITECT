@@ -9,6 +9,8 @@ from agents import validation_resolution as vr
 from agents.consistency_validation import FactConflictBatch, FactConflictVerdict
 from agents.discovery_coverage import fact_id
 from agents.interview_checkpoint import load_checkpoint, save_checkpoint
+from agents.implications import product_implication_node
+from agents.inquiries import inquiry_identification_node
 from agents.interview_planner import interview_planner_node
 from agents.question_candidates import question_candidate_builder_node, question_candidate_filter_node
 from agents.question_priority import question_candidate_priority_node
@@ -49,6 +51,7 @@ def state_with(*facts):
         "discovery_scope": S.USER_APP,
         "discovered_knowledge": list(facts),
         "superseded_knowledge": [],
+        "model_implications": [],
         "active_requirements": {},
         "requirement_coverage": {},
         "requirement_dependency_state": {},
@@ -59,7 +62,9 @@ def state_with(*facts):
         "ranked_question_candidates": [],
         "question_candidate_priority": {},
         "requirement_question_history": [],
-        "planner_source": "schema",
+        "open_inquiries": [],
+        "selected_inquiry": None,
+        "planner_source": "model",
         "selected_requirement_candidate": None,
         "selected_requirement_priority": None,
         "validation_issues": [],
@@ -78,7 +83,7 @@ def state_with(*facts):
         "turn_count": max([item.source_turn for item in facts] or [0]),
         "awaiting_confirmation": False,
         "pm_is_complete": False,
-        "checkpoint_cursor": "activate_requirements",
+        "checkpoint_cursor": "infer_implications",
         "interview_status": "PROCESSING_REQUIREMENTS",
         "extraction_status": "COMMITTED",
     }
@@ -87,10 +92,12 @@ def state_with(*facts):
 def run_reasoning_frontier(state):
     """Run the real post-extraction reasoning pipeline through planning."""
     for node in (
+        product_implication_node,
         requirement_activation_node,
         requirement_coverage_node,
         requirement_dependency_node,
         cv.consistency_validation_node,
+        inquiry_identification_node,
         question_candidate_builder_node,
         question_candidate_filter_node,
         question_candidate_priority_node,
@@ -107,7 +114,17 @@ def mature(state, *topics):
     return state
 
 
-def test_simple_task_product_stays_on_schema_path_without_dynamic_requirements():
+def coherent_foundation():
+    return [
+        fact(T.USER_ROLES, "primary_users", "customers", roles=["customer"]),
+        fact(T.USER_ROLES, "responsibilities", "create and manage transactions", role="customer"),
+        fact(T.USER_GOALS, "primary_user_goals", "complete transactions safely", role="customer"),
+        fact(T.CORE_WORKFLOW, "workflow_steps", "create, process, and complete a transaction"),
+        fact(T.CORE_WORKFLOW, "completion_condition", "the transaction reaches its agreed completed state"),
+    ]
+
+
+def test_simple_task_product_uses_model_frontier_without_dynamic_requirements():
     actor = fact(T.USER_ROLES, "primary_users", "individual task owners", roles=["task owner"])
     state = state_with(actor)
     state["gap_coverage"] = coverage_for_facts(state, T.USER_ROLES)
@@ -116,9 +133,9 @@ def test_simple_task_product_stays_on_schema_path_without_dynamic_requirements()
 
     assert result["active_requirements"] == {}
     assert result["ranked_question_candidates"] == []
-    assert result["planner_source"] == "schema"
+    assert result["planner_source"] == "model"
     assert result["current_topic"] == T.USER_ROLES
-    assert result["current_gap"] == "secondary_users"
+    assert result["current_gap"] == "responsibilities::task owner"
 
 
 def test_external_dependency_flows_from_fact_to_ranked_requirement_to_planner():
@@ -127,7 +144,7 @@ def test_external_dependency_flows_from_fact_to_ranked_requirement_to_planner():
         "downstream_dependency",
         "A bank approval is required before the workflow can finish.",
     )
-    state = state_with(dependency)
+    state = state_with(*coherent_foundation(), dependency)
     mature(state, T.CORE_WORKFLOW, T.BUSINESS_RULES)
 
     result = run_reasoning_frontier(state)
@@ -144,24 +161,17 @@ def test_external_dependency_flows_from_fact_to_ranked_requirement_to_planner():
     assert result["current_gap"] == "recovery"
 
 
-def test_appointment_time_constraint_activates_boundary_lifecycle_and_waits_for_edge_case_stage():
+def test_appointment_time_constraint_activates_boundary_lifecycle_after_foundation():
     deadline = fact(
         T.CONSTRAINTS,
         "time_constraints",
         "An appointment invitation expires after 48 hours.",
     )
-    state = state_with(deadline)
+    state = state_with(*coherent_foundation(), deadline)
 
-    # The requirement can activate immediately, but EDGE_CASES remains gated by
-    # EXCEPTIONS maturity.
-    blocked = run_reasoning_frontier(state)
+    result = run_reasoning_frontier(state)
     key = requirement_store_key(S.USER_APP, "lifecycle.time_boundary_behavior")
-    assert key in blocked["active_requirements"]
-    assert blocked["planner_source"] == "schema"
-
-    mature(blocked, T.EXCEPTIONS)
-    # Re-run the frontier after the prerequisite becomes coherent.
-    result = run_reasoning_frontier(blocked)
+    assert key in result["active_requirements"]
     assert result["ranked_question_candidates"][0]["requirement_key"] == key
     assert result["planner_source"] == "requirement"
     assert result["current_topic"] == T.EDGE_CASES
@@ -174,7 +184,7 @@ def test_marketplace_mutability_activates_both_and_prioritizes_lower_question_co
         "ownership_rules",
         "Hosts can update active listings and archive listings they own.",
     )
-    state = state_with(ownership)
+    state = state_with(*coherent_foundation(), ownership)
     mature(state, T.CORE_WORKFLOW)
 
     result = run_reasoning_frontier(state)
