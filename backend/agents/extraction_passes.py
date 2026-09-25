@@ -26,6 +26,236 @@ class RawPass(BaseModel):
     items: list[dict]
 
 
+class RawClaims(BaseModel):
+    """One response-wide capture result; individual claims validate independently."""
+    items: list[dict]
+
+
+ClaimKind = Literal[
+    "primary_actor",
+    "secondary_actor",
+    "actor_action",
+    "authorization_boundary",
+    "multiple_roles",
+    "role_transition",
+    "desired_outcome",
+    "success_condition",
+    "motivation",
+    "workflow_steps",
+    "workflow_trigger",
+    "workflow_completion",
+    "workflow_dependency",
+    "workflow_end_state",
+    "validation_rule",
+    "approval_rule",
+    "eligibility_rule",
+    "limit_rule",
+    "ownership_rule",
+    "visibility_rule",
+    "legal_constraint",
+    "business_constraint",
+    "operational_constraint",
+    "geographic_constraint",
+    "time_constraint",
+    "mvp_must_have",
+    "mvp_nice_to_have",
+    "mvp_out_of_scope",
+    "mvp_success_metric",
+    "user_cancellation",
+    "timeout_behavior",
+    "invalid_action",
+    "recovery",
+    "duplicate_action",
+    "boundary_condition",
+    "simultaneous_action",
+    "rare_scenario",
+    "unclassified",
+]
+
+
+class NeutralClaim(BaseModel):
+    """A proposition captured before it is admitted to the product knowledge model."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: ClaimKind
+    value: str = Field(min_length=1)
+    evidence: str = Field(min_length=1)
+    role: str | None = None
+    aliases: list[str] = Field(default_factory=list)
+    confidence: float = Field(ge=0, le=1)
+    knowledge_state: KnowledgeState = KnowledgeState.CONFIRMED
+    absence: Literal["none", "not_applicable"] | None = None
+
+
+CLAIM_CAPTURE_INSTRUCTION = """Capture the explicit propositions in the latest user answer ONCE.
+Do not search independently for every product-document field. First understand
+what each quoted clause actually asserts, then assign exactly one semantic kind
+to that proposition. Emit two claims from the same quote only when the quote
+independently states two different meanings.
+
+Kinds:
+- primary_actor / secondary_actor: identity or membership of a functional user
+  of the CURRENT scoped application. A participant using another app, an offline
+  process, a back-office tool, or an external system is not a current-app actor.
+- actor_action: something a known/current actor explicitly does, performs, manages,
+  submits, confirms, pays, reviews, creates, etc. A benefit received by the actor
+  is NOT an actor action.
+- authorization_boundary: an explicit permission, prohibition, exclusivity,
+  access restriction, or conditional authority. Ordinary capability is not one.
+- multiple_roles / role_transition: explicit policy about one person/account
+  holding several roles or changing roles.
+- desired_outcome: a result an actor explicitly wants, needs, seeks, or that the
+  product explicitly aims to provide to that actor. Do not relabel the actor's
+  ordinary action as an outcome.
+- success_condition: an explicit definition of what makes the user's/product's
+  goal successful. Merely saying what happens after success is not a definition.
+- motivation: an explicit reason/problem explaining why the product or outcome is wanted.
+- workflow_steps: an explicitly stated normal sequence or handoff.
+- workflow_trigger: an explicitly stated event/action that starts the workflow.
+  The first action mentioned in a narrative is not automatically the trigger.
+- workflow_completion: an explicit condition that makes the normal workflow complete.
+- workflow_dependency: an explicit prerequisite/external action required before progress/completion.
+- workflow_end_state: an explicitly stated resulting state AFTER completion.
+  A desired future outcome ('wants assurance that...') is not an established end state.
+- validation_rule / approval_rule / eligibility_rule / limit_rule /
+  ownership_rule / visibility_rule: only the corresponding explicit governing rule.
+- *_constraint: only explicit legal, business, operational, geographic, or time boundaries.
+- mvp_*: only explicit version-one inclusion, deferral/exclusion, or MVP metric.
+- user_cancellation / timeout_behavior / invalid_action / recovery: explicit exception handling.
+- duplicate_action / boundary_condition / simultaneous_action / rare_scenario:
+  explicit unusual-case handling.
+- unclassified: use when the clause is meaningful but none of the supported kinds
+  is explicitly established. Unclassified claims are not persisted.
+
+Critical distinctions:
+- 'The escrow should protect the seller from non-payment' is a desired outcome /
+  intended product benefit for the seller, NOT a seller responsibility or permission.
+- 'The seller wants assurance they will get paid' is a desired outcome, NOT an
+  established workflow end state.
+- 'The buyer pays into escrow, then the seller fulfils...' is workflow_steps;
+  do NOT emit workflow_trigger unless the source explicitly says this starts the process.
+- 'Money is released when the transaction is successfully completed' describes
+  release after completion; it does NOT by itself define what makes the transaction successful.
+- 'can', 'may', or 'should be able to' is ordinary capability unless the source
+  also states an authorization boundary.
+- Do not manufacture actor identity from a later mention of an already-known actor.
+  Use actor context only to resolve names/pronouns/capacities.
+- A contextual capacity such as buyer/seller may be an alias of one canonical
+  actor only when the user explicitly states that relationship. Never infer it
+  merely from domain convention.
+
+For every claim:
+- evidence MUST be one exact contiguous, case-sensitive substring of latest_response;
+- value must preserve only what that evidence states, including conditions/negation;
+- role is the canonical actor ID only when the proposition is actor-owned;
+- actor identity claims put the canonical actor ID in role and may list explicit aliases;
+- use knowledge_state=INFERRED only for genuinely tentative current-app membership;
+- do not use prompt examples or prior facts as new evidence;
+- do not invent benefits, actions, rules, states, or ownership;
+- if uncertain about the semantic kind, emit unclassified rather than forcing a bucket.
+"""
+
+
+CLAIM_KIND_TO_FIELD = {
+    "actor_action": (DiscoveryTopic.USER_ROLES, "responsibilities"),
+    "authorization_boundary": (DiscoveryTopic.USER_ROLES, "permissions"),
+    "desired_outcome": (DiscoveryTopic.USER_GOALS, None),
+    "success_condition": (DiscoveryTopic.USER_GOALS, "success_criteria"),
+    "motivation": (DiscoveryTopic.USER_GOALS, "motivations"),
+    "workflow_steps": (DiscoveryTopic.CORE_WORKFLOW, "workflow_steps"),
+    "workflow_trigger": (DiscoveryTopic.CORE_WORKFLOW, "trigger"),
+    "workflow_completion": (DiscoveryTopic.CORE_WORKFLOW, "completion_condition"),
+    "workflow_dependency": (DiscoveryTopic.CORE_WORKFLOW, "downstream_dependency"),
+    "workflow_end_state": (DiscoveryTopic.CORE_WORKFLOW, "end_state"),
+    "validation_rule": (DiscoveryTopic.BUSINESS_RULES, "validation_rules"),
+    "approval_rule": (DiscoveryTopic.BUSINESS_RULES, "approval_rules"),
+    "eligibility_rule": (DiscoveryTopic.BUSINESS_RULES, "eligibility_rules"),
+    "limit_rule": (DiscoveryTopic.BUSINESS_RULES, "limits"),
+    "ownership_rule": (DiscoveryTopic.BUSINESS_RULES, "ownership_rules"),
+    "visibility_rule": (DiscoveryTopic.BUSINESS_RULES, "visibility_rules"),
+    "legal_constraint": (DiscoveryTopic.CONSTRAINTS, "legal_constraints"),
+    "business_constraint": (DiscoveryTopic.CONSTRAINTS, "business_constraints"),
+    "operational_constraint": (DiscoveryTopic.CONSTRAINTS, "operational_constraints"),
+    "geographic_constraint": (DiscoveryTopic.CONSTRAINTS, "geographic_constraints"),
+    "time_constraint": (DiscoveryTopic.CONSTRAINTS, "time_constraints"),
+    "mvp_must_have": (DiscoveryTopic.MVP_SCOPE, "must_have_features"),
+    "mvp_nice_to_have": (DiscoveryTopic.MVP_SCOPE, "nice_to_have_features"),
+    "mvp_out_of_scope": (DiscoveryTopic.MVP_SCOPE, "out_of_scope"),
+    "mvp_success_metric": (DiscoveryTopic.MVP_SCOPE, "success_metrics"),
+    "user_cancellation": (DiscoveryTopic.EXCEPTIONS, "user_cancellations"),
+    "timeout_behavior": (DiscoveryTopic.EXCEPTIONS, "timeouts"),
+    "invalid_action": (DiscoveryTopic.EXCEPTIONS, "invalid_actions"),
+    "recovery": (DiscoveryTopic.EXCEPTIONS, "recovery"),
+    "duplicate_action": (DiscoveryTopic.EDGE_CASES, "duplicate_actions"),
+    "boundary_condition": (DiscoveryTopic.EDGE_CASES, "boundary_conditions"),
+    "simultaneous_action": (DiscoveryTopic.EDGE_CASES, "simultaneous_actions"),
+    "rare_scenario": (DiscoveryTopic.EDGE_CASES, "rare_scenarios"),
+}
+
+
+def claim_to_fact(
+    claim: NeutralClaim,
+    *,
+    primary_roles: set[str],
+    secondary_roles: set[str],
+):
+    """Convert one semantically typed claim into the existing fact contracts."""
+
+    common = dict(
+        value=claim.value,
+        evidence=claim.evidence,
+        confidence=claim.confidence,
+        knowledge_state=claim.knowledge_state,
+        absence=claim.absence,
+    )
+
+    if claim.kind in ("primary_actor", "secondary_actor"):
+        key = "primary_users" if claim.kind == "primary_actor" else "secondary_users"
+        roles = [] if claim.absence else ([claim.role] if claim.role else [])
+        return ActorFact(key=key, roles=roles, aliases=claim.aliases, **common), DiscoveryTopic.USER_ROLES
+
+    if claim.kind in ("multiple_roles", "role_transition"):
+        key = "multiple_roles" if claim.kind == "multiple_roles" else "role_transitions"
+        return ActorFact(key=key, roles=[], aliases=[], **common), DiscoveryTopic.USER_ROLES
+
+    if claim.kind == "actor_action":
+        if not claim.role:
+            raise ValueError("actor_action requires role")
+        return ResponsibilityFact(key="responsibilities", role=claim.role, **common), DiscoveryTopic.USER_ROLES
+
+    if claim.kind == "authorization_boundary":
+        if not claim.role:
+            raise ValueError("authorization_boundary requires role")
+        return PermissionFact(key="permissions", role=claim.role, **common), DiscoveryTopic.USER_ROLES
+
+    if claim.kind == "desired_outcome":
+        if not claim.role:
+            raise ValueError("desired_outcome requires role")
+        role = canonical_role(claim.role)
+        if role in primary_roles:
+            key = "primary_user_goals"
+        elif role in secondary_roles:
+            key = "secondary_user_goals"
+        else:
+            raise ValueError("desired_outcome owner is not a confirmed actor")
+        return GoalFact(key=key, role=role, **common), DiscoveryTopic.USER_GOALS
+
+    if claim.kind in ("success_condition", "motivation"):
+        key = "success_criteria" if claim.kind == "success_condition" else "motivations"
+        return GoalFact(key=key, role=claim.role, **common), DiscoveryTopic.USER_GOALS
+
+    if claim.kind == "unclassified":
+        return None
+
+    topic_key = CLAIM_KIND_TO_FIELD.get(claim.kind)
+    if topic_key is None:
+        raise ValueError(f"Unsupported claim kind: {claim.kind}")
+    topic, key = topic_key
+    if topic == DiscoveryTopic.CORE_WORKFLOW:
+        return WorkflowFact(key=key, **common), topic
+    return RemainingFact(topic=topic.value, key=key, **common), topic
+
+
 class Fact(BaseModel):
     model_config = ConfigDict(extra="forbid")
     key: str
