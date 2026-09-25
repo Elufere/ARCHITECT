@@ -98,26 +98,32 @@ def _foundation_facts(state: AgentState, *, topic, key, role=None) -> list[Knowl
     return result
 
 
-def _primary_roles(state: AgentState) -> list[str]:
-    roles: list[str] = []
+def _participant_roles(state: AgentState) -> list[tuple[str, str]]:
+    """Return confirmed product participants as (role, classification)."""
+    roles: list[tuple[str, str]] = []
     seen = set()
-    for item in _foundation_facts(
-        state, topic=DiscoveryTopic.USER_ROLES, key="primary_users"
+    for key, classification in (
+        ("primary_users", "primary"),
+        ("secondary_users", "secondary"),
     ):
-        if item.absence:
-            continue
-        for role in item.roles or []:
-            identity = role.strip().lower().rstrip("s")
-            if identity and identity not in seen:
-                seen.add(identity)
-                roles.append(role)
+        for item in _foundation_facts(
+            state, topic=DiscoveryTopic.USER_ROLES, key=key
+        ):
+            if item.absence:
+                continue
+            for role in item.roles or []:
+                identity = role.strip().lower().rstrip("s")
+                if identity and identity not in seen:
+                    seen.add(identity)
+                    roles.append((role, classification))
     return roles
 
 
 def _model_inquiries(state: AgentState) -> list[ProductInquiry]:
     """Return only the current foundational frontier, never a fixed schema checklist."""
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
-    roles = _primary_roles(state)
+    participants = _participant_roles(state)
+    roles = [role for role, _ in participants]
 
     if not roles:
         return [ProductInquiry(
@@ -168,15 +174,21 @@ def _model_inquiries(state: AgentState) -> list[ProductInquiry]:
             for role in missing_responsibilities
         ]
 
-    missing_goals = [
-        role for role in roles
+    missing_goals = []
+    for role, classification in participants:
+        goal_key = (
+            "primary_user_goals"
+            if classification == "primary"
+            else "secondary_user_goals"
+        )
         if not _foundation_facts(
             state,
             topic=DiscoveryTopic.USER_GOALS,
-            key="primary_user_goals",
+            key=goal_key,
             role=role,
-        )
-    ]
+        ):
+            missing_goals.append((role, goal_key, classification))
+
     if missing_goals:
         return [
             ProductInquiry(
@@ -184,19 +196,22 @@ def _model_inquiries(state: AgentState) -> list[ProductInquiry]:
                 source=InquirySource.MODEL,
                 scope=scope,
                 topic=DiscoveryTopic.USER_GOALS,
-                anchor_gap=f"primary_user_goals::{role}",
+                anchor_gap=f"{goal_key}::{role}",
                 objective=f"Understand the outcome the {role} is trying to achieve by using the product.",
                 question_hint=(
                     f"Ask about the desired outcome for the {role}, not the steps, permissions, "
                     "or business rules used to achieve it."
                 ),
-                reason=f"The model knows what '{role}' does but not the outcome they are trying to achieve.",
+                reason=(
+                    f"The explicitly confirmed {classification} participant '{role}' has known actions "
+                    "but no confirmed outcome yet."
+                ),
                 role=role,
-                uncertainty=1.0,
-                architecture_impact=0.8,
-                business_risk=0.6,
+                uncertainty=0.9 if classification == "secondary" else 1.0,
+                architecture_impact=0.7 if classification == "secondary" else 0.8,
+                business_risk=0.5 if classification == "secondary" else 0.6,
             )
-            for role in missing_goals
+            for role, goal_key, classification in missing_goals
         ]
 
     workflow = _foundation_facts(
