@@ -12,9 +12,13 @@ questions or block completion.
 ```text
 USER ANSWER
     ↓
-EXTRACT CANDIDATE CLAIMS
+CAPTURE NEUTRAL CLAIMS ONCE
     ↓
-GROUND / NORMALIZE / CLASSIFY
+NORMALIZE REFERENCES / ACTORS
+    ↓
+DETERMINISTIC SEMANTIC ADMISSION
+    ↓
+FOCUSED SEMANTIC REVIEW ONLY WHERE REQUIRED
     ↓
 RECONCILE WITH EXISTING KNOWLEDGE
     ↓
@@ -152,24 +156,48 @@ ready to compile even when legacy schema fields are still uncovered.
 
 `all_required_gaps_resolved()` remains only as a legacy diagnostic.
 
-## What remains intentionally unchanged for now
+## Capture architecture
 
-This is an architecture migration, not a total rewrite.
+Production discovery no longer runs six category-specific extraction calls over
+the same answer. It performs one response-wide `knowledge_tracker.CLAIMS` call
+that captures explicit propositions and assigns each exactly one semantic kind.
+
+The capture layer deliberately separates:
+- proposition capture — what the founder actually asserted;
+- reference normalization — which canonical actor a label/pronoun refers to;
+- semantic admission — whether that proposition is allowed into its proposed fact type;
+- reconciliation — whether the admitted fact is new, duplicate, refinement, correction, or contradiction.
+
+The legacy six-pass implementation remains only as a deterministic test/
+compatibility fallback when a mocked model registry does not expose `CLAIMS`.
+It is not the production runtime path.
+
+Admitted neutral claims do not go through the old broad cross-category grounding
+audit again. Ambiguous propositions must remain `unclassified` and fail closed
+instead of being forced into a field. High-impact semantics retain focused
+authority boundaries: active-gap absence still uses the dedicated absence
+interpreter; absence supersession/corrections keep their review path; actor
+membership has deterministic current-surface admission.
+
+Examples of enforced boundaries:
+- product benefit is not actor responsibility;
+- capability is not permission without authorization semantics;
+- desired future outcome is not an established workflow end state;
+- the first narrated workflow action is not automatically the trigger;
+- an event after successful completion is not automatically a definition of success;
+- process participation alone does not make a later participant an app actor.
+
+## What remains intentionally unchanged
 
 The branch still uses:
-- the existing six extraction passes
-- existing Pydantic discovery-field contracts
-- grounding and evidence validation
-- fact comparison/correction machinery
-- requirement facet coverage
-- requirement dependency resolution
-- contradiction validation
-- question guardrails
-- checkpoint durability
-- PRD compilation and verification
-
-Those layers can be migrated independently after the interview-control model is
-validated in live runs.
+- existing `KnowledgeItem` / discovery-field storage contracts for compatibility;
+- evidence span validation;
+- fact comparison/correction and supersession machinery;
+- requirement facet coverage and dependency resolution;
+- contradiction validation;
+- question guardrails;
+- checkpoint durability;
+- PRD compilation and verification.
 
 ## Experimental invariants
 
