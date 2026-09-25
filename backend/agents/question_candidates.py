@@ -98,6 +98,9 @@ def build_question_candidates(state: AgentState) -> List[QuestionCandidate]:
     This is intentionally small and deterministic. It does not decide whether a
     candidate should ultimately be asked; the eligibility filter owns that gate.
     """
+    if state.get("validation_blocking", False):
+        return []
+
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
     store = state.get("active_requirements", {})
     coverage_state = state.get("requirement_coverage", {})
