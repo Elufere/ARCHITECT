@@ -14,7 +14,7 @@ from agents.requirement_dependencies import requirement_dependency_node
 from agents.question_candidates import question_candidate_builder_node, question_candidate_filter_node
 from agents.question_priority import question_candidate_priority_node
 from agents.conversation_manager import conversation_manager_node
-from agents.interview_planner import interview_planner_node, all_required_gaps_resolved
+from agents.interview_planner import interview_planner_node, all_discovery_resolved
 from agents.question_generator import question_generator_node
 # Keep the existing nodes
 from agents.guardrails import guardrail_node
@@ -28,7 +28,7 @@ def route_after_plan(state: AgentState) -> str:
     After planning, check if the interview planner decided we are done.
     If so, skip question generation and go straight to compilation.
     """
-    if state.get("awaiting_confirmation") and all_required_gaps_resolved(state):
+    if state.get("awaiting_confirmation") and all_discovery_resolved(state):
         logger.info("All discovery topics completed. Routing to compilation.")
         return "compile_prd"
     
@@ -86,8 +86,8 @@ def build_graph() -> StateGraph:
     workflow.add_node("guardrail", durable_node("guardrail", guardrail_node,
         lambda state: "waiting" if route_after_guardrail(state) == END else "generate"))
     def compile_when_covered(state):
-        if not all_required_gaps_resolved(state):
-            raise RuntimeError("PRD compilation blocked: required discovery coverage is incomplete")
+        if not all_discovery_resolved(state):
+            raise RuntimeError("PRD compilation blocked: schema or active-requirement coverage is incomplete")
         return pm_compile_node(state)
     workflow.add_node("compile_prd", durable_node("compile_prd", compile_when_covered,
         lambda state: ("phase_complete" if state["discovery_scope"] == DiscoveryScope.USER_APP else "completed")

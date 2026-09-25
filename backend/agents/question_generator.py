@@ -134,6 +134,8 @@ def question_generator_node(state: AgentState) -> dict:
     current_role = state.get("current_role")
     discovery_move = state.get("next_discovery_move") or "deepen_understanding"
     discovery_scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    planner_source = state.get("planner_source", "schema")
+    selected_requirement = state.get("selected_requirement_candidate") or {}
 
     if not current_topic:
         return {"messages": [SystemMessage(content="I need to understand your product better. Could you start by telling me who the primary users will be?")]}
@@ -179,6 +181,30 @@ def question_generator_node(state: AgentState) -> dict:
         if discovery_move in ("confirm_inference", "confirm_existing") else ""
     )
     relevant_context = state.get("relevant_context", [])
+    requirement_guidance = ""
+    if planner_source == "requirement":
+        requirement = state.get("active_requirements", {}).get(
+            selected_requirement.get("requirement_key")
+        )
+        if requirement is not None:
+            facet_map = {facet.id: facet for facet in requirement.facets}
+            targets = [
+                f"- {facet_map[facet_id].label}: {facet_map[facet_id].description}"
+                for facet_id in selected_requirement.get("target_facets", [])
+                if facet_id in facet_map
+            ]
+            requirement_guidance = f"""
+REQUIREMENT-DRIVEN DISCOVERY
+Selected requirement: {requirement.label}
+Requirement description: {requirement.description or requirement.label}
+Unresolved facets this question may cover:
+{chr(10).join(targets) if targets else "- Clarify the unresolved requirement."}
+
+The schema gap shown below is only an extraction anchor. Do NOT broaden the
+question to cover the entire schema field. Ask specifically about the selected
+requirement and its unresolved facets. You may cover closely related facets in
+one natural question when that is clearer for the user.
+"""
 
     # When in ADMIN_DASHBOARD phase, surface what was learned about the
     # customer-facing roles in Phase 1, so the LLM has something concrete
@@ -216,7 +242,9 @@ Current gap: {current_gap}
 Current objective: {current_objective}
 Question guidance: {question_hint}
 Discovery move: {discovery_move}
-Internal semantic definition (context only; never quote this to the user):
+Planner source: {planner_source}
+{requirement_guidance}
+Internal schema definition (context only; never quote this to the user):
 {FIELD_DEFINITIONS.get(current_topic, {}).get((current_gap or '').split('::')[0], '')}
 
 ========================================
@@ -240,7 +268,9 @@ WHAT YOU MUST NOT DO
 - Do NOT ask about exceptions, errors, disputes, failures, or edge cases
   when the objective is about goals, motivations, or workflow steps.
 - Do NOT ask about the happy path when the objective is about exceptions or edge cases.
-- Do NOT ask about a different field within the same topic.
+- Do NOT ask about a different field within the same topic when this is schema-driven discovery.
+- When this is requirement-driven discovery, stay within the selected requirement
+  and its target facets even if the answer may map to more than one schema field.
 - Do NOT ask about future discovery topics.
 - Do NOT ask for definitions.
 - Do NOT ask "what do you mean by..." unless the user explicitly used an ambiguous term.

@@ -98,6 +98,9 @@ def load_checkpoint(session_id):
     state.setdefault("ranked_question_candidates", [])
     state.setdefault("question_candidate_priority", {})
     state.setdefault("requirement_question_history", [])
+    state.setdefault("planner_source", "schema")
+    state.setdefault("selected_requirement_candidate", None)
+    state.setdefault("selected_requirement_priority", None)
     if state.get("prd_contract"):
         state["prd_contract"] = PRDContract.model_validate(state["prd_contract"])
     if (state.get("answer_followup") or {}).get("scope"):

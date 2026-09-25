@@ -200,7 +200,7 @@ def test_candidate_becomes_stale_when_coverage_changes():
     assert CandidateBlockReason.NO_UNRESOLVED_FACETS in decisions[candidate.id].reasons
 
 
-def test_recent_exact_requirement_and_facet_target_is_suppressed():
+def test_recent_exact_target_is_allowed_when_it_is_the_only_frontier_candidate():
     state = base_state()
     candidate = build_question_candidates(state)[0]
     repeated = {
@@ -212,8 +212,48 @@ def test_recent_exact_requirement_and_facet_target_is_suppressed():
         }],
     }
     accepted, decisions = filter_question_candidates(repeated, [candidate])
-    assert accepted == []
-    assert CandidateBlockReason.RECENTLY_ASKED_SAME_TARGET in decisions[candidate.id].reasons
+    assert accepted == [candidate]
+    assert decisions[candidate.id].eligible is True
+
+
+def test_recent_exact_target_stays_suppressed_when_an_alternative_exists():
+    first_state = base_state()
+    first = build_question_candidates(first_state)[0]
+    other_req = requirement()
+    other_req = other_req.model_copy(update={"id": "workflow.other_requirement", "label": "Other"})
+    other_key = requirement_store_key(other_req.scope, other_req.id)
+    other_cov = coverage(other_req)
+    state = {
+        **first_state,
+        "active_requirements": {
+            **first_state["active_requirements"],
+            other_key: other_req,
+        },
+        "requirement_coverage": {
+            **first_state["requirement_coverage"],
+            other_key: other_cov.model_dump(mode="json"),
+        },
+        "requirement_dependency_state": {
+            **first_state["requirement_dependency_state"],
+            other_key: {
+                "requirement_id": other_req.id,
+                "scope": other_req.scope.value,
+                "requirement_status": RequirementStatus.ACTIVE.value,
+                "eligible": True,
+                "dependencies": [],
+                "blocking_dependencies": {},
+            },
+        },
+        "eligible_requirement_keys": [first.requirement_key, other_key],
+        "requirement_question_history": [{
+            "requirement_key": first.requirement_key,
+            "target_facets": first.target_facets,
+        }],
+    }
+    candidates = build_question_candidates(state)
+    accepted, decisions = filter_question_candidates(state, candidates)
+    assert first.id not in {item.id for item in accepted}
+    assert CandidateBlockReason.RECENTLY_ASKED_SAME_TARGET in decisions[first.id].reasons
 
 
 def test_recent_different_target_does_not_trigger_exact_repetition_filter():

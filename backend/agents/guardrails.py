@@ -122,11 +122,17 @@ You are validating a Product Manager's interview question.
 Current discovery topic:
 {current_topic}
 
+Planner source:
+{planner_source}
+
 Current objective:
 {current_objective}
 
-Current gap (the exact field being asked about):
+Current schema gap / extraction anchor:
 {current_gap}
+
+Selected requirement context:
+{requirement_context}
 
 Question:
 {agent_output}
@@ -144,15 +150,22 @@ Previously asked questions for this topic:
 {previous_questions}
 
 Your job is to determine whether the question is asking specifically about
-the Current objective and Current gap above — not merely about the same
-topic in general.
+the Current objective.
+
+When Planner source is "schema", the Current schema gap is the exact field
+being discovered.
+
+When Planner source is "requirement", the schema gap is ONLY an extraction
+anchor. Validate the question against the Selected requirement context and
+target facets instead. A valid requirement question may naturally span more
+than one schema field if all parts directly serve the selected requirement.
 
 Reject if the question:
 - changes to another topic
 - asks about a different field within the same topic (e.g. asks about
   responsibilities when the gap is permissions, or asks about goals when
   the gap is success_criteria)
-- asks multiple objectives
+- asks multiple unrelated objectives; closely related target facets of one selected requirement are allowed
 - asks implementation
 - asks architecture
 - asks roadmap planning unrelated to the selected gap (MVP_SCOPE questions about
@@ -162,8 +175,9 @@ Reject if the question:
 - asks about the happy path when the gap is about exceptions or edge cases
 
 CRITICAL: The question MUST directly discover the "Current objective" stated above.
-If the question could be answered without addressing that specific objective,
-REJECT IT.
+If Planner source is "requirement", it must directly investigate the selected
+requirement and at least one target facet. If the question could be answered
+without addressing that specific objective, REJECT IT.
 
 Do NOT reject merely because it mentions users, permissions, workflows,
 approvals, validation, or business concepts, PROVIDED it is asking about
@@ -276,6 +290,14 @@ def evaluate_question(state: dict) -> dict:
     current_gap = state.get("current_gap")
     current_objective = state.get("current_objective")
     question_hint = state.get("question_hint")
+    planner_source = state.get("planner_source", "schema")
+    selected_requirement = state.get("selected_requirement_candidate") or {}
+    requirement_context = "None"
+    if planner_source == "requirement":
+        requirement_context = (
+            f"requirement_id={selected_requirement.get('requirement_id')}; "
+            f"target_facets={selected_requirement.get('target_facets', [])}"
+        )
 
     # Internal roles are prohibited only when the model invents them.  Once a
     # user has explicitly named an administrator (or similar) as a role, a
@@ -342,8 +364,10 @@ def evaluate_question(state: dict) -> dict:
         result = evaluator_llm.invoke(
             EVALUATOR_PROMPT.format(
                 current_topic=state["current_topic"].value,
+                planner_source=planner_source,
                 current_gap=current_gap,
                 current_objective=current_objective,
+                requirement_context=requirement_context,
                 agent_output=last_message.content,
                 known_facts="\n".join(
                     f"- {item.key}: {item.value}"
@@ -378,6 +402,39 @@ def evaluate_question(state: dict) -> dict:
         raise ExtractionFailed("Question evaluation failed; the question has not been approved") from e
 
 
+
+def _record_requirement_question(state: dict, question: str) -> list[dict]:
+    history = list(state.get("requirement_question_history", []))
+    if state.get("planner_source") != "requirement":
+        return history
+    candidate = state.get("selected_requirement_candidate") or {}
+    if not candidate:
+        return history
+    entry = {
+        "candidate_id": candidate.get("id"),
+        "requirement_key": candidate.get("requirement_key"),
+        "requirement_id": candidate.get("requirement_id"),
+        "target_facets": list(candidate.get("target_facets") or []),
+        "topic": (
+            state.get("current_topic").value
+            if getattr(state.get("current_topic"), "value", None)
+            else state.get("current_topic")
+        ),
+        "question": question,
+        "turn": state.get("turn_count", 0),
+    }
+    signature = (
+        entry["candidate_id"],
+        entry["question"],
+        entry["turn"],
+    )
+    if not any(
+        (item.get("candidate_id"), item.get("question"), item.get("turn")) == signature
+        for item in history
+    ):
+        history.append(entry)
+    return history
+
 MAX_QUESTION_RETRIES = 2
 
 
@@ -386,7 +443,12 @@ def guardrail_node(state: dict) -> dict:
     result = evaluate_question(state)
     messages = result.get("messages", [])
     if not messages or not isinstance(messages[-1], SystemMessage):
-        return {**result, "question_retry_count": 0}
+        last = state.get("messages", [])[-1] if state.get("messages") else None
+        history = (
+            _record_requirement_question(state, last.content)
+            if isinstance(last, AIMessage) else state.get("requirement_question_history", [])
+        )
+        return {**result, "question_retry_count": 0, "requirement_question_history": history}
     retries = state.get("question_retry_count", 0)
     if retries >= MAX_QUESTION_RETRIES:
         logger.warning("Question retry limit reached; returning a gap clarification.")
