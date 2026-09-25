@@ -73,8 +73,8 @@ def test_guardrail_supplies_validation_context(monkeypatch):
     captured = {}
 
     class Evaluator:
-        def invoke(self, messages):
-            captured["prompt"] = messages[0].content
+        def invoke(self, prompt):
+            captured["prompt"] = prompt if isinstance(prompt, str) else prompt[0].content
             return SimpleNamespace(
                 passed=True,
                 stage=guardrails.Stage.PRODUCT_DISCOVERY,
