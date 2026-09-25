@@ -186,7 +186,8 @@ def test_escrow_failure_sequence(replay, invariant, monkeypatch):
         for label in ("Fact ID:", "Source turn:", "Old: COMPLETED", "New: PARTIAL", "responsibilities::vendor", "secondary_user_goals::vendor"):
             assert label in event
     elif number == 13:
-        assert "approval_rules" not in build_gap_info(states["approval"], T.BUSINESS_RULES)["missing_keys"]
+        assert "approval_rules" in build_gap_info(states["approval"], T.BUSINESS_RULES)["missing_keys"]
+        assert "approval_rules" not in build_gap_info(states["approval_planned"], T.BUSINESS_RULES)["missing_keys"]
     elif number == 14:
         assert states["approval_planned"]["current_gap"] != "approval_rules"
         assert calls.count(("approval", "RULES")) == 1
