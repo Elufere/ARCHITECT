@@ -62,7 +62,7 @@ class RequirementCoverageAssessment(BaseModel):
     """
 
     covered_facets: Dict[str, List[str]] = Field(default_factory=dict)
-    not_applicable_facets: List[str] = Field(default_factory=list)
+    not_applicable_facets: Dict[str, List[str]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def no_overlap(self):
@@ -131,14 +131,18 @@ def validate_coverage_assessment(
     if unknown:
         raise ValueError(f"Unknown requirement facets: {sorted(unknown)}")
 
-    for facet_id, ids in assessment.covered_facets.items():
-        if not ids:
-            raise ValueError(f"Covered facet '{facet_id}' requires supporting fact IDs")
-        invalid = set(ids) - allowed
-        if invalid:
-            raise ValueError(
-                f"Facet '{facet_id}' references facts outside requirement coverage evidence: {sorted(invalid)}"
-            )
+    for state_name, mapping in (
+        ("Covered", assessment.covered_facets),
+        ("Not-applicable", assessment.not_applicable_facets),
+    ):
+        for facet_id, ids in mapping.items():
+            if not ids:
+                raise ValueError(f"{state_name} facet '{facet_id}' requires supporting fact IDs")
+            invalid = set(ids) - allowed
+            if invalid:
+                raise ValueError(
+                    f"Facet '{facet_id}' references facts outside requirement coverage evidence: {sorted(invalid)}"
+                )
 
 
 def _initial_facets(requirement: ActiveRequirement) -> Dict[str, FacetCoverage]:
@@ -263,10 +267,11 @@ def apply_requirement_coverage_assessment(
             state=RequirementFacetState.COVERED,
             fact_ids=list(dict.fromkeys(ids)),
         )
-    for facet_id in assessment.not_applicable_facets:
+    for facet_id, ids in assessment.not_applicable_facets.items():
         facets[facet_id] = FacetCoverage(
             facet_id=facet_id,
             state=RequirementFacetState.NOT_APPLICABLE,
+            fact_ids=list(dict.fromkeys(ids)),
         )
 
     status = _status_from_facets(requirement, facets, candidates)
