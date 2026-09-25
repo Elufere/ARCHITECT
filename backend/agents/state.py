@@ -161,6 +161,7 @@ class AgentState(TypedDict):
     validation_issues: List[dict]
     validation_pair_cache: Dict[str, dict]
     validation_blocking: bool
+    validation_candidate_blocking: bool
     selected_validation_issue: Optional[dict]
     topic_status: Dict[DiscoveryTopic, TopicStatus]
     current_topic: Optional[DiscoveryTopic]
