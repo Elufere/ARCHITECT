@@ -506,7 +506,152 @@ def ground_batch(items, user_response, state, active_gap_review=None):
         raise ExtractionFailed("Grounding verification failed") from exc
 
 
+class ExtractedBatch(list):
+    """List of extracted facts plus whether the legacy semantic audit is required."""
+
+    def __init__(self, items=(), *, grounding_required=True):
+        super().__init__(items)
+        self.grounding_required = grounding_required
+
+
+def _claim_prompt(state: AgentState, scope: DiscoveryScope) -> str:
+    known = confirmed_actor_context(state, scope)
+    return f"""Extract neutral product claims from the latest user response.
+
+Current scope: {scope.value}
+Current interview focus: {state.get('current_gap') or 'none'}
+Last question (reference context only): {answer_context(state)['question']}
+Confirmed actor identity context: {json.dumps(known, default=str)}
+
+{CLAIM_CAPTURE_INSTRUCTION}
+
+Return JSON with an items array matching this schema:
+{json.dumps(NeutralClaim.model_json_schema(), default=str)}
+"""
+
+
+def _existing_actor_sets(state: AgentState, scope: DiscoveryScope) -> tuple[set[str], set[str]]:
+    primary, secondary = set(), set()
+    for item in state.get("discovered_knowledge", []):
+        if (
+            item.scope != scope
+            or item.knowledge_state != KnowledgeState.CONFIRMED
+            or item.absence
+            or item.key not in ("primary_users", "secondary_users")
+        ):
+            continue
+        target = primary if item.key == "primary_users" else secondary
+        target.update(canonical_role(role) for role in item.roles or [])
+    return primary, secondary
+
+
+def _admit_claim_item(
+    claim: NeutralClaim,
+    state: AgentState,
+    scope: DiscoveryScope,
+    primary_roles: set[str],
+    secondary_roles: set[str],
+) -> KnowledgeItem | None:
+    converted = claim_to_fact(
+        claim,
+        primary_roles=primary_roles,
+        secondary_roles=secondary_roles,
+    )
+    if converted is None:
+        print(f"CLAIM UNCLASSIFIED: {claim.evidence!r}")
+        return None
+
+    fact, topic = converted
+    item = normalize_fact(fact, topic, scope, state.get("turn_count", 0))
+    valid, reason = validate_extraction(item, state["messages"][-1].content, state.get("current_gap"))
+    if not valid:
+        raise ValueError(reason)
+
+    semantic_reason = category_contradiction(item.key, item.evidence, item.value)
+    if semantic_reason:
+        raise ValueError(semantic_reason)
+
+    if isinstance(fact, ActorFact) and not actor_identity_candidate_allowed(fact, state, scope):
+        raise ValueError("Existing actor cannot be redeclared from non-identity evidence")
+
+    if isinstance(fact, (OwnedFact, GoalFact)) and item.role:
+        allowed = primary_roles | secondary_roles
+        if canonical_role(item.role) not in allowed:
+            raise ValueError("Owner is not a confirmed actor")
+
+    return item
+
+
+def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope) -> ExtractedBatch:
+    """Production capture: one response-wide proposition pass, no category-hunting fanout."""
+
+    model = extraction_models()["CLAIMS"]
+    print("========== CLAIM EXTRACTION RAW ==========")
+    try:
+        result = model.invoke([
+            SystemMessage(content=_claim_prompt(state, scope)),
+            HumanMessage(content=user_response),
+        ])
+        raw = result.get("parsed") if isinstance(result, dict) and "parsed" in result else result
+        if raw is None:
+            raise ValueError(str(result.get("parsing_error", "No parsed output")))
+        payload = raw if isinstance(raw, RawClaims) else RawClaims.model_validate(raw)
+        print(payload.model_dump())
+    except Exception as exc:
+        raise_if_llm_failure(exc)
+        print(f"CLAIM EXTRACTION FAILED: {exc}")
+        raise ExtractionFailed("Claim extraction did not return a valid response") from exc
+
+    claims = []
+    for raw_claim in payload.items:
+        try:
+            claims.append(NeutralClaim.model_validate(raw_claim))
+        except ValidationError as exc:
+            print(f"CLAIM REJECTED: invalid claim schema | {exc}")
+
+    primary_roles, secondary_roles = _existing_actor_sets(state, scope)
+    accepted: list[KnowledgeItem] = []
+
+    # Identity claims establish same-turn owners before owned propositions are admitted.
+    ordered = sorted(
+        enumerate(claims),
+        key=lambda pair: (0 if pair[1].kind in ("primary_actor", "secondary_actor") else 1, pair[0]),
+    )
+    for _, claim in ordered:
+        try:
+            item = _admit_claim_item(
+                claim,
+                {**state, "discovered_knowledge": [*state.get("discovered_knowledge", []), *accepted]},
+                scope,
+                primary_roles,
+                secondary_roles,
+            )
+            if item is None:
+                continue
+            if item.key == "primary_users" and not item.absence:
+                primary_roles.update(canonical_role(role) for role in item.roles or [])
+            elif item.key == "secondary_users" and not item.absence:
+                secondary_roles.update(canonical_role(role) for role in item.roles or [])
+            if item not in accepted:
+                accepted.append(item)
+        except (ValidationError, ValueError) as exc:
+            print(f"CLAIM REJECTED: {claim.kind} | {exc} | evidence={claim.evidence!r}")
+
+    # Claim semantics have already been classified once and admitted through the
+    # deterministic field gates above. Do not send the same propositions through
+    # a second cross-category LLM audit; ambiguity was required to stay unclassified.
+    return ExtractedBatch(accepted, grounding_required=False)
+
+
 def extract_passes(user_response: str, state: AgentState,
+                   scope: DiscoveryScope) -> list[KnowledgeItem]:
+    models = extraction_models()
+    if "CLAIMS" in models:
+        return extract_claims(user_response, state, scope)
+    return _extract_passes_legacy(user_response, state, scope)
+
+
+def _extract_passes_legacy(user_response: str, state: AgentState,
                    scope: DiscoveryScope) -> list[KnowledgeItem]:
     accepted = []
     stored_actors = [item for item in state.get("discovered_knowledge", [])
