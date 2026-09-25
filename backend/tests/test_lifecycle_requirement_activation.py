@@ -36,7 +36,7 @@ def lifecycle_only(knowledge, *, scope=S.USER_APP, store=None):
 def test_start_state_requires_trigger_workflow_and_explicit_stateful_end_state():
     trigger = fact(T.CORE_WORKFLOW, "trigger", "A customer submits a request")
     steps = fact(T.CORE_WORKFLOW, "workflow_steps", "Customer submits, provider reviews, customer confirms")
-    end = fact(T.CORE_WORKFLOW, "end_state", "The request becomes completed")
+    end = fact(T.CORE_WORKFLOW, "end_state", "The request status becomes pending")
 
     assert lifecycle_only([trigger]) == {}
     assert lifecycle_only([trigger, steps]) == {}
@@ -51,7 +51,7 @@ def test_start_state_requires_trigger_workflow_and_explicit_stateful_end_state()
 
 def test_state_transition_requires_workflow_and_end_state():
     steps = fact(T.CORE_WORKFLOW, "workflow_steps", "Request is submitted, reviewed, then confirmed")
-    end = fact(T.CORE_WORKFLOW, "end_state", "The request becomes completed")
+    end = fact(T.CORE_WORKFLOW, "end_state", "The request status becomes pending")
 
     assert lifecycle_only([steps]) == {}
 
@@ -71,7 +71,7 @@ def test_post_completion_requires_completion_condition_and_end_state():
         "completion_condition",
         "The process is complete once both parties confirm handover",
     )
-    end = fact(T.CORE_WORKFLOW, "end_state", "The transaction becomes completed")
+    end = fact(T.CORE_WORKFLOW, "end_state", "The transaction status becomes paid")
 
     store = lifecycle_only([completion, end])
     key = requirement_store_key(S.USER_APP, "lifecycle.post_completion_behavior")
@@ -165,7 +165,7 @@ def test_removal_signal_matches_inflected_explicit_actions():
 def test_lifecycle_requirement_reactively_deactivates_when_trigger_is_corrected_away():
     trigger = fact(T.CORE_WORKFLOW, "trigger", "A customer submits a request")
     steps = fact(T.CORE_WORKFLOW, "workflow_steps", "Customer submits and provider reviews")
-    end = fact(T.CORE_WORKFLOW, "end_state", "The request becomes completed")
+    end = fact(T.CORE_WORKFLOW, "end_state", "The request status becomes pending")
     active = lifecycle_only([trigger, steps, end])
     key = requirement_store_key(S.USER_APP, "lifecycle.start_state_behavior")
     assert active[key].status == RequirementStatus.ACTIVE
