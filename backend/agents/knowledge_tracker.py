@@ -147,7 +147,14 @@ def group_audit_evidence(payload):
                 for quote_id, quote in quotes.items()]}
 
 
-def semantic_decision(name, schema, instruction, payload, allow_repair=True):
+def semantic_decision(
+    name,
+    schema,
+    instruction,
+    payload,
+    allow_repair=True,
+    allow_protocol_repair=True,
+):
     original_payload = payload
     original_instruction = instruction
     if name == "GROUNDING":
@@ -167,12 +174,40 @@ def semantic_decision(name, schema, instruction, payload, allow_repair=True):
         SystemMessage(content=instruction),
         HumanMessage(content=json.dumps(payload, default=str)),
     ])
-    raw = result.get("parsed") if isinstance(result, dict) and "parsed" in result else result
-    if name == "GROUNDING" and isinstance(raw, GroundingResponse):
-        raw = raw.decision()
-    elif name == "GROUNDING" and isinstance(raw, dict) and isinstance(raw.get("evidence_categories"), list):
-        raw = GroundingResponse.model_validate(raw).decision()
-    decision = raw if isinstance(raw, schema) else schema.model_validate(raw)
+    try:
+        raw = result.get("parsed") if isinstance(result, dict) and "parsed" in result else result
+        if raw is None:
+            parsing_error = (
+                result.get("parsing_error")
+                if isinstance(result, dict)
+                else None
+            )
+            raise ValueError(
+                f"Structured {name} response was not parsed"
+                + (f": {parsing_error}" if parsing_error else "")
+            )
+        if name == "GROUNDING" and isinstance(raw, GroundingResponse):
+            raw = raw.decision()
+        elif name == "GROUNDING" and isinstance(raw, dict) and isinstance(raw.get("evidence_categories"), list):
+            raw = GroundingResponse.model_validate(raw).decision()
+        decision = raw if isinstance(raw, schema) else schema.model_validate(raw)
+    except Exception as exc:
+        raise_if_llm_failure(exc)
+        if name == "GROUNDING" and allow_protocol_repair:
+            print(f"GROUNDING PROTOCOL REPAIR: invalid structured response; retrying once | {exc}")
+            return semantic_decision(
+                name,
+                schema,
+                original_instruction
+                + "\nThe previous grounding audit response could not be parsed. "
+                  "Return exactly one complete structured audit matching the required schema. "
+                  "Do not omit evidence_categories, supported_ids, confirmed_absence_ids, "
+                  "or rejection_reasons. Use only the supplied candidate and evidence IDs.",
+                original_payload,
+                allow_repair=allow_repair,
+                allow_protocol_repair=False,
+            )
+        raise
     if name == "GROUNDING" and allow_repair:
         # A support ID alone is not a complete verdict: its quote category and,
         # for absence, the independent polarity verdict must also be present.
@@ -191,11 +226,15 @@ def semantic_decision(name, schema, instruction, payload, allow_repair=True):
                 "candidates": [{**candidate, "id": index} for index, candidate in enumerate(missing)],
                 "evidence_quotes": {key: value for key, value in original_payload["evidence_quotes"].items() if key in quote_ids}}
             try:
-                repaired = semantic_decision(name, schema,
+                repaired = semantic_decision(
+                    name,
+                    schema,
                     original_instruction + "\nThe previous audit omitted a complete verdict for these candidates. "
                     "Return either support or a rejection reason for EVERY supplied ID. "
                     "Supported facts need their evidence_id category; supported absences also need confirmed_absence_ids. Do not invent IDs.",
-                    repair_payload, allow_repair=False)
+                    repair_payload,
+                    allow_repair=False,
+                )
             except Exception as exc:
                 raise_if_llm_failure(exc)
                 print(f"GROUNDING REPAIR FAILED: {exc}")
