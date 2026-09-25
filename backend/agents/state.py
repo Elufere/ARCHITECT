@@ -142,6 +142,7 @@ class AgentState(TypedDict):
 
     discovered_knowledge: List[KnowledgeItem]
     superseded_knowledge: List[dict]
+    model_implications: List[dict]
     active_requirements: Dict[str, Any]
     requirement_coverage: Dict[str, dict]
     requirement_dependency_state: Dict[str, dict]
@@ -152,6 +153,8 @@ class AgentState(TypedDict):
     ranked_question_candidates: List[dict]
     question_candidate_priority: Dict[str, dict]
     requirement_question_history: List[dict]
+    open_inquiries: List[dict]
+    selected_inquiry: Optional[dict]
     planner_source: str
     selected_requirement_candidate: Optional[dict]
     selected_requirement_priority: Optional[dict]
@@ -164,7 +167,7 @@ class AgentState(TypedDict):
     current_topic: Optional[DiscoveryTopic]
     topic_dependencies: Dict[DiscoveryTopic, List[DiscoveryTopic]]
     topic_maturity: Dict[DiscoveryTopic, TopicMaturity]
-    product_model: Dict[str, List[str]]
+    product_model: Dict[str, Any]
 
     current_gap: Optional[str]
     current_objective: Optional[str]
