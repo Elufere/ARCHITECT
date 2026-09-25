@@ -5,7 +5,7 @@ import pytest
 from langchain_core.messages import AIMessage
 
 from agents import knowledge_tracker as tracker
-from agents.interview_planner import build_gap_info
+from agents.interview_planner import build_gap_info, interview_planner_node
 from agents.state import DiscoveryTopic as T, DiscoveryScope as S
 from test_gap_absence import models, state
 
@@ -26,11 +26,13 @@ def test_policy_answer_closes_only_its_gap(monkeypatch, gap, question, answer, v
     calls = models(monkeypatch, resolution="policy", evidence=answer, value=value,
         outputs={"ACTOR": [dict(key=gap, value="none", evidence=answer, confidence=1, absence="none")]})
     result = tracker.knowledge_tracker_node(initial)
-    added = result["discovered_knowledge"][2:]
+    merged = {**initial, **result}
+    merged.update(interview_planner_node(merged))
+    added = merged["discovered_knowledge"][2:]
     assert len(added) == 1
     assert added[0].key == gap and added[0].value == value
     assert added[0].evidence == answer and added[0].absence is None
-    gaps = build_gap_info({**initial, **result}, T.USER_ROLES)["missing_keys"]
+    gaps = build_gap_info(merged, T.USER_ROLES)["missing_keys"]
     assert gap not in gaps
     assert ("role_transitions" if gap == "multiple_roles" else "multiple_roles") in gaps
     audit = json.loads(calls["GROUNDING"][-1].content)
