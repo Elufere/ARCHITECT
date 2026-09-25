@@ -398,7 +398,10 @@ def assess_selected_requirement_answer(
         question=question,
     )
     updated_store = dict(store)
-    updated_store[candidate.requirement_key] = requirement
+    updated_store[requirement_key] = requirement
+
+    if not target_facets:
+        return updated_store, coverage
 
     allowed_ids = candidate_fact_ids(requirement, knowledge)
     if not allowed_ids:
