@@ -42,20 +42,47 @@ def category_contradiction(key: str, evidence: str, value: str | None = None) ->
             return "Candidate invents desired-outcome intent not stated in its evidence"
 
     if key == "permissions":
-        capability_language = re.search(
-            r"\b(?:can|may|should\s+be\s+able\s+to|will\s+be\s+able\s+to)\b",
-            evidence,
-            re.I,
-        )
         explicit_boundary = re.search(
             r"\b(?:only|cannot|can't|must\s+not|forbidden|restricted|restriction|"
             r"authorized|authorization|exclusive|exclusively|unless|except|"
-            r"access\s+(?:only|limited|restricted)|not\s+allowed|allowed\s+only)\b",
+            r"not\s+allowed|allowed\s+only|permission|required\s+permission|"
+            r"access\s+(?:only|limited|restricted|to)|may\s+not)\b",
             evidence,
             re.I,
         )
-        if capability_language and not explicit_boundary:
-            return "Capability language alone does not establish an authorization boundary"
+        if not explicit_boundary:
+            return "Evidence states no explicit authorization, prohibition, exclusivity, or access boundary"
+
+    if key == "responsibilities":
+        proposed = (value or "").strip().lower()
+        product_benefit = re.search(
+            r"\b(?:app|platform|system|escrow|product|service)\b.*\b(?:protect|help|ensure|guarantee)\b",
+            evidence,
+            re.I,
+        )
+        passive_benefit = re.match(
+            r"(?:be\s+)?(?:protected|assured|guaranteed|safe|secure)\b",
+            proposed,
+            re.I,
+        )
+        if passive_benefit or product_benefit:
+            return "A benefit provided to an actor is not an action performed by that actor"
+
+    if key == "end_state":
+        intent_only = re.search(
+            r"\b(?:wants?|needs?|seeks?|hopes?|expects?|assurance|should\s+protect|"
+            r"should\s+ensure|would\s+like)\b",
+            evidence,
+            re.I,
+        )
+        explicit_result = re.search(
+            r"\b(?:after|once\s+completed|ends?\s+(?:as|in)|final\s+state|"
+            r"status\s+(?:is|becomes)|is\s+marked|results?\s+in)\b",
+            evidence,
+            re.I,
+        )
+        if intent_only and not explicit_result:
+            return "A desired future outcome is not an established workflow end state"
 
     if key == "approval_rules" and not re.search(
         r"\b(?:approv(?:e|es|ed|ing|al|als)|review(?:s|ed|ing)?|"
