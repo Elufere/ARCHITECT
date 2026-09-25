@@ -1,43 +1,52 @@
-"""Build and deterministically filter requirement question candidates.
+"""Build and deterministically filter question candidates from open inquiries.
 
-This is the bridge between requirement reasoning and the future prioritized
-planner. It does not rank candidates and does not change current planner output.
+The planner no longer traverses schema gaps. Inquiries can come from the
+foundational product model, active product-specific requirements, or blocking
+consistency validation.
 """
 from __future__ import annotations
 
 from enum import Enum
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from agents.inquiries import InquirySource, ProductInquiry
 from agents.requirement_coverage import (
     RequirementCoverageRecord,
     RequirementCoverageStatus,
     RequirementFacetState,
 )
-from agents.requirements import (
-    ActiveRequirement,
-    RequirementStatus,
-    requirement_store_key,
-)
+from agents.requirements import ActiveRequirement, RequirementStatus
 from agents.state import AgentState, DiscoveryScope, DiscoveryTopic
 
 
 class QuestionCandidate(BaseModel):
     id: str
-    requirement_key: str
-    requirement_id: str
+    inquiry_id: Optional[str] = None
+    source: InquirySource = InquirySource.REQUIREMENT
+    requirement_key: Optional[str] = None
+    requirement_id: Optional[str] = None
     scope: DiscoveryScope
     topic: DiscoveryTopic
+    anchor_gap: Optional[str] = None
     objective: str
+    question_hint: str = ""
+    reason: str = ""
+    role: Optional[str] = None
     target_facets: List[str] = Field(default_factory=list)
     known_fact_ids: List[str] = Field(default_factory=list)
     activation_rule_ids: List[str] = Field(default_factory=list)
-    coverage_status: RequirementCoverageStatus
+    coverage_status: Optional[RequirementCoverageStatus] = None
     dependency_eligible: bool = True
+    uncertainty: float = Field(default=1.0, ge=0, le=1)
+    architecture_impact: float = Field(default=0.5, ge=0, le=1)
+    business_risk: float = Field(default=0.5, ge=0, le=1)
+    question_cost: float = Field(default=0.0, ge=0, le=1)
 
 
 class CandidateBlockReason(str, Enum):
+    INQUIRY_MISSING = "INQUIRY_MISSING"
     REQUIREMENT_MISSING = "REQUIREMENT_MISSING"
     WRONG_SCOPE = "WRONG_SCOPE"
     REQUIREMENT_NOT_ACTIVE = "REQUIREMENT_NOT_ACTIVE"
@@ -61,83 +70,91 @@ ELIGIBLE_COVERAGE_STATUSES = {
 }
 
 
-def _candidate_id(requirement: ActiveRequirement, target_facets: List[str]) -> str:
-    target = ",".join(target_facets) if target_facets else "__requirement__"
-    return f"{requirement.scope.value}|{requirement.id}|{target}"
+def _candidate_from_inquiry(inquiry: ProductInquiry) -> QuestionCandidate:
+    return QuestionCandidate(
+        id=f"question|{inquiry.id}",
+        inquiry_id=inquiry.id,
+        source=inquiry.source,
+        requirement_key=inquiry.requirement_key,
+        requirement_id=inquiry.requirement_id,
+        scope=inquiry.scope,
+        topic=inquiry.topic,
+        anchor_gap=inquiry.anchor_gap,
+        objective=inquiry.objective,
+        question_hint=inquiry.question_hint,
+        reason=inquiry.reason,
+        role=inquiry.role,
+        target_facets=list(inquiry.target_facets),
+        known_fact_ids=list(inquiry.known_fact_ids),
+        activation_rule_ids=list(inquiry.activation_rule_ids),
+        coverage_status=inquiry.coverage_status,
+        dependency_eligible=inquiry.dependency_eligible,
+        uncertainty=inquiry.uncertainty,
+        architecture_impact=inquiry.architecture_impact,
+        business_risk=inquiry.business_risk,
+        question_cost=inquiry.question_cost,
+    )
 
 
-def _target_facets(
-    requirement: ActiveRequirement,
-    coverage: RequirementCoverageRecord,
-) -> List[str]:
-    """Target only unresolved required facets, preserving requirement order."""
-    result = []
-    for facet in requirement.facets:
-        if not facet.required:
-            continue
-        state = coverage.facets.get(facet.id)
-        if state is None or state.state == RequirementFacetState.UNKNOWN:
-            result.append(facet.id)
-    return result
-
-
-def _known_fact_ids(coverage: RequirementCoverageRecord) -> List[str]:
-    result = list(coverage.candidate_fact_ids)
-    seen = set(result)
-    for facet in coverage.facets.values():
-        for identity in facet.fact_ids:
-            if identity not in seen:
-                seen.add(identity)
-                result.append(identity)
-    return result
-
-
-def build_question_candidates(state: AgentState) -> List[QuestionCandidate]:
-    """Build candidates only from the current dependency frontier.
-
-    This is intentionally small and deterministic. It does not decide whether a
-    candidate should ultimately be asked; the eligibility filter owns that gate.
-    """
-    if state.get("validation_candidate_blocking", False):
-        return []
-
+def _legacy_requirement_candidates(state: AgentState) -> List[QuestionCandidate]:
+    """Compatibility path for focused unit tests that call this layer directly."""
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
     store = state.get("active_requirements", {})
     coverage_state = state.get("requirement_coverage", {})
-    eligible_keys = state.get("eligible_requirement_keys", [])
-
-    candidates: List[QuestionCandidate] = []
-    for key in eligible_keys:
+    result: List[QuestionCandidate] = []
+    for key in state.get("eligible_requirement_keys", []):
         requirement = store.get(key)
         payload = coverage_state.get(key)
-        if requirement is None or payload is None:
+        if requirement is None or payload is None or requirement.scope != scope:
             continue
-        if requirement.scope != scope:
-            continue
-
         coverage = RequirementCoverageRecord.model_validate(payload)
-        target_facets = _target_facets(requirement, coverage)
-        activation_rule_ids = list(dict.fromkeys(
+        target_facets = []
+        for facet in requirement.facets:
+            if not facet.required:
+                continue
+            facet_state = coverage.facets.get(facet.id)
+            if facet_state is None or facet_state.state == RequirementFacetState.UNKNOWN:
+                target_facets.append(facet.id)
+        known = list(coverage.candidate_fact_ids)
+        for facet in coverage.facets.values():
+            for identity in facet.fact_ids:
+                if identity not in known:
+                    known.append(identity)
+        rule_ids = list(dict.fromkeys(
             source.activation_rule_id
             for source in requirement.activation_sources
             if source.activation_rule_id
         ))
-
-        candidates.append(QuestionCandidate(
-            id=_candidate_id(requirement, target_facets),
+        inquiry = ProductInquiry(
+            id=f"{scope.value}|requirement|{requirement.id}|{','.join(target_facets) or '__requirement__'}",
+            source=InquirySource.REQUIREMENT,
+            scope=scope,
+            topic=requirement.topic,
+            anchor_gap=requirement.parent_gap,
+            objective=requirement.description or requirement.label,
+            question_hint="Ask one natural product question about the unresolved requirement.",
+            reason=f"Active requirement '{requirement.label}' still needs a product decision.",
             requirement_key=key,
             requirement_id=requirement.id,
-            scope=requirement.scope,
-            topic=requirement.topic,
-            objective=requirement.description or requirement.label,
             target_facets=target_facets,
-            known_fact_ids=_known_fact_ids(coverage),
-            activation_rule_ids=activation_rule_ids,
+            known_fact_ids=known,
+            activation_rule_ids=rule_ids,
             coverage_status=coverage.status,
-            dependency_eligible=True,
-        ))
+            architecture_impact=requirement.priority_hints.architecture_impact,
+            business_risk=requirement.priority_hints.business_risk,
+        )
+        result.append(_candidate_from_inquiry(inquiry))
+    return result
 
-    return candidates
+
+def build_question_candidates(state: AgentState) -> List[QuestionCandidate]:
+    payloads = state.get("open_inquiries")
+    if payloads is None:
+        return _legacy_requirement_candidates(state)
+    return [
+        _candidate_from_inquiry(ProductInquiry.model_validate(payload))
+        for payload in payloads
+    ]
 
 
 def question_candidate_builder_node(state: AgentState) -> dict:
@@ -150,31 +167,66 @@ def question_candidate_builder_node(state: AgentState) -> dict:
 
 
 def _history_signature(entry: dict) -> tuple[str | None, tuple[str, ...]]:
-    return (
-        entry.get("requirement_key"),
-        tuple(entry.get("target_facets") or []),
-    )
+    identity = entry.get("inquiry_id") or entry.get("requirement_key")
+    return identity, tuple(entry.get("target_facets") or [])
+
+
+def _requirement_reasons(
+    state: AgentState,
+    candidate: QuestionCandidate,
+) -> List[CandidateBlockReason]:
+    reasons: List[CandidateBlockReason] = []
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    store = state.get("active_requirements", {})
+    coverage_state = state.get("requirement_coverage", {})
+    dependency_state = state.get("requirement_dependency_state", {})
+
+    if not candidate.requirement_key:
+        return [CandidateBlockReason.REQUIREMENT_MISSING]
+
+    requirement: ActiveRequirement | None = store.get(candidate.requirement_key)
+    if requirement is None:
+        return [CandidateBlockReason.REQUIREMENT_MISSING]
+
+    if requirement.scope != scope or candidate.scope != scope:
+        reasons.append(CandidateBlockReason.WRONG_SCOPE)
+    if requirement.status != RequirementStatus.ACTIVE:
+        reasons.append(CandidateBlockReason.REQUIREMENT_NOT_ACTIVE)
+
+    dependency = dependency_state.get(candidate.requirement_key)
+    if not dependency or not dependency.get("eligible"):
+        reasons.append(CandidateBlockReason.DEPENDENCY_BLOCKED)
+
+    payload = coverage_state.get(candidate.requirement_key)
+    coverage = None
+    if payload is None:
+        reasons.append(CandidateBlockReason.COVERAGE_MISSING)
+    else:
+        coverage = RequirementCoverageRecord.model_validate(payload)
+        if coverage.status not in ELIGIBLE_COVERAGE_STATUSES:
+            reasons.append(CandidateBlockReason.COVERAGE_TERMINAL)
+
+    if coverage is not None and requirement.facets:
+        unresolved = []
+        for facet in requirement.facets:
+            if not facet.required:
+                continue
+            facet_state = coverage.facets.get(facet.id)
+            if facet_state is None or facet_state.state == RequirementFacetState.UNKNOWN:
+                unresolved.append(facet.id)
+        if not unresolved or set(unresolved) != set(candidate.target_facets):
+            reasons.append(CandidateBlockReason.NO_UNRESOLVED_FACETS)
+
+    return reasons
 
 
 def filter_question_candidates(
     state: AgentState,
     candidates: List[QuestionCandidate] | None = None,
 ) -> tuple[List[QuestionCandidate], Dict[str, CandidateEligibilityDecision]]:
-    """Fail closed on lifecycle/dependency/coverage problems before ranking.
-
-    Recent repetition is intentionally exact at this stage: the same requirement
-    and same facet target cannot immediately re-enter the candidate pool. Semantic
-    similarity belongs to a later layer and must not be faked here.
-    """
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
-    store = state.get("active_requirements", {})
-    coverage_state = state.get("requirement_coverage", {})
-    dependency_state = state.get("requirement_dependency_state", {})
     history = state.get("requirement_question_history", [])
-    recent_signatures = {
-        _history_signature(entry)
-        for entry in history[-3:]
-    }
+    recent_signatures = {_history_signature(entry) for entry in history[-3:]}
 
     if candidates is None:
         candidates = [
@@ -182,46 +234,27 @@ def filter_question_candidates(
             for item in state.get("question_candidates", [])
         ]
 
+    current_inquiry_ids = {
+        ProductInquiry.model_validate(item).id
+        for item in state.get("open_inquiries", [])
+    } if state.get("open_inquiries") is not None else set()
+
     accepted: List[QuestionCandidate] = []
     decisions: Dict[str, CandidateEligibilityDecision] = {}
 
     for candidate in candidates:
         reasons: List[CandidateBlockReason] = []
-        requirement = store.get(candidate.requirement_key)
+        if candidate.scope != scope:
+            reasons.append(CandidateBlockReason.WRONG_SCOPE)
 
-        if requirement is None:
-            reasons.append(CandidateBlockReason.REQUIREMENT_MISSING)
-        else:
-            if requirement.scope != scope or candidate.scope != scope:
-                reasons.append(CandidateBlockReason.WRONG_SCOPE)
-            if requirement.status != RequirementStatus.ACTIVE:
-                reasons.append(CandidateBlockReason.REQUIREMENT_NOT_ACTIVE)
+        if current_inquiry_ids and candidate.inquiry_id not in current_inquiry_ids:
+            reasons.append(CandidateBlockReason.INQUIRY_MISSING)
 
-        dependency = dependency_state.get(candidate.requirement_key)
-        if not dependency or not dependency.get("eligible"):
-            reasons.append(CandidateBlockReason.DEPENDENCY_BLOCKED)
-
-        coverage_payload = coverage_state.get(candidate.requirement_key)
-        coverage = None
-        if coverage_payload is None:
-            reasons.append(CandidateBlockReason.COVERAGE_MISSING)
-        else:
-            coverage = RequirementCoverageRecord.model_validate(coverage_payload)
-            if coverage.status not in ELIGIBLE_COVERAGE_STATUSES:
-                reasons.append(CandidateBlockReason.COVERAGE_TERMINAL)
-
-        if requirement is not None and coverage is not None and requirement.facets:
-            unresolved = _target_facets(requirement, coverage)
-            if not unresolved:
-                reasons.append(CandidateBlockReason.NO_UNRESOLVED_FACETS)
-            elif set(candidate.target_facets) != set(unresolved):
-                # A stale candidate cannot target facets that no longer match
-                # current coverage. Treat it as not eligible rather than mutating
-                # it in place.
-                reasons.append(CandidateBlockReason.NO_UNRESOLVED_FACETS)
+        if candidate.source == InquirySource.REQUIREMENT:
+            reasons.extend(_requirement_reasons(state, candidate))
 
         signature = (
-            candidate.requirement_key,
+            candidate.inquiry_id or candidate.requirement_key,
             tuple(candidate.target_facets),
         )
         if signature in recent_signatures:
@@ -236,16 +269,15 @@ def filter_question_candidates(
         if decision.eligible:
             accepted.append(candidate)
 
-    # Avoid a permanent deadlock after an uninformative answer. Exact-target
-    # repetition is a hard filter only when another eligible requirement exists.
-    # If it is the sole blocker for the entire frontier, let prioritization apply
-    # its repetition/fatigue penalties and permit a rephrased follow-up.
+    # If repetition is the only blocker, allow a rephrased follow-up rather than
+    # deadlocking the inquiry frontier.
     if not accepted:
         for candidate in candidates:
             decision = decisions[candidate.id]
             if decision.reasons == [CandidateBlockReason.RECENTLY_ASKED_SAME_TARGET]:
-                decision = decision.model_copy(update={"eligible": True, "reasons": []})
-                decisions[candidate.id] = decision
+                decisions[candidate.id] = decision.model_copy(
+                    update={"eligible": True, "reasons": []}
+                )
                 accepted.append(candidate)
 
     return accepted, decisions
