@@ -1,3 +1,4 @@
+from agents.discovery_coverage import fact_id
 from agents.implications import infer_product_implications
 from agents.inquiries import InquirySource, identify_open_inquiries
 from agents.interview_planner import (
@@ -107,6 +108,49 @@ def test_model_frontier_advances_by_product_coherence_not_topic_exhaustion():
         state_with(actor, responsibility, goal, workflow, completion)
     )
     assert inquiries == []
+
+
+def test_incidental_cross_category_fact_does_not_skip_foundational_decision():
+    actor = fact(T.USER_ROLES, "primary_users", "customers", roles=["customer"])
+    responsibility = fact(
+        T.USER_ROLES,
+        "responsibilities",
+        "create transactions",
+        role="customer",
+        turn=2,
+    )
+    polluted_goal = fact(
+        T.USER_GOALS,
+        "primary_user_goals",
+        "Customers want to create transactions.",
+        role="customer",
+        turn=2,
+    )
+    state = state_with(actor, responsibility, polluted_goal)
+    state["fact_acquisition"] = {
+        fact_id(actor): {
+            "acquisition": "DIRECT",
+            "source_turn": 1,
+            "active_topic": T.USER_ROLES.value,
+            "active_gap": "primary_users",
+        },
+        fact_id(responsibility): {
+            "acquisition": "DIRECT",
+            "source_turn": 2,
+            "active_topic": T.USER_ROLES.value,
+            "active_gap": "responsibilities::customer",
+        },
+        fact_id(polluted_goal): {
+            "acquisition": "INCIDENTAL",
+            "source_turn": 2,
+            "active_topic": T.USER_ROLES.value,
+            "active_gap": "responsibilities::customer",
+        },
+    }
+
+    inquiries = identify_open_inquiries(state)
+
+    assert {item.anchor_gap for item in inquiries} == {"primary_user_goals::customer"}
 
 
 def test_negative_role_transition_policy_does_not_activate_transition_depth():
