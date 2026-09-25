@@ -68,8 +68,9 @@ def category_contradiction(
         explicit_boundary = re.search(
             r"\b(?:only|cannot|can't|must\s+not|forbidden|restricted|restriction|"
             r"authorized|authorization|exclusive|exclusively|unless|except|"
-            r"not\s+allowed|allowed\s+only|permission|required\s+permission|"
-            r"access\s+(?:only|limited|restricted|to)|may\s+not)\b",
+            r"not\s+allowed|allowed\s+only|allowed\s+to|permitted\s+to|"
+            r"permission|required\s+permission|access\s+(?:only|limited|restricted|to)|"
+            r"may\s+not)\b",
             evidence,
             re.I,
         )
@@ -108,8 +109,10 @@ def category_contradiction(
             return "A desired future outcome is not an established workflow end state"
 
     if key == "validation_rules" and not direct_answer and not re.search(
-        r"\b(?:valid|invalid|validate|validation|must\s+(?:be|match|contain|provide)|"
-        r"required|required\s+field|rejected?\s+(?:if|when)|format|fails?\s+validation)\b",
+        r"\b(?:valid|invalid|validate|validation|must\s+(?:match|contain|provide)|"
+        r"required\s+(?:field|value|input|data|document|information)|"
+        r"(?:field|value|input|data|document|information)\s+is\s+required|"
+        r"rejected?\s+(?:if|when)|format|fails?\s+validation)\b",
         evidence,
         re.I,
     ):
@@ -118,7 +121,7 @@ def category_contradiction(
     if key == "eligibility_rules" and not direct_answer and not re.search(
         r"\b(?:eligible|eligibility|qualified|qualification|licensed|verified|"
         r"prerequisite|must\s+be\s+(?:a|an|verified|licensed|qualified)|"
-        r"only\s+.+\s+(?:can|may|are\s+allowed\s+to))\b",
+        r"eligible\s+to|qualif(?:y|ies)\s+to)\b",
         evidence,
         re.I,
     ):
@@ -126,7 +129,8 @@ def category_contradiction(
 
     if key == "limits" and not direct_answer and not re.search(
         r"\b(?:limit|limited|maximum|minimum|max|min|at\s+most|at\s+least|"
-        r"no\s+more\s+than|no\s+less\s+than|up\s+to|cap|capped)\b|\b\d+\b",
+        r"no\s+more\s+than|no\s+less\s+than|up\s+to|cap|capped|"
+        r"cannot\s+exceed|must\s+not\s+exceed|above\s+\d+|below\s+\d+)\b",
         evidence,
         re.I,
     ):
@@ -142,8 +146,8 @@ def category_contradiction(
 
     if key == "approval_rules" and not direct_answer and not re.search(
         r"\b(?:approv(?:e|es|ed|ing|al|als)|review(?:s|ed|ing)?|"
-        r"authoriz(?:e|es|ed|ing|ation)|consent(?:s|ed|ing)?|"
-        r"agree(?:s|d|ment|ments)?|accept(?:s|ed|ance)?|sign[ -]?off)\b",
+        r"authoriz(?:e|es|ed|ing|ation)|consent(?:s|ed|ing)?|sign[ -]?off|"
+        r"requires?\s+(?:acceptance|approval|review|authorization|consent))\b",
         evidence,
         re.I,
     ):
@@ -151,7 +155,7 @@ def category_contradiction(
 
     if key == "ownership_rules" and not direct_answer and not re.search(
         r"\b(?:own(?:s|ed|ership)?|belongs?\s+to|control(?:s|led)?|assigned\s+to|"
-        r"responsible\s+for\s+the\s+record|their\s+own)\b",
+        r"responsible\s+for\s+the\s+record)\b",
         evidence,
         re.I,
     ):
