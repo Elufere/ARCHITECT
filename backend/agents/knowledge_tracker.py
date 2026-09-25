@@ -545,6 +545,41 @@ def _existing_actor_sets(state: AgentState, scope: DiscoveryScope) -> tuple[set[
     return primary, secondary
 
 
+def _canonical_claim_role(role: str | None, state: AgentState, scope: DiscoveryScope) -> str | None:
+    if not role:
+        return role
+    normalized = canonical_role(role)
+    for item in state.get("discovered_knowledge", []):
+        if (
+            item.scope != scope
+            or item.key not in ("primary_users", "secondary_users")
+            or item.absence
+            or item.knowledge_state != KnowledgeState.CONFIRMED
+        ):
+            continue
+        for canonical in item.roles or []:
+            canonical_id = canonical_role(canonical)
+            if normalized == canonical_id:
+                return canonical_id
+            aliases = (item.aliases or {}).get(canonical, [])
+            aliases += (item.aliases or {}).get(canonical_id, [])
+            if normalized in {canonical_role(alias) for alias in aliases}:
+                return canonical_id
+    return normalized
+
+
+def _explicit_other_surface(evidence: str, scope: DiscoveryScope) -> bool:
+    text = evidence.lower()
+    current = scope.value.lower()
+    if f"outside {current}" in text or f"outside the {current.replace('_', ' ')}" in text:
+        return True
+    return bool(re.search(
+        r"\b(?:separate\s+back[- ]office\s+tool|internal\s+operations\s+tool|"
+        r"external\s+system|offline\s+process|third[- ]party\s+platform)\b",
+        text,
+    ))
+
+
 def _admit_claim_item(
     claim: NeutralClaim,
     state: AgentState,
@@ -552,6 +587,17 @@ def _admit_claim_item(
     primary_roles: set[str],
     secondary_roles: set[str],
 ) -> KnowledgeItem | None:
+    resolved_role = _canonical_claim_role(claim.role, state, scope)
+    claim = claim.model_copy(update={"role": resolved_role})
+
+    if (
+        claim.kind in ("primary_actor", "secondary_actor")
+        and claim.knowledge_state == KnowledgeState.CONFIRMED
+        and not claim.absence
+        and _explicit_other_surface(claim.evidence, scope)
+    ):
+        raise ValueError("Explicit other-surface participant cannot become a current-scope actor")
+
     converted = claim_to_fact(
         claim,
         primary_roles=primary_roles,
