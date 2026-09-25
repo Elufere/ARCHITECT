@@ -89,6 +89,7 @@ def load_checkpoint(session_id):
         key: ActiveRequirement.model_validate(item)
         for key, item in state.get("active_requirements", {}).items()
     }
+    state.setdefault("model_implications", [])
     state.setdefault("requirement_coverage", {})
     state.setdefault("requirement_dependency_state", {})
     state.setdefault("eligible_requirement_keys", [])
@@ -98,7 +99,9 @@ def load_checkpoint(session_id):
     state.setdefault("ranked_question_candidates", [])
     state.setdefault("question_candidate_priority", {})
     state.setdefault("requirement_question_history", [])
-    state.setdefault("planner_source", "schema")
+    state.setdefault("open_inquiries", [])
+    state.setdefault("selected_inquiry", None)
+    state.setdefault("planner_source", "model")
     state.setdefault("selected_requirement_candidate", None)
     state.setdefault("selected_requirement_priority", None)
     state.setdefault("validation_issues", [])
