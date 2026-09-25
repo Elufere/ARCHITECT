@@ -105,6 +105,9 @@ def test_coherent_topic_is_not_completed_while_schema_gaps_remain():
             KnowledgeItem(topic=DiscoveryTopic.USER_ROLES, scope=DiscoveryScope.USER_APP,
                           key="responsibilities", value="guests buy packages", evidence="guests buy packages",
                           role="guests", confidence=1.0),
+            KnowledgeItem(topic=DiscoveryTopic.USER_ROLES, scope=DiscoveryScope.USER_APP,
+                          key="secondary_users", value="none", evidence="There are no secondary users.",
+                          roles=[], absence="none", confidence=1.0),
         ],
         "topic_status": {DiscoveryTopic.USER_ROLES: "PARTIAL"},
         "topic_maturity": {},
@@ -113,7 +116,7 @@ def test_coherent_topic_is_not_completed_while_schema_gaps_remain():
     state["gap_coverage"] = coverage_for_facts(state, DiscoveryTopic.USER_ROLES)
     result = interview_planner_node(state)
     assert result["current_topic"] == DiscoveryTopic.USER_ROLES
-    assert result["current_gap"] == "permissions::guests"
+    assert result["current_gap"] == "permissions::hosts"
 
 
 def test_negative_phrase_marks_the_current_gap_known(monkeypatch):
@@ -184,6 +187,9 @@ def test_permission_remains_a_gap_after_abstract_responsibility():
                           key="primary_users", value="buyer", evidence="buyer",
                           roles=["buyer"], confidence=1.0),
             role_fact("responsibilities", "The buyer is responsible for completing the purchase.", "buyer"),
+            KnowledgeItem(topic=DiscoveryTopic.USER_ROLES, scope=DiscoveryScope.USER_APP,
+                          key="secondary_users", value="none", evidence="There are no secondary users.",
+                          roles=[], absence="none", confidence=1.0),
         ],
     }
     state["gap_coverage"] = coverage_for_facts(state, DiscoveryTopic.USER_ROLES)
