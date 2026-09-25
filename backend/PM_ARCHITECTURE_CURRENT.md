@@ -156,3 +156,59 @@ The following are code-review observations and should not be mistaken for comple
 - The same model family proposes facts and judges their grounding, so an audit is a second check, not independent proof of correctness. Recent logs also show unsupported categories, malformed rule keys, and incorrect grounding decisions beyond the specific repaired cases.
 
 Recent verification: 238 targeted deterministic regression tests passed. A live local-model replay of the exact multiple_roles question followed by “no” produced a transaction-specific negative policy and passed grounding. Captured live extraction of the escrow responsibilities answer produced two customer-owned facts; a live focused grounding check accepted both and advanced the planner to permissions::customer. The original reported responsibility rejection was not reproduced: the captured subset also passed a baseline mixed audit. Fault-injection regressions verify that unrelated malformed audit output cannot discard the direct answer, without granting unsupported facts automatic acceptance. This does not establish that a complete multi-phase interview and PRD compilation succeed end to end.
+
+
+9. End-to-end discovery integration gate (Fix 11)
+
+Fix 11 is deliberately a hardening layer rather than a new reasoning mechanism. The integration suite exercises the current reasoning pipeline as one system:
+
+```text
+grounded facts
+    -> requirement activation
+    -> requirement facet coverage
+    -> dependency resolution
+    -> consistency validation
+    -> candidate construction
+    -> eligibility filtering
+    -> deterministic prioritization
+    -> planner
+    -> generator
+    -> guardrail
+    -> next user turn
+```
+
+The integration tests live in:
+- `backend/tests/test_e2e_discovery_scenarios.py`
+- `backend/tests/test_e2e_full_graph_interview.py`
+- `backend/tests/test_discovery_invariants.py`
+- `backend/tests/discovery_invariant_utils.py`
+
+The scenario suite covers:
+- a simple product that should remain on the static schema path,
+- an external dependency activating an exception requirement,
+- a time-bound appointment lifecycle that remains gated until EDGE_CASES prerequisites mature,
+- mutable/removable marketplace state activating competing lifecycle requirements and deterministic prioritization,
+- a contradictory business rule blocking candidates, routing through clarification, superseding the stale fact, and healing the reasoning graph,
+- checkpoint save/load preserving ranked candidates and selected requirement state,
+- a two-turn compiled LangGraph interview that moves from additional-user discovery to responsibilities and then permissions while lifecycle implications remain live.
+
+The invariant checker asserts system-wide properties that individual node tests cannot prove:
+- superseded facts are not active knowledge,
+- activation provenance references live facts,
+- requirement coverage never references missing facts,
+- ACTIVE/RESOLVED requirement state agrees with coverage,
+- eligible/ranked candidates reference ACTIVE requirements,
+- candidates cannot bypass unresolved dependencies,
+- consistency-blocked states cannot retain ranked candidates.
+
+Negative invariant tests intentionally construct impossible states so failures are observable rather than silently accepted.
+
+The regression baseline immediately before Fix 11 was:
+```text
+750 passed
+112 skipped
+0 failed
+0 errors
+```
+
+Fix 11 must be run on top of that baseline before the stacked architecture is merged. A green unit/regression suite plus the Fix 11 integration scenarios is the merge gate; additional reasoning features should not be added until both remain green.
