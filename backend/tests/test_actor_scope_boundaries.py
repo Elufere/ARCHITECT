@@ -166,3 +166,60 @@ def test_live_cross_surface_approval_is_process_knowledge():
     assert not any(item.roles for item in accepted)
     assert any(item.key in ("downstream_dependency", "approval_rules") for item in accepted)
     assert all(item.scope == S.USER_APP and item.evidence in text for item in accepted)
+
+
+def test_existing_actor_is_not_redeclared_from_non_identity_rule(monkeypatch):
+    text = (
+        "Before the escrow is funded, either customer can propose changes to the "
+        "transaction terms, but the other party has to accept those changes."
+    )
+    existing = actor("customer", S.USER_APP, "Customers use USER_APP.").model_copy(
+        update={"key": "primary_users"}
+    )
+    models(monkeypatch, {"ACTOR": [dict(
+        key="primary_users", roles=["customer"], aliases=[],
+        value=text, evidence=text, confidence=1,
+    )]})
+    initial = state(text, existing=[existing])
+    initial.update(current_topic=T.BUSINESS_RULES, current_gap="ownership_rules")
+
+    extracted = tracker.extract_passes(text, initial, S.USER_APP)
+
+    assert not any(item.key in ("primary_users", "secondary_users") for item in extracted)
+
+
+def test_existing_actor_alias_only_capability_is_not_identity_evidence(monkeypatch):
+    text = "A buyer can fund the escrow and confirm completion."
+    existing = actor("customer", S.USER_APP, "Customers use USER_APP.").model_copy(
+        update={"key": "primary_users"}
+    )
+    models(monkeypatch, {"ACTOR": [dict(
+        key="primary_users", roles=["customer"], aliases=["buyer"],
+        value=text, evidence=text, confidence=1,
+    )]})
+    initial = state(text, existing=[existing])
+    initial.update(current_topic=T.USER_ROLES, current_gap="permissions::customer")
+
+    extracted = tracker.extract_passes(text, initial, S.USER_APP)
+
+    assert not any(item.key in ("primary_users", "secondary_users") for item in extracted)
+
+
+def test_explicit_existing_actor_alias_relationship_remains_admissible(monkeypatch):
+    text = "A customer can act as a buyer in one transaction."
+    existing = actor("customer", S.USER_APP, "Customers use USER_APP.").model_copy(
+        update={"key": "primary_users"}
+    )
+    models(monkeypatch, {"ACTOR": [dict(
+        key="primary_users", roles=["customer"], aliases=["buyer"],
+        value=text, evidence=text, confidence=1,
+    )]})
+    initial = state(text, existing=[existing])
+    initial.update(current_topic=T.BUSINESS_RULES, current_gap="ownership_rules")
+
+    extracted = tracker.extract_passes(text, initial, S.USER_APP)
+
+    actors = [item for item in extracted if item.key == "primary_users"]
+    assert len(actors) == 1
+    assert actors[0].roles == ["customer"]
+    assert actors[0].aliases == {"customer": ["buyer"]}
