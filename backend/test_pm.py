@@ -74,7 +74,7 @@ def new_session():
     state = AgentState(session_id=str(uuid4()), messages=[HumanMessage(content=idea, id=str(uuid4()))],
         raw_idea=idea, prd_contract=None, pm_is_complete=False,
         discovery_scope=DiscoveryScope.USER_APP, turn_count=0, awaiting_confirmation=False,
-        discovered_knowledge=[], superseded_knowledge=[], active_requirements={}, requirement_coverage={}, requirement_dependency_state={}, eligible_requirement_keys=[], question_candidates=[], eligible_question_candidates=[], question_candidate_eligibility={}, ranked_question_candidates=[], question_candidate_priority={}, requirement_question_history=[], topic_status={}, topic_maturity={}, product_model={},
+        discovered_knowledge=[], superseded_knowledge=[], active_requirements={}, requirement_coverage={}, requirement_dependency_state={}, eligible_requirement_keys=[], question_candidates=[], eligible_question_candidates=[], question_candidate_eligibility={}, ranked_question_candidates=[], question_candidate_priority={}, requirement_question_history=[], planner_source="schema", selected_requirement_candidate=None, selected_requirement_priority=None, topic_status={}, topic_maturity={}, product_model={},
         gap_coverage={}, fact_acquisition={}, asked_gap=None, active_answer_result=None,
         checkpoint_cursor="conversation_manager", interview_status="PROCESSING_ANSWER", extraction_status="PENDING",
         current_topic=None, current_gap=None, current_objective=None, question_hint=None,
@@ -101,7 +101,8 @@ def run_session(state):
                          interview_status="ACTIVE", answer_followup=None,
                          requirement_coverage={}, requirement_dependency_state={}, eligible_requirement_keys=[],
                          question_candidates=[], eligible_question_candidates=[], question_candidate_eligibility={},
-                         ranked_question_candidates=[], question_candidate_priority={}, requirement_question_history=[])
+                         ranked_question_candidates=[], question_candidate_priority={}, requirement_question_history=[],
+                         planner_source="schema", selected_requirement_candidate=None, selected_requirement_priority=None)
             state["product_model"] = build_product_model(state["discovered_knowledge"], DiscoveryScope.ADMIN_DASHBOARD)
             save_checkpoint(state)
             state = run_phase(graph, state, "ADMIN_DASHBOARD DISCOVERY")
