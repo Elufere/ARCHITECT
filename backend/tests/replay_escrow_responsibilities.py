@@ -17,6 +17,7 @@ from agents.interview_planner import interview_planner_node
 from agents.question_generator import question_generator_node
 from agents.guardrails import guardrail_node
 from agents.state import DiscoveryTopic as T, DiscoveryScope as S, KnowledgeItem
+from coverage_test_utils import coverage_for_facts
 
 QUESTION = "Can you describe the significant actions or capabilities that a customer, whether they are a buyer or a seller, performs or manages within the app during a transaction?"
 ANSWER = (
@@ -28,7 +29,7 @@ NO_OTHERS = "there are no ther users beside customers"
 
 
 def initial_state():
-    return dict(messages=[HumanMessage(content="I want to create an escrow app"),
+    state = dict(messages=[HumanMessage(content="I want to create an escrow app"),
         AIMessage(content="Who are the primary users of the escrow app?"), HumanMessage(content=ACTORS),
         AIMessage(content="Besides customers, will anyone else use the user app?"), HumanMessage(content=NO_OTHERS),
         AIMessage(content=QUESTION), HumanMessage(content=ANSWER)],
@@ -40,6 +41,20 @@ def initial_state():
                           absence="none", evidence=NO_OTHERS, confidence=1, source_turn=2)],
         topic_status={T.USER_ROLES: "PARTIAL"}, topic_maturity={}, turn_count=3,
         awaiting_confirmation=False, pm_is_complete=False)
+    state["gap_coverage"] = coverage_for_facts(state, T.USER_ROLES)
+    # Only the already-asked actor fields are deliberate prior coverage; the
+    # responsibilities answer below must still be committed by the planner.
+    state["gap_coverage"] = {
+        key: value for key, value in state["gap_coverage"].items()
+        if key.endswith("|primary_users") or key.endswith("|secondary_users")
+    }
+    state["asked_gap"] = dict(
+        scope=S.USER_APP.value,
+        topic=T.USER_ROLES.value,
+        gap="responsibilities::customer",
+        question=QUESTION,
+    )
+    return state
 
 
 def run():
