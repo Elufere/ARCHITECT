@@ -3,7 +3,7 @@ from agents.role_utils import role_identity, roles_match, split_role_labels
 from agents.discovery_coverage import coverage_key, gap_resolved, facts_for_gap, fact_id, active_question_matches
 from agents.question_candidates import QuestionCandidate
 from agents.requirements import RequirementStatus
-from agents.consistency_validation import DiscoveryValidationIssue, ValidationResolution
+from agents.consistency_validation import DiscoveryValidationIssue, ValidationIssueKind, ValidationResolution
 
 # Topic ordering
 TOPIC_PREREQUISITES = {
@@ -620,6 +620,7 @@ def interview_planner_node(state: AgentState) -> dict:
         issue for issue in validation_issues
         if issue.severity.value == "BLOCKING"
         and issue.resolution != ValidationResolution.USER_CLARIFICATION
+        and issue.kind != ValidationIssueKind.RESOLVED_REQUIREMENT_BLOCKED
     ]
     if structural:
         details = "; ".join(f"{issue.kind.value}: {issue.message}" for issue in structural)
@@ -786,6 +787,15 @@ def interview_planner_node(state: AgentState) -> dict:
         raise RuntimeError(
             "Discovery has unresolved active requirements but none are currently askable: "
             + ", ".join(blocked)
+        )
+    if not consistency_resolved(state):
+        details = "; ".join(
+            f"{issue.kind.value}: {issue.message}"
+            for issue in validation_issues
+            if issue.severity.value == "BLOCKING"
+        )
+        raise RuntimeError(
+            "Discovery consistency is still unresolved; compilation is blocked: " + details
         )
     return {
         **common,
