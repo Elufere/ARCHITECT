@@ -129,13 +129,19 @@ def _fact_owner(item: KnowledgeItem) -> tuple:
 
 
 def _same_semantic_bucket(first: KnowledgeItem, second: KnowledgeItem) -> bool:
-    return (
+    if not (
         first.scope == second.scope
         and first.topic == second.topic
         and first.key == second.key
-        and _fact_owner(first) == _fact_owner(second)
         and first.knowledge_state == second.knowledge_state == KnowledgeState.CONFIRMED
-    )
+    ):
+        return False
+    if first.topic == DiscoveryTopic.USER_ROLES and first.key in {"primary_users", "secondary_users"}:
+        # Actor declarations are field-level membership assertions. Different
+        # role lists may be compatible additions or incompatible exclusivity
+        # claims; let the conservative semantic reviewer decide.
+        return True
+    return _fact_owner(first) == _fact_owner(second)
 
 
 def _configured_cross_field_pair(first: KnowledgeItem, second: KnowledgeItem) -> bool:
