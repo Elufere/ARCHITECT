@@ -142,16 +142,15 @@ def question_generator_node(state: AgentState) -> dict:
         return {"messages": [SystemMessage(content="I need to understand your product better. Could you start by telling me who the primary users will be?")]}
 
     followup = state.get("answer_followup")
-    if (planner_source == "schema"
-            and followup and followup["gap"] == current_gap and followup["scope"] == discovery_scope
+    if (followup and followup["gap"] == current_gap and followup["scope"] == discovery_scope
             and not state.get("question_retry_count", 0)):
         return {"messages": [AIMessage(content=followup["question"])]}
 
     # This question needs the complete actor list, not another model decision.
     # Reuse the same wording for clarification so a following "No" still answers
     # whether ANY other users exist, rather than denying one suggested example.
-    if (planner_source == "schema"
-            and current_gap == "secondary_users"
+    if (current_gap == "secondary_users"
+            and not current_objective
             and discovery_move not in ("confirm_inference", "confirm_existing")
             and not state.get("question_retry_count", 0)):
         return {"messages": [additional_actors_question(state)]}
