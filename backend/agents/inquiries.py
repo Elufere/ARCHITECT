@@ -387,10 +387,40 @@ def _validation_inquiry(state: AgentState) -> Optional[ProductInquiry]:
     )
 
 
+def _pending_answer_followup_inquiry(state: AgentState) -> Optional[ProductInquiry]:
+    followup = state.get("answer_followup") or {}
+    if not followup:
+        return None
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    followup_scope = followup.get("scope")
+    if getattr(followup_scope, "value", followup_scope) != scope.value:
+        return None
+    gap = followup.get("gap")
+    if gap != "secondary_users":
+        return None
+    return ProductInquiry(
+        id=f"{scope.value}|model.pending_secondary_actor_names",
+        source=InquirySource.MODEL,
+        scope=scope,
+        topic=DiscoveryTopic.USER_ROLES,
+        anchor_gap="secondary_users",
+        objective="Identify the additional participants the founder just confirmed exist.",
+        question_hint="Ask who those additional participants are and what they do.",
+        reason="The founder confirmed additional participants exist, but has not named them yet.",
+        uncertainty=1.0,
+        architecture_impact=0.9,
+        business_risk=0.7,
+    )
+
+
 def identify_open_inquiries(state: AgentState) -> list[ProductInquiry]:
     validation = _validation_inquiry(state)
     if validation is not None:
         return [validation]
+
+    pending = _pending_answer_followup_inquiry(state)
+    if pending is not None:
+        return [pending]
 
     inquiries = [
         *_model_inquiries(state),
