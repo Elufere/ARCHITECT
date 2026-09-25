@@ -18,7 +18,7 @@ from agents.requirements import ActiveRequirement
 from agents.state import DiscoveryScope, DiscoveryTopic, KnowledgeItem, TopicMaturity, TopicStatus
 
 
-CURSORS = {"conversation_manager", "extract", "activate_requirements", "plan", "generate", "guardrail", "compile_prd",
+CURSORS = {"conversation_manager", "extract", "activate_requirements", "resolve_requirements", "plan", "generate", "guardrail", "compile_prd",
            "waiting", "phase_complete", "completed"}
 
 
@@ -89,6 +89,8 @@ def load_checkpoint(session_id):
         key: ActiveRequirement.model_validate(item)
         for key, item in state.get("active_requirements", {}).items()
     }
+    state.setdefault("requirement_dependency_state", {})
+    state.setdefault("eligible_requirement_keys", [])
     if state.get("prd_contract"):
         state["prd_contract"] = PRDContract.model_validate(state["prd_contract"])
     if (state.get("answer_followup") or {}).get("scope"):
@@ -146,7 +148,7 @@ def durable_node(name, node, next_node):
             merged["messages"] = add_messages(deepcopy(state.get("messages", [])), update["messages"])
         cursor = next_node(merged)
         status = {"conversation_manager": "PROCESSING_ANSWER", "extract": "PROCESSING_ANSWER",
-                  "activate_requirements": "PROCESSING_REQUIREMENTS", "plan": "ACTIVE", "generate": "GENERATING_QUESTION", "guardrail": "VALIDATING_QUESTION",
+                  "activate_requirements": "PROCESSING_REQUIREMENTS", "resolve_requirements": "RESOLVING_REQUIREMENTS", "plan": "ACTIVE", "generate": "GENERATING_QUESTION", "guardrail": "VALIDATING_QUESTION",
                   "compile_prd": "COMPILING_PRD", "waiting": "WAITING_FOR_USER",
                   "phase_complete": "AWAITING_PHASE_CHOICE", "completed": "COMPLETED"}[cursor]
         metadata = dict(checkpoint_cursor=cursor, interview_status=status)
