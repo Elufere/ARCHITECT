@@ -7,6 +7,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from agents import knowledge_tracker as tracker
 from agents.semantic_validation import GroundingResult
+from agents.discovery_coverage import GapConfirmation
 from agents.state import DiscoveryScope as S, DiscoveryTopic as T, KnowledgeItem, KnowledgeState as K, TopicStatus
 
 
@@ -44,6 +45,12 @@ def setup(monkeypatch, items, allowed=False, failure=False):
     calls = []
 
     def decide(name, schema, instruction, payload):
+        if name == "GAP_CONFIRMATION":
+            return GapConfirmation(
+                confirmed=True,
+                evidence=payload["latest_response"],
+                confidence=1,
+            )
         assert name == "GROUNDING"
         assert "Review replacement of a confirmed whole-field absence" in instruction
         assert "Business-process participation alone" in instruction
@@ -187,7 +194,9 @@ def test_inference_confirmation_cannot_bypass_replacement_review(monkeypatch, al
     initial["messages"] = [AIMessage(content=question), HumanMessage(content="Yes.")]
     initial["discovered_knowledge"].append(participant("vendor", "Vendors may use the app", knowledge_state=K.INFERRED))
     initial.update(conversation_intent="confirmation", next_discovery_move="confirm_inference",
-                   current_gap="secondary_users")
+                   current_gap="secondary_users",
+                   asked_gap=dict(scope=S.USER_APP.value, topic=T.USER_ROLES.value,
+                                  gap="secondary_users", question=question))
     calls = setup(monkeypatch, [], allowed=allowed)
     result = tracker.knowledge_tracker_node(initial)
     assert len(calls) == 1 and calls[0]["question"] == question
