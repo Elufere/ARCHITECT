@@ -432,15 +432,19 @@ def build_gap_info(state: AgentState, topic: DiscoveryTopic):
 
 
 def _requirement_topic_unlocked(
+    state: AgentState,
     candidate: QuestionCandidate,
     topic_maturity: dict,
 ) -> bool:
     prerequisites = TOPIC_PREREQUISITES.get(candidate.topic, [])
-    return all(
-        topic_maturity.get(dep, TopicMaturity.UNSEEN)
-        in {TopicMaturity.COHERENT, TopicMaturity.DECISION_READY}
-        for dep in prerequisites
-    )
+    for dep in prerequisites:
+        maturity = topic_maturity.get(dep)
+        if maturity is None:
+            maturity = assess_topic_maturity(state, dep)
+            topic_maturity[dep] = maturity
+        if maturity not in {TopicMaturity.COHERENT, TopicMaturity.DECISION_READY}:
+            return False
+    return True
 
 
 def _requirement_context(state: AgentState, candidate: QuestionCandidate) -> list[str]:
@@ -551,7 +555,7 @@ def interview_planner_node(state: AgentState) -> dict:
     ]
     askable_ranked = [
         candidate for candidate in ranked
-        if _requirement_topic_unlocked(candidate, topic_maturity)
+        if _requirement_topic_unlocked(state, candidate, topic_maturity)
     ]
     if askable_ranked:
         selected = askable_ranked[0]
