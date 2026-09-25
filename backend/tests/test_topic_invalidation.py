@@ -6,6 +6,7 @@ from langchain_core.messages import HumanMessage
 
 from agents import knowledge_tracker as tracker
 from agents.interview_planner import build_gap_info, interview_planner_node
+from coverage_test_utils import coverage_for_facts
 from agents.state import (
     DiscoveryScope as S, DiscoveryTopic as T, KnowledgeItem, KnowledgeState as K,
     TopicStatus as Status, TopicMaturity,
@@ -39,6 +40,7 @@ def completed_state():
                    topic_status={T.USER_ROLES: Status.COMPLETED, T.USER_GOALS: Status.COMPLETED},
                    topic_maturity={T.USER_ROLES: TopicMaturity.DECISION_READY,
                                    T.USER_GOALS: TopicMaturity.DECISION_READY}, turn_count=3)
+    initial["gap_coverage"] = coverage_for_facts(initial, T.USER_ROLES, T.USER_GOALS)
     assert not build_gap_info(initial, T.USER_ROLES)["missing_keys"]
     assert not build_gap_info(initial, T.USER_GOALS)["missing_keys"]
     return initial
