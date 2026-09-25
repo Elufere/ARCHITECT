@@ -135,7 +135,7 @@ def test_external_dependency_flows_from_fact_to_ranked_requirement_to_planner():
     key = requirement_store_key(S.USER_APP, "workflow.external_dependency_failure")
     requirement = result["active_requirements"][key]
     assert requirement.status == RequirementStatus.ACTIVE
-    assert requirement.activation_sources[0].fact_ids == [fact_id(dependency)]
+    assert requirement.activation_sources[0].evidence_ref == fact_id(dependency)
     assert result["eligible_requirement_keys"] == [key]
     assert result["ranked_question_candidates"][0]["requirement_key"] == key
     assert result["planner_source"] == "requirement"
