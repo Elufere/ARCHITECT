@@ -964,9 +964,19 @@ def knowledge_tracker_node(state: AgentState) -> dict:
             answer_followup = dict(gap=current_gap, scope=current_scope, question=followup)
     else:
         extracted_items = extract_passes(user_response, state, current_scope)
-        # Never reinterpret historical denials as this turn's answer.
+        # Never reinterpret historical denials as this turn's answer. A directly
+        # admitted positive claim already resolves the active inquiry, so do not
+        # spend another model call asking whether the same answer means absence.
         absence = None
-        if not recovering_prior_answer and not confirmed_prior_answer:
+        direct_claim_answer = bool(
+            current_topic
+            and current_gap
+            and any(
+                item.topic == current_topic and item_directly_answers_gap(item, current_gap)
+                for item in extracted_items
+            )
+        )
+        if not recovering_prior_answer and not confirmed_prior_answer and not direct_claim_answer:
             absence = extract_gap_absence(user_response, state, current_scope)
             if absence:
                 extracted_items.append(absence)
