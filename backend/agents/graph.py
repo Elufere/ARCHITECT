@@ -9,10 +9,12 @@ from agents.interview_checkpoint import durable_node
 # Import the new micro-graph nodes
 from agents.knowledge_tracker import knowledge_tracker_node
 from agents.validation_resolution import validation_resolution_node
+from agents.implications import product_implication_node
 from agents.requirement_activation import requirement_activation_node
 from agents.requirement_coverage import requirement_coverage_node
 from agents.requirement_dependencies import requirement_dependency_node
 from agents.consistency_validation import consistency_validation_node
+from agents.inquiries import inquiry_identification_node
 from agents.question_candidates import question_candidate_builder_node, question_candidate_filter_node
 from agents.question_priority import question_candidate_priority_node
 from agents.conversation_manager import conversation_manager_node
@@ -77,11 +79,13 @@ def build_graph() -> StateGraph:
     workflow.add_node("conversation_manager", durable_node("conversation_manager", conversation_manager_node,
         lambda state: "waiting" if route_after_conversation_manager(state) == END else route_after_conversation_manager(state)))
     workflow.add_node("extract", durable_node("extract", knowledge_tracker_node, lambda _: "resolve_validation_answer"))
-    workflow.add_node("resolve_validation_answer", durable_node("resolve_validation_answer", validation_resolution_node, lambda _: "activate_requirements"))
+    workflow.add_node("resolve_validation_answer", durable_node("resolve_validation_answer", validation_resolution_node, lambda _: "infer_implications"))
+    workflow.add_node("infer_implications", durable_node("infer_implications", product_implication_node, lambda _: "activate_requirements"))
     workflow.add_node("activate_requirements", durable_node("activate_requirements", requirement_activation_node, lambda _: "cover_requirements"))
     workflow.add_node("cover_requirements", durable_node("cover_requirements", requirement_coverage_node, lambda _: "resolve_requirements"))
     workflow.add_node("resolve_requirements", durable_node("resolve_requirements", requirement_dependency_node, lambda _: "validate_consistency"))
-    workflow.add_node("validate_consistency", durable_node("validate_consistency", consistency_validation_node, lambda _: "build_candidates"))
+    workflow.add_node("validate_consistency", durable_node("validate_consistency", consistency_validation_node, lambda _: "identify_inquiries"))
+    workflow.add_node("identify_inquiries", durable_node("identify_inquiries", inquiry_identification_node, lambda _: "build_candidates"))
     workflow.add_node("build_candidates", durable_node("build_candidates", question_candidate_builder_node, lambda _: "filter_candidates"))
     workflow.add_node("filter_candidates", durable_node("filter_candidates", question_candidate_filter_node, lambda _: "prioritize_candidates"))
     workflow.add_node("prioritize_candidates", durable_node("prioritize_candidates", question_candidate_priority_node, lambda _: "plan"))
@@ -91,7 +95,7 @@ def build_graph() -> StateGraph:
         lambda state: "waiting" if route_after_guardrail(state) == END else "generate"))
     def compile_when_covered(state):
         if not all_discovery_resolved(state):
-            raise RuntimeError("PRD compilation blocked: schema or active-requirement coverage is incomplete")
+            raise RuntimeError("PRD compilation blocked: material product inquiries or active requirements remain unresolved")
         return pm_compile_node(state)
     workflow.add_node("compile_prd", durable_node("compile_prd", compile_when_covered,
         lambda state: ("phase_complete" if state["discovery_scope"] == DiscoveryScope.USER_APP else "completed")
@@ -104,20 +108,22 @@ def build_graph() -> StateGraph:
             return "conversation_manager"
         return END if cursor in ("waiting", "phase_complete", "completed") else cursor
     workflow.add_conditional_edges(START, resume_at, {
-        name: name for name in ("conversation_manager", "extract", "resolve_validation_answer", "activate_requirements", "cover_requirements", "resolve_requirements", "validate_consistency", "build_candidates", "filter_candidates", "prioritize_candidates", "plan", "generate", "guardrail", "compile_prd", END)})
+        name: name for name in ("conversation_manager", "extract", "resolve_validation_answer", "infer_implications", "activate_requirements", "cover_requirements", "resolve_requirements", "validate_consistency", "identify_inquiries", "build_candidates", "filter_candidates", "prioritize_candidates", "plan", "generate", "guardrail", "compile_prd", END)})
     workflow.add_conditional_edges(
         "conversation_manager",
         route_after_conversation_manager,
         {"extract": "extract", "plan": "plan", END: END},
     )
 
-    # 3. Extract -> Requirement activation -> Coverage -> Dependencies -> Candidate filtering/ranking -> Plan
+    # 3. Evidence -> model implications -> requirements -> inquiries -> candidate ranking -> plan
     workflow.add_edge("extract", "resolve_validation_answer")
-    workflow.add_edge("resolve_validation_answer", "activate_requirements")
+    workflow.add_edge("resolve_validation_answer", "infer_implications")
+    workflow.add_edge("infer_implications", "activate_requirements")
     workflow.add_edge("activate_requirements", "cover_requirements")
     workflow.add_edge("cover_requirements", "resolve_requirements")
     workflow.add_edge("resolve_requirements", "validate_consistency")
-    workflow.add_edge("validate_consistency", "build_candidates")
+    workflow.add_edge("validate_consistency", "identify_inquiries")
+    workflow.add_edge("identify_inquiries", "build_candidates")
     workflow.add_edge("build_candidates", "filter_candidates")
     workflow.add_edge("filter_candidates", "prioritize_candidates")
     workflow.add_edge("prioritize_candidates", "plan")
