@@ -3,6 +3,7 @@ from agents.role_utils import role_identity, roles_match, split_role_labels
 from agents.discovery_coverage import coverage_key, gap_resolved, facts_for_gap, fact_id, active_question_matches
 from agents.question_candidates import QuestionCandidate
 from agents.requirements import RequirementStatus
+from agents.consistency_validation import DiscoveryValidationIssue, ValidationResolution
 
 # Topic ordering
 TOPIC_PREREQUISITES = {
@@ -431,6 +432,63 @@ def build_gap_info(state: AgentState, topic: DiscoveryTopic):
 
 
 
+
+def _validation_plan(state: AgentState, issue: DiscoveryValidationIssue) -> dict:
+    fact_index = {
+        fact_id(item): item
+        for item in state.get("discovered_knowledge", [])
+    }
+    conflicting = [
+        fact_index[identity]
+        for identity in issue.fact_ids
+        if identity in fact_index
+    ]
+    if not conflicting:
+        raise RuntimeError(f"Validation issue has no live conflicting facts: {issue.id}")
+
+    anchor = conflicting[0]
+    role = anchor.role
+    gap = anchor.key + (f"::{role}" if role else "")
+    context = []
+    for item in conflicting:
+        label = f"{item.topic.value}.{item.key}"
+        if item.role:
+            label += f"[{item.role}]"
+        context.append(
+            f"{label}: {item.value} (turn {item.source_turn}; evidence: {item.evidence})"
+        )
+
+    return {
+        "planner_source": "validation",
+        "selected_validation_issue": issue.model_dump(mode="json"),
+        "selected_requirement_candidate": None,
+        "selected_requirement_priority": None,
+        "current_topic": anchor.topic,
+        "current_gap": gap,
+        "current_objective": (
+            "Resolve a contradiction in confirmed product requirements by establishing "
+            "which rule or statement should currently apply."
+        ),
+        "question_hint": (
+            "Briefly present the incompatible confirmed statements and ask the user to "
+            "state the current rule/decision. Do not choose a side, merge incompatible "
+            "rules, or treat the clarification as complete until the user resolves it."
+        ),
+        "current_role": role,
+        "known_keys": list(get_known_keys(state, anchor.topic)),
+        "missing_keys": [],
+        "inferred_gap_evidence": [],
+        "known_gap_evidence": [item.value for item in conflicting],
+        "relevant_context": context,
+        "next_discovery_move": "resolve_contradiction",
+        "awaiting_confirmation": False,
+    }
+
+
+def consistency_resolved(state: AgentState) -> bool:
+    return not state.get("validation_blocking", False)
+
+
 def _requirement_topic_unlocked(
     state: AgentState,
     candidate: QuestionCandidate,
@@ -484,6 +542,7 @@ def _requirement_plan(state: AgentState, candidate: QuestionCandidate) -> dict:
         "planner_source": "requirement",
         "selected_requirement_candidate": candidate.model_dump(mode="json"),
         "selected_requirement_priority": state.get("question_candidate_priority", {}).get(candidate.id),
+        "selected_validation_issue": None,
         "current_topic": candidate.topic,
         "current_gap": parent_gap,
         "current_objective": objective,
@@ -517,7 +576,11 @@ def active_requirements_resolved(state: AgentState) -> bool:
 
 
 def all_discovery_resolved(state: AgentState) -> bool:
-    return all_required_gaps_resolved(state) and active_requirements_resolved(state)
+    return (
+        all_required_gaps_resolved(state)
+        and active_requirements_resolved(state)
+        and consistency_resolved(state)
+    )
 
 
 def all_required_gaps_resolved(state):
@@ -530,7 +593,7 @@ def interview_planner_node(state: AgentState) -> dict:
     # question must never resolve its broad parent schema gap by accident.
     coverage = dict(state.get("gap_coverage", {}))
     receipt = state.get("active_answer_result")
-    if state.get("planner_source") != "requirement" and receipt and active_question_matches(state):
+    if state.get("planner_source") == "schema" and receipt and active_question_matches(state):
         scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
         topic, gap = state.get("current_topic"), state.get("current_gap")
         if (receipt["scope"] == scope.value and receipt["topic"] == topic.value
@@ -548,6 +611,36 @@ def interview_planner_node(state: AgentState) -> dict:
     print("\n=== INTERVIEW PLANNER ===")
     print("Scope:", scope.value)
     print("Current topic:", current_topic)
+
+    validation_issues = [
+        DiscoveryValidationIssue.model_validate(item)
+        for item in state.get("validation_issues", [])
+    ]
+    structural = [
+        issue for issue in validation_issues
+        if issue.severity.value == "BLOCKING"
+        and issue.resolution != ValidationResolution.USER_CLARIFICATION
+    ]
+    if structural:
+        details = "; ".join(f"{issue.kind.value}: {issue.message}" for issue in structural)
+        raise RuntimeError("Discovery consistency validation failed: " + details)
+
+    clarification = next(
+        (
+            issue for issue in validation_issues
+            if issue.severity.value == "BLOCKING"
+            and issue.resolution == ValidationResolution.USER_CLARIFICATION
+        ),
+        None,
+    )
+    if clarification is not None:
+        print("\nSelected validation issue:", clarification.id)
+        return {
+            **common,
+            "topic_status": topic_status,
+            "topic_maturity": topic_maturity,
+            **_validation_plan(state, clarification),
+        }
 
     ranked = [
         QuestionCandidate.model_validate(item)
@@ -609,6 +702,7 @@ def interview_planner_node(state: AgentState) -> dict:
                 **common, "planner_source": "schema",
                 "selected_requirement_candidate": None,
                 "selected_requirement_priority": None,
+                "selected_validation_issue": None,
                 "topic_status": topic_status,
                 "current_topic": current_topic,
                 "topic_maturity": topic_maturity,
@@ -668,6 +762,7 @@ def interview_planner_node(state: AgentState) -> dict:
             "planner_source": "schema",
             "selected_requirement_candidate": None,
             "selected_requirement_priority": None,
+            "selected_validation_issue": None,
             "current_topic": topic,
             "topic_status": updated,
             "topic_maturity": topic_maturity,
@@ -697,6 +792,7 @@ def interview_planner_node(state: AgentState) -> dict:
         "planner_source": "schema",
         "selected_requirement_candidate": None,
         "selected_requirement_priority": None,
+        "selected_validation_issue": None,
         "current_topic": None,
         "topic_status": topic_status,
         "topic_maturity": topic_maturity,
