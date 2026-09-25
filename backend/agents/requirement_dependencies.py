@@ -33,7 +33,7 @@ class RequirementDependencyDecision(BaseModel):
     blocking_dependencies: Dict[str, DependencyBlockReason] = Field(default_factory=dict)
 
 
-def _active_scope_requirements(
+def _scope_requirements(
     store: RequirementStore,
     scope: DiscoveryScope,
 ) -> Dict[str, ActiveRequirement]:
@@ -100,7 +100,7 @@ def resolve_requirement_dependencies(
     dependency must exist in the same scope and be RESOLVED. Other dependency
     states block the requirement and are preserved as explicit diagnostics.
     """
-    requirements = _active_scope_requirements(store, scope)
+    requirements = _scope_requirements(store, scope)
     cycles = _cycle_nodes(requirements)
     decisions: Dict[str, RequirementDependencyDecision] = {}
 
