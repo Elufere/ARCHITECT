@@ -8,6 +8,7 @@ from agents.question_generator import permission_discovery_guidance
 from agents.role_utils import split_role_labels
 from agents.knowledge_tracker import item_directly_answers_gap, knowledge_tracker_node, validate_extraction
 from agents.state import DiscoveryScope, DiscoveryTopic, KnowledgeItem, KnowledgeState
+from coverage_test_utils import coverage_for_facts
 
 
 def fact(key: str, value: str) -> KnowledgeItem:
@@ -32,6 +33,7 @@ def test_workflow_advances_to_completion_condition_after_steps():
         "discovery_scope": DiscoveryScope.USER_APP,
         "discovered_knowledge": [fact("trigger", "A buyer or seller creates a deal."), fact("workflow_steps", "The creator sends an invite and the recipient joins.")],
     }
+    state["gap_coverage"] = coverage_for_facts(state, DiscoveryTopic.CORE_WORKFLOW)
     gap = build_gap_info(state, DiscoveryTopic.CORE_WORKFLOW)
     assert gap["current_gap"] == "completion_condition"
 
@@ -47,11 +49,11 @@ def test_evidence_accepts_normalized_inflection_but_requires_source_quote():
     assert valid, reason
 
 
-def test_evidence_rejects_ungrounded_value():
+def test_source_span_validation_does_not_replace_semantic_grounding():
     item = fact("workflow_steps", "The app charges a platform fee.")
     item.evidence = "buyer creates a deal"
     valid, _ = validate_extraction(item, "The buyer creates a deal.", "workflow_steps")
-    assert not valid
+    assert valid  # semantic entailment is enforced later by the grounding audit
 
 
 def test_conversation_intents_cover_repair_turns():
@@ -108,6 +110,7 @@ def test_coherent_topic_is_not_completed_while_schema_gaps_remain():
         "topic_maturity": {},
         "current_topic": DiscoveryTopic.USER_ROLES,
     }
+    state["gap_coverage"] = coverage_for_facts(state, DiscoveryTopic.USER_ROLES)
     result = interview_planner_node(state)
     assert result["current_topic"] == DiscoveryTopic.USER_ROLES
     assert result["current_gap"] == "permissions::guests"
@@ -152,6 +155,12 @@ def test_customer_roles_are_discovered_before_confirmed_admin_role():
     assert get_roles_in_discovery_order(state, DiscoveryTopic.USER_ROLES) == [
         "buyer", "seller", "administrators"
     ]
+    state["gap_coverage"] = coverage_for_facts(state, DiscoveryTopic.USER_ROLES)
+    # Remove role-specific coverage because the fixture only establishes actor identity.
+    state["gap_coverage"] = {
+        key: value for key, value in state["gap_coverage"].items()
+        if "|responsibilities::" not in key and "|permissions::" not in key
+    }
     assert build_gap_info(state, DiscoveryTopic.USER_ROLES)["current_gap"] == "responsibilities::buyer"
 
 
@@ -177,6 +186,7 @@ def test_permission_remains_a_gap_after_abstract_responsibility():
             role_fact("responsibilities", "The buyer is responsible for completing the purchase.", "buyer"),
         ],
     }
+    state["gap_coverage"] = coverage_for_facts(state, DiscoveryTopic.USER_ROLES)
     assert build_gap_info(state, DiscoveryTopic.USER_ROLES)["current_gap"] == "permissions::buyer"
     guidance = permission_discovery_guidance(state, "buyer")
     assert "high-level or vague" in guidance
@@ -212,7 +222,7 @@ def test_compound_secondary_role_does_not_become_a_combined_planner_gap():
             KnowledgeItem(topic=DiscoveryTopic.USER_ROLES, scope=DiscoveryScope.USER_APP,
                           key="secondary_users", value="administrators and support staff",
                           evidence="administrators and support staff",
-                          roles=["administrators and support staff"], confidence=1.0),
+                          roles=["administrators", "support staff"], confidence=1.0),
         ],
     }
     gap = build_gap_info(state, DiscoveryTopic.USER_ROLES)
@@ -221,7 +231,7 @@ def test_compound_secondary_role_does_not_become_a_combined_planner_gap():
     assert all("administrators and support staff" not in key for key in gap["missing_keys"])
 
 
-def test_misclassified_known_role_answer_is_repaired_to_atomic_active_gap():
+def test_syntactic_validation_does_not_reclassify_a_misclassified_fact():
     item = KnowledgeItem(
         topic=DiscoveryTopic.USER_ROLES,
         scope=DiscoveryScope.USER_APP,
@@ -237,9 +247,9 @@ def test_misclassified_known_role_answer_is_repaired_to_atomic_active_gap():
         "responsibilities::administrators and support staff",
     )
     assert valid, reason
-    assert item.key == "responsibilities"
-    assert item.role == "administrators"
-    assert item.roles is None
+    assert item.key == "secondary_users"
+    assert item.roles == ["admin"]
+    assert item.role is None
 
 
 def test_hyphenated_secondary_role_is_grounded_and_accepted():
@@ -272,7 +282,7 @@ def test_incidental_fact_stays_inferred_when_it_is_not_the_active_gap():
     assert item.knowledge_state == KnowledgeState.INFERRED
 
 
-def test_direct_role_scoped_goal_is_bound_to_active_role():
+def test_active_gap_cannot_supply_a_missing_goal_owner():
     item = KnowledgeItem(
         topic=DiscoveryTopic.USER_GOALS,
         scope=DiscoveryScope.USER_APP,
@@ -286,9 +296,10 @@ def test_direct_role_scoped_goal_is_bound_to_active_role():
         "Buyers want their money protected until delivery.",
         "primary_user_goals::buyer",
     )
-    assert valid, reason
-    assert item.role == "buyer"
-    assert item_directly_answers_gap(item, "primary_user_goals::buyer")
+    assert not valid
+    assert "owner" in reason.lower()
+    assert item.role is None
+    assert not item_directly_answers_gap(item, "primary_user_goals::buyer")
 
 
 def test_inferred_gap_uses_confirmation_move_without_counting_as_complete():
@@ -312,6 +323,8 @@ def test_inferred_gap_uses_confirmation_move_without_counting_as_complete():
         "topic_maturity": {},
         "current_topic": DiscoveryTopic.USER_ROLES,
     }
+    state["gap_coverage"] = coverage_for_facts(state, DiscoveryTopic.USER_ROLES)
+    # Inferred facts are never deliberate completion receipts.
     gap = build_gap_info(state, DiscoveryTopic.USER_ROLES)
     assert gap["current_gap"] == "multiple_roles"
     assert gap["inferred_gap_evidence"] == ["A customer can be buyer or seller by deal."]
@@ -346,6 +359,7 @@ def test_secondary_goal_gap_reuses_known_secondary_role_without_reasking_it():
             goal_fact("primary_user_goals", "Seller completes a sale.", "seller"),
         ],
     }
+    state["gap_coverage"] = coverage_for_facts(state, DiscoveryTopic.USER_GOALS)
     gap = build_gap_info(state, DiscoveryTopic.USER_GOALS)
     assert gap["current_gap"] == "secondary_user_goals::support staff"
     assert any("secondary_users" in fact and "support staff" in fact for fact in gap["relevant_context"])
