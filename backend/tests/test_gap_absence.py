@@ -6,7 +6,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agents import knowledge_tracker as tracker
-from agents.interview_planner import build_gap_info, get_confirmed_roles_for_source
+from agents.interview_planner import build_gap_info, get_confirmed_roles_for_source, interview_planner_node
 from agents.state import DiscoveryScope as Scope, DiscoveryTopic as Topic, KnowledgeItem, KnowledgeState
 
 
@@ -19,10 +19,12 @@ def actor(role="patient", scope=Scope.USER_APP):
 
 
 def state(text=ANSWER, gap="secondary_users", topic=Topic.USER_ROLES):
-    return dict(messages=[AIMessage(content="Are there any other users besides patients and healthcare professionals?"),
-                          HumanMessage(content=text)], current_topic=topic, current_gap=gap,
+    question = "Are there any other users besides patients and healthcare professionals?"
+    return dict(messages=[AIMessage(content=question), HumanMessage(content=text)], current_topic=topic, current_gap=gap,
                 discovery_scope=Scope.USER_APP, discovered_knowledge=[actor(), actor("healthcare_provider")],
-                topic_status={}, turn_count=1)
+                topic_status={}, turn_count=1,
+                asked_gap=(dict(scope=Scope.USER_APP.value, topic=topic.value, gap=gap, question=question)
+                           if topic and gap else None))
 
 
 def models(monkeypatch, resolution="none", evidence=ANSWER, outputs=None, supported=None,
@@ -68,6 +70,7 @@ def test_careconnect_absence_closes_gap_and_rejects_unrelated_claims(monkeypatch
     assert absence.evidence == ANSWER and absence.source_turn == 1
     assert absence.knowledge_state == KnowledgeState.CONFIRMED
     merged = {**initial, **result}
+    merged.update(interview_planner_node(merged))
     assert "secondary_users" not in build_gap_info(merged, Topic.USER_ROLES)["missing_keys"]
     assert get_confirmed_roles_for_source(merged, "secondary_users") == []
     assert "secondary_user_goals" not in build_gap_info(merged, Topic.USER_GOALS)["missing_keys"]
@@ -96,7 +99,9 @@ def test_generic_gap_mapping(monkeypatch, gap, topic, text, resolution):
     assert item.role == (gap.split("::")[1] if "::" in gap else None)
     assert item.topic == topic and item.scope == Scope.USER_APP
     assert item.absence == resolution
-    assert gap not in build_gap_info({**initial, **result}, topic)["missing_keys"]
+    merged = {**initial, **result}
+    merged.update(interview_planner_node(merged))
+    assert gap not in build_gap_info(merged, topic)["missing_keys"]
 
 
 @pytest.mark.parametrize("text", ["I don't know.", "No admins, but support staff will use it.",
