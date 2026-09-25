@@ -101,7 +101,9 @@ class RequirementActivationRule:
         return result
 
 
-# Base implication rules remain generic and separate from lifecycle patterns.\nBASE_ACTIVATION_RULES: tuple[RequirementActivationRule, ...] = (\n    RequirementActivationRule(
+# Base implication rules remain generic and separate from lifecycle patterns.
+BASE_ACTIVATION_RULES: tuple[RequirementActivationRule, ...] = (
+    RequirementActivationRule(
         id="workflow.external_dependency_followup.v1",
         description="A confirmed downstream dependency makes external-dependency behavior relevant.",
         when=(
