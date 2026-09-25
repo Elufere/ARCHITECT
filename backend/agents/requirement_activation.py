@@ -143,9 +143,8 @@ BASE_ACTIVATION_RULES: tuple[RequirementActivationRule, ...] = (
 # workflow has a lifecycle worth expanding beyond the universal workflow schema.
 STATEFUL_WORD_PREFIXES = (
     "state", "status", "draft", "pend", "activ", "approv", "reject",
-    "complet", "clos", "fulfill", "deliver", "cancell", "expir",
-    "archiv", "disabl", "delet", "lock", "unlock", "suspend",
-    "terminat", "publish", "unpublish", "paid", "unpaid",
+    "cancell", "expir", "archiv", "disabl", "delet", "lock", "unlock",
+    "suspend", "publish", "unpublish", "paid", "unpaid",
 )
 
 
