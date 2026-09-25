@@ -578,6 +578,15 @@ def _canonical_claim_role(role: str | None, state: AgentState, scope: DiscoveryS
     return normalized
 
 
+def _explicit_whole_field_absence(evidence: str) -> bool:
+    return bool(re.search(
+        r"\b(?:no|none|nothing|nobody|no\s+other|only|never|not\s+applicable|"
+        r"does\s+not\s+apply|do\s+not\s+apply|without\s+any)\b",
+        evidence,
+        re.I,
+    ))
+
+
 def _explicit_current_surface_membership(evidence: str, scope: DiscoveryScope) -> bool:
     text = evidence.lower()
     scope_label = scope.value.lower()
@@ -618,6 +627,17 @@ def _admit_claim_item(
 ) -> KnowledgeItem | None:
     resolved_role = _canonical_claim_role(claim.role, state, scope)
     claim = claim.model_copy(update={"role": resolved_role})
+
+    if claim.absence:
+        direct_gap = bool(
+            state.get("current_topic")
+            and state.get("current_gap")
+        )
+        if direct_gap:
+            # Dedicated GAP_ANSWER semantics own active negative answers.
+            raise ValueError("Active-gap absence must be resolved by the dedicated absence interpreter")
+        if not _explicit_whole_field_absence(claim.evidence):
+            raise ValueError("Whole-field absence requires explicit negative evidence")
 
     if (
         claim.kind in ("primary_actor", "secondary_actor")
