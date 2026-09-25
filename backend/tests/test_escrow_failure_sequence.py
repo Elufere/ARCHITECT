@@ -14,9 +14,9 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agents import knowledge_tracker as tracker
-from agents.interview_planner import build_gap_info, interview_planner_node
+from agents.inquiries import identify_open_inquiries
+from agents.interview_planner import build_gap_info
 from agents.state import DiscoveryScope as S, DiscoveryTopic as T, TopicStatus as Status
-from coverage_test_utils import coverage_for_facts
 from test_question_retry_limit import test_repeated_template_exits_graph_with_bounded_retries as check_retry_guardrail
 
 
@@ -88,16 +88,10 @@ def replay(monkeypatch):
         "GOAL": [raw("primary_user_goals", "payment protected until fulfillment", text, role="customer"),
                  raw("success_criteria", "fulfillment and payment release", text),
                  raw("motivations", "reduce fraud risk", text)]})
-    # This replay now explicitly models that the initial role/goal interview was
-    # already deliberately covered before testing later invalidation behavior.
-    state["gap_coverage"] = coverage_for_facts(state, T.USER_ROLES, T.USER_GOALS)
-    for topic in (T.USER_ROLES, T.USER_GOALS):
-        assert not build_gap_info(state, topic)["missing_keys"]
-        state["current_topic"] = topic
-        with redirect_stdout(StringIO()):
-            state.update(interview_planner_node(state))
-        assert state["topic_status"][topic] == Status.COMPLETED
-    snapshots["completed"] = deepcopy(state)
+    # Under model-driven discovery, topic completion is no longer a planner
+    # control mechanism. Keep this replay focused on extraction, reconciliation,
+    # and whether later facts change the inquiry frontier.
+    snapshots["foundation"] = deepcopy(state)
     text = "If there is a dispute, a mediator reviews the evidence."
     turn("participant", text, {"ACTOR": [raw("secondary_users", "mediator", text, roles=["mediator"])]}, reject=["mediator"])
     text = "Customers choose the app to reduce fraud risk."
@@ -114,8 +108,6 @@ def replay(monkeypatch):
     text = "The customer must approve the transaction terms before funding."
     turn("approval", text, {"RULES": [raw("BUSINESS_RULES.approval_rules", text, text, topic="BUSINESS_RULES")]},
         topic=T.BUSINESS_RULES, gap="approval_rules")
-    with redirect_stdout(StringIO()):
-        snapshots["approval_planned"] = {**deepcopy(state), **interview_planner_node(deepcopy(state))}
     text = "The customer confirms the transaction is complete."
     turn("repeat", text, {"RESPONSIBILITY": [raw("responsibilities", "the customer confirms the transaction is complete", text, role="customer")]})
     text = "Actually, vendors also log into the same application and manage assigned orders."
@@ -127,8 +119,8 @@ INVARIANTS = [
     "01_actor_without_invented_responsibilities", "02_explicit_secondary_absence",
     "03_contextual_capacities", "04_incidental_participant", "05_confirmed_new_user",
     "06_role_policies", "07_motivation_isolation", "08_workflow_not_goal",
-    "09_canonical_rule_key", "10_no_duplicate_growth", "11_sticky_completion",
-    "12_observable_reopening", "13_approval_gap_closed", "14_no_formatting_question_loop",
+    "09_canonical_rule_key", "10_no_duplicate_growth", "11_schema_status_not_control",
+    "12_new_actor_reopens_model_frontier", "13_approval_fact_not_schema_reasked", "14_no_formatting_question_loop",
 ]
 
 
@@ -176,22 +168,41 @@ def test_escrow_failure_sequence(replay, invariant, monkeypatch):
         assert items("repeat") == items("approval")
         assert f"Knowledge count: {len(items('approval'))}" in logs["repeat"]
     elif number == 11:
+        # Legacy topic flags remain extraction diagnostics only. They should not
+        # become sticky completion state or trigger reopening churn.
         for step in ("participant", "motivation", "workflow", "approval", "repeat"):
-            assert all(states[step]["topic_status"][t] == Status.COMPLETED for t in (T.USER_ROLES, T.USER_GOALS))
+            assert all(
+                states[step]["topic_status"].get(t) != Status.COMPLETED
+                for t in (T.USER_ROLES, T.USER_GOALS)
+            )
             assert "TOPIC INVALIDATION" not in logs[step]
     elif number == 12:
-        event = logs["new_actor"]
-        assert event.count("=== TOPIC INVALIDATION ===") == 2
-        assert event.index("TOPIC STATUS MERGE") < event.index("=== TOPIC INVALIDATION ===")
-        for label in ("Fact ID:", "Source turn:", "Old: COMPLETED", "New: PARTIAL", "responsibilities::vendor", "secondary_user_goals::vendor"):
-            assert label in event
+        # A newly confirmed participant must create model uncertainty even though
+        # there is no schema topic-reopening mechanism anymore.
+        inquiries = identify_open_inquiries(states["new_actor"])
+        assert any(
+            item.anchor_gap == "responsibilities::vendor"
+            and item.role == "vendor"
+            for item in inquiries
+        )
+        assert "TOPIC INVALIDATION" not in logs["new_actor"]
     elif number == 13:
-        assert "approval_rules" in build_gap_info(states["approval"], T.BUSINESS_RULES)["missing_keys"]
-        assert "approval_rules" not in build_gap_info(states["approval_planned"], T.BUSINESS_RULES)["missing_keys"]
+        # The old schema diagnostic can still report the field as uncovered,
+        # but the new inquiry frontier must not ask for an already confirmed
+        # approval rule merely to close schema coverage.
+        assert "approval_rules" in build_gap_info(
+            states["approval"], T.BUSINESS_RULES
+        )["missing_keys"]
+        inquiries = identify_open_inquiries(states["approval"])
+        assert all(item.anchor_gap != "approval_rules" for item in inquiries)
+        assert any(item.anchor_gap == "completion_condition" for item in inquiries)
     elif number == 14:
-        assert states["approval_planned"]["current_gap"] != "approval_rules"
         assert calls.count(("approval", "RULES")) == 1
         assert logs["approval"].count("FORMAT REPAIR ATTEMPT: 1/1") == 1
+        assert all(
+            item.anchor_gap != "approval_rules"
+            for item in identify_open_inquiries(states["approval"])
+        )
         # Keep the actual generation/guardrail graph bounded even when a model
         # insists on repeating its question. No guardrail is bypassed.
         check_retry_guardrail(monkeypatch)
