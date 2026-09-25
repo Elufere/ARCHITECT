@@ -372,6 +372,15 @@ def test_grounding_protocol_retry_is_bounded(monkeypatch):
     assert len(calls) == 2
 
 
+def test_bare_capability_is_not_permission():
+    reason = category_contradiction(
+        "permissions",
+        "Either party should be able to raise a dispute.",
+        "Either party should be able to raise a dispute.",
+    )
+    assert reason and "authorization boundary" in reason
+
+
 def test_action_relabelled_as_goal_is_deterministically_rejected():
     reason = category_contradiction(
         "primary_user_goals",
