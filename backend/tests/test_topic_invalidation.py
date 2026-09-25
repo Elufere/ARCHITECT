@@ -200,10 +200,27 @@ def test_spelling_change_does_not_turn_existing_gaps_into_new_coverage(monkeypat
 
 def test_explicit_confirmation_of_inferred_actor_uses_merge_boundary(monkeypatch, capsys):
     monkeypatch.setattr(tracker, "can_replace_absence", lambda *_: True)
+    monkeypatch.setattr(
+        tracker,
+        "semantic_decision",
+        lambda name, *_: (
+            tracker.GapConfirmation(confirmed=True, evidence="Yes.", confidence=1)
+            if name == "GAP_CONFIRMATION"
+            else tracker.FactComparison(relation="new", confidence=1)
+        ),
+    )
     initial = completed_state()
     initial["discovered_knowledge"].append(actor(knowledge_state=K.INFERRED))
-    initial.update(conversation_intent="confirmation", next_discovery_move="confirm_inference",
-                   current_topic=T.USER_ROLES, current_gap="secondary_users")
+    question = "Should vendors also use the same app?"
+    initial.update(
+        messages=[tracker.AIMessage(content=question), tracker.HumanMessage(content="Yes.")],
+        conversation_intent="confirmation",
+        next_discovery_move="confirm_inference",
+        current_topic=T.USER_ROLES,
+        current_gap="secondary_users",
+        asked_gap=dict(scope=S.USER_APP.value, topic=T.USER_ROLES.value,
+                       gap="secondary_users", question=question),
+    )
     result = tracker.knowledge_tracker_node(initial)
     assert result["topic_status"][T.USER_ROLES] == Status.PARTIAL
     assert result["topic_status"][T.USER_GOALS] == Status.PARTIAL
