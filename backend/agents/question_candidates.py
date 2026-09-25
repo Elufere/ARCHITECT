@@ -167,8 +167,19 @@ def question_candidate_builder_node(state: AgentState) -> dict:
 
 
 def _history_signature(entry: dict) -> tuple[str | None, tuple[str, ...]]:
-    identity = entry.get("inquiry_id") or entry.get("requirement_key")
+    # Requirement history predates inquiry IDs. Preserve requirement identity
+    # when present so migrated checkpoints still suppress the exact target.
+    identity = entry.get("requirement_key") or entry.get("inquiry_id")
     return identity, tuple(entry.get("target_facets") or [])
+
+
+def _candidate_signature(candidate: QuestionCandidate) -> tuple[str | None, tuple[str, ...]]:
+    identity = (
+        candidate.requirement_key
+        if candidate.source == InquirySource.REQUIREMENT
+        else candidate.inquiry_id
+    )
+    return identity, tuple(candidate.target_facets)
 
 
 def _requirement_reasons(
@@ -253,10 +264,7 @@ def filter_question_candidates(
         if candidate.source == InquirySource.REQUIREMENT:
             reasons.extend(_requirement_reasons(state, candidate))
 
-        signature = (
-            candidate.inquiry_id or candidate.requirement_key,
-            tuple(candidate.target_facets),
-        )
+        signature = _candidate_signature(candidate)
         if signature in recent_signatures:
             reasons.append(CandidateBlockReason.RECENTLY_ASKED_SAME_TARGET)
 
