@@ -101,6 +101,39 @@ def category_contradiction(key: str, evidence: str, value: str | None = None) ->
         if intent_only and not explicit_result:
             return "A desired future outcome is not an established workflow end state"
 
+    if key == "validation_rules" and not re.search(
+        r"\b(?:valid|invalid|validate|validation|must\s+(?:be|match|contain|provide)|"
+        r"required|required\s+field|rejected?\s+(?:if|when)|format|fails?\s+validation)\b",
+        evidence,
+        re.I,
+    ):
+        return "Evidence states no validation condition or validation consequence"
+
+    if key == "eligibility_rules" and not re.search(
+        r"\b(?:eligible|eligibility|qualified|qualification|licensed|verified|"
+        r"prerequisite|must\s+be\s+(?:a|an|verified|licensed|qualified)|"
+        r"only\s+.+\s+(?:can|may|are\s+allowed\s+to))\b",
+        evidence,
+        re.I,
+    ):
+        return "Evidence states no qualification or participation prerequisite"
+
+    if key == "limits" and not re.search(
+        r"\b(?:limit|limited|maximum|minimum|max|min|at\s+most|at\s+least|"
+        r"no\s+more\s+than|no\s+less\s+than|up\s+to|cap|capped)\b|\b\d+\b",
+        evidence,
+        re.I,
+    ):
+        return "Evidence states no explicit operational limit"
+
+    if key == "visibility_rules" and not re.search(
+        r"\b(?:visible|visibility|view|see|shown|hidden|access\s+to|"
+        r"can\s+read|cannot\s+see|only\s+.+\s+(?:see|view|access))\b",
+        evidence,
+        re.I,
+    ):
+        return "Evidence states no visibility or viewing boundary"
+
     if key == "approval_rules" and not re.search(
         r"\b(?:approv(?:e|es|ed|ing|al|als)|review(?:s|ed|ing)?|"
         r"authoriz(?:e|es|ed|ing|ation)|consent(?:s|ed|ing)?|"
