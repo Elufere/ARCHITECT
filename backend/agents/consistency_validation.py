@@ -439,11 +439,23 @@ def validate_discovery_consistency(
 
 def consistency_validation_node(state: AgentState) -> dict:
     issues, cache = validate_discovery_consistency(state)
+    compile_blocking = any(
+        issue.severity == ValidationIssueSeverity.BLOCKING
+        for issue in issues
+    )
+    candidate_blocking_kinds = {
+        ValidationIssueKind.FACT_CONTRADICTION,
+        ValidationIssueKind.DEPENDENCY_MISSING,
+        ValidationIssueKind.DEPENDENCY_CYCLE,
+        ValidationIssueKind.REQUIREMENT_COVERAGE_MISMATCH,
+    }
     return {
         "validation_issues": [issue.model_dump(mode="json") for issue in issues],
         "validation_pair_cache": cache,
-        "validation_blocking": any(
+        "validation_blocking": compile_blocking,
+        "validation_candidate_blocking": any(
             issue.severity == ValidationIssueSeverity.BLOCKING
+            and issue.kind in candidate_blocking_kinds
             for issue in issues
         ),
     }
