@@ -165,3 +165,71 @@ def test_unclassified_claim_is_not_persisted(monkeypatch):
     assert calls
     assert batch == []
     assert getattr(batch, "grounding_required") is False
+
+
+def test_capacity_alias_resolves_back_to_canonical_actor(monkeypatch):
+    text = "The seller wants guaranteed payment after fulfilling the deal."
+    calls = []
+    production_models(monkeypatch, [
+        claim("desired_outcome", text, text, role="seller"),
+    ], calls)
+
+    customer = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="primary_users",
+        value="Customers can act as buyers or sellers.",
+        evidence="Customers can act as buyers or sellers.",
+        roles=["customer"],
+        aliases={"customer": ["buyer", "seller"]},
+        confidence=1,
+    )
+    batch = tracker.extract_passes(
+        text,
+        dict(
+            messages=[HumanMessage(content=text)],
+            discovery_scope=S.USER_APP,
+            discovered_knowledge=[customer],
+            current_topic=T.USER_GOALS,
+            current_gap="primary_user_goals::customer",
+            turn_count=4,
+        ),
+        S.USER_APP,
+    )
+
+    assert len(batch) == 1
+    assert batch[0].key == "primary_user_goals"
+    assert batch[0].role == "customer"
+
+
+def test_explicit_external_participant_cannot_become_current_app_actor(monkeypatch):
+    text = (
+        "Payments in USER_APP remain pending until the fraud team approves them "
+        "through a third-party platform, outside USER_APP."
+    )
+    calls = []
+    production_models(monkeypatch, [
+        claim("secondary_actor", "fraud team", text, role="fraud_team"),
+        claim("workflow_dependency", text, text),
+        claim("approval_rule", text, text),
+    ], calls)
+
+    batch = tracker.extract_passes(
+        text,
+        dict(
+            messages=[HumanMessage(content=text)],
+            discovery_scope=S.USER_APP,
+            discovered_knowledge=[],
+            current_topic=None,
+            current_gap=None,
+            turn_count=0,
+        ),
+        S.USER_APP,
+    )
+
+    assert not any(
+        item.key in {"primary_users", "secondary_users"}
+        and "fraud_team" in (item.roles or [])
+        for item in batch
+    )
+    assert {item.key for item in batch} == {"downstream_dependency", "approval_rules"}
