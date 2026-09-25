@@ -182,6 +182,7 @@ def question_generator_node(state: AgentState) -> dict:
     )
     relevant_context = state.get("relevant_context", [])
     requirement_guidance = ""
+    validation_guidance = ""
     if planner_source == "requirement":
         requirement = state.get("active_requirements", {}).get(
             selected_requirement.get("requirement_key")
@@ -209,6 +210,21 @@ one natural question when that is clearer for the user.
     # When in ADMIN_DASHBOARD phase, surface what was learned about the
     # customer-facing roles in Phase 1, so the LLM has something concrete
     # to avoid re-asking about, instead of a hardcoded example.
+
+    if planner_source == "validation":
+        issue = state.get("selected_validation_issue") or {}
+        validation_guidance = f"""
+CONTRADICTION-RESOLUTION MODE
+Validation issue: {issue.get('message', 'Confirmed product facts conflict.')}
+Conflicting confirmed values:
+{chr(10).join(f'- {item}' for item in state.get('known_gap_evidence', [])) or '- See relevant context below.'}
+
+Ask ONE neutral clarification question that briefly states the incompatible
+confirmed statements and asks the user to establish the CURRENT rule/decision.
+Do not choose which statement is correct. Do not merge incompatible statements.
+Do not ask for unrelated discovery. The answer should make it possible to
+supersede or qualify the stale fact.
+"""
     other_phase_knowledge = ""
     if discovery_scope == DiscoveryScope.ADMIN_DASHBOARD:
         prior_facts = [
@@ -244,6 +260,7 @@ Question guidance: {question_hint}
 Discovery move: {discovery_move}
 Planner source: {planner_source}
 {requirement_guidance}
+{validation_guidance}
 Internal schema definition (context only; never quote this to the user):
 {FIELD_DEFINITIONS.get(current_topic, {}).get((current_gap or '').split('::')[0], '')}
 
@@ -271,6 +288,8 @@ WHAT YOU MUST NOT DO
 - Do NOT ask about a different field within the same topic when this is schema-driven discovery.
 - When this is requirement-driven discovery, stay within the selected requirement
   and its target facets even if the answer may map to more than one schema field.
+- When this is contradiction-resolution mode, ask only which current rule/decision
+  applies; do not continue ordinary schema discovery in the same question.
 - Do NOT ask about future discovery topics.
 - Do NOT ask for definitions.
 - Do NOT ask "what do you mean by..." unless the user explicitly used an ambiguous term.
