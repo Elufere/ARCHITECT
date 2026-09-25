@@ -290,6 +290,111 @@ def test_user_evidence_is_separate_from_instructions(monkeypatch):
             assert "Actor declarations introduce IDs" in messages[0].content
 
 
+def test_grounding_retries_once_when_structured_parse_is_missing(monkeypatch):
+    calls = []
+    valid = GroundingResult(
+        evidence_categories={"0": ["USER_ROLES.responsibilities"]},
+        supported_ids=[0],
+        confirmed_absence_ids=[],
+        rejection_reasons={},
+    )
+
+    def invoke(_):
+        calls.append(1)
+        if len(calls) == 1:
+            return {
+                "parsed": None,
+                "parsing_error": ValueError("malformed tool arguments"),
+            }
+        return valid
+
+    monkeypatch.setattr(
+        tracker,
+        "extraction_models",
+        lambda: {"GROUNDING": SimpleNamespace(invoke=invoke)},
+    )
+
+    result = tracker.semantic_decision(
+        "GROUNDING",
+        GroundingResult,
+        "Audit",
+        dict(
+            evidence_quotes={"0": "Buyers pay."},
+            candidates=[dict(
+                id=0,
+                evidence_id=0,
+                topic="USER_ROLES",
+                key="responsibilities",
+                value="pay",
+                role="buyer",
+            )],
+        ),
+    )
+
+    assert len(calls) == 2
+    assert result.supported_ids == [0]
+
+
+def test_grounding_protocol_retry_is_bounded(monkeypatch):
+    calls = []
+
+    def invoke(_):
+        calls.append(1)
+        return {
+            "parsed": None,
+            "parsing_error": ValueError("still malformed"),
+        }
+
+    monkeypatch.setattr(
+        tracker,
+        "extraction_models",
+        lambda: {"GROUNDING": SimpleNamespace(invoke=invoke)},
+    )
+
+    with pytest.raises(ValueError, match="Structured GROUNDING response was not parsed"):
+        tracker.semantic_decision(
+            "GROUNDING",
+            GroundingResult,
+            "Audit",
+            dict(
+                evidence_quotes={"0": "Buyers pay."},
+                candidates=[dict(
+                    id=0,
+                    evidence_id=0,
+                    topic="USER_ROLES",
+                    key="responsibilities",
+                    value="pay",
+                    role="buyer",
+                )],
+            ),
+        )
+
+    assert len(calls) == 2
+
+
+def test_action_relabelled_as_goal_is_deterministically_rejected():
+    reason = category_contradiction(
+        "primary_user_goals",
+        "A buyer pays into escrow",
+        "A buyer wants to pay into escrow to safely complete a purchase.",
+    )
+    assert reason and "invents desired-outcome intent" in reason
+
+
+@pytest.mark.parametrize("key,evidence", [
+    (
+        "approval_rules",
+        "If something goes wrong, either party should be able to raise a dispute.",
+    ),
+    (
+        "ownership_rules",
+        "A buyer pays into escrow, the seller fulfills what was agreed, and the money is released.",
+    ),
+])
+def test_business_rule_candidate_needs_its_rule_semantics(key, evidence):
+    assert category_contradiction(key, evidence) is not None
+
+
 def test_grounding_wire_response_preserves_shared_evidence(monkeypatch):
     response = dict(evidence_categories=[dict(evidence_id=0,
         categories=["USER_ROLES.responsibilities", "CORE_WORKFLOW.workflow_steps"])],
