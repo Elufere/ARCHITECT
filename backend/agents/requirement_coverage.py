@@ -16,7 +16,6 @@ from pydantic import BaseModel, Field, model_validator
 from agents.discovery_coverage import fact_id
 from agents.llm import get_structured_model
 from agents.llm_errors import ExtractionFailed, raise_if_llm_failure
-from agents.question_candidates import QuestionCandidate
 from agents.requirements import (
     ActiveRequirement,
     RequirementEvidenceRef,
@@ -383,8 +382,10 @@ def assess_selected_requirement_answer(
     if not selected or exchange is None:
         return store, coverage
 
-    candidate = QuestionCandidate.model_validate(selected)
-    requirement = store.get(candidate.requirement_key)
+    candidate = dict(selected)
+    requirement_key = candidate.get("requirement_key")
+    target_facets = list(candidate.get("target_facets") or [])
+    requirement = store.get(requirement_key)
     if requirement is None or requirement.status != RequirementStatus.ACTIVE:
         return store, coverage
 
@@ -422,7 +423,7 @@ def assess_selected_requirement_answer(
             "description": facet.description,
         }
         for facet in requirement.facets
-        if facet.id in candidate.target_facets
+        if facet.id in target_facets
     }
 
     try:
@@ -442,11 +443,11 @@ def assess_selected_requirement_answer(
         outside = (
             set(assessment.covered_facets)
             | set(assessment.not_applicable_facets)
-        ) - set(candidate.target_facets)
+        ) - set(target_facets)
         if outside:
             raise ValueError(f"Coverage assessment returned non-target facets: {sorted(outside)}")
 
-        existing_payload = coverage.get(candidate.requirement_key)
+        existing_payload = coverage.get(requirement_key)
         existing = (
             RequirementCoverageRecord.model_validate(existing_payload)
             if existing_payload else None
@@ -462,8 +463,8 @@ def assess_selected_requirement_answer(
         raise ExtractionFailed("Requirement facet coverage assessment failed") from exc
 
     updated_coverage = dict(coverage)
-    updated_coverage[candidate.requirement_key] = record.model_dump(mode="json")
-    updated_store[candidate.requirement_key] = requirement.model_copy(update={
+    updated_coverage[requirement_key] = record.model_dump(mode="json")
+    updated_store[requirement_key] = requirement.model_copy(update={
         "status": (
             RequirementStatus.RESOLVED
             if record.status == RequirementCoverageStatus.RESOLVED
