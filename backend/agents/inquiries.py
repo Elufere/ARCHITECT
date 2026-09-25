@@ -89,6 +89,11 @@ def _foundation_facts(state: AgentState, *, topic, key, role=None) -> list[Knowl
     result = []
     acquisition = state.get("fact_acquisition", {})
     for item in _confirmed(state, topic=topic, key=key, role=role):
+        # Explicit grounded actor declarations are product identity. They remain
+        # foundational even when volunteered while another inquiry was active.
+        if key in {"primary_users", "secondary_users"}:
+            result.append(item)
+            continue
         record = acquisition.get(fact_id(item))
         if record is None:
             result.append(item)  # compatibility with imported/tests lacking acquisition metadata
