@@ -21,13 +21,18 @@ def assert_discovery_invariants(state):
     # Superseded facts must not remain in the active knowledge set.
     assert live_fact_ids.isdisjoint(superseded)
 
-    # Requirement activation provenance may only reference live confirmed facts.
+    # Fact-backed requirement provenance may only reference live confirmed facts.
+    # Manual/config activation sources are allowed to have no evidence_ref.
     for key, requirement in requirements.items():
         for source in requirement.activation_sources:
-            for identity in source.fact_ids:
-                assert identity in live_fact_ids, (
-                    f"{key} activation source references missing fact {identity}"
+            if source.evidence_ref:
+                assert source.evidence_ref in live_fact_ids, (
+                    f"{key} activation source references missing fact {source.evidence_ref}"
                 )
+        for evidence in requirement.evidence_refs:
+            assert evidence.fact_id in live_fact_ids, (
+                f"{key} requirement evidence references missing fact {evidence.fact_id}"
+            )
 
     # Coverage may only cite live facts. Resolved/active lifecycle state must agree.
     for key, payload in coverage.items():
