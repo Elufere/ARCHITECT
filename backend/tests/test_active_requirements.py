@@ -141,4 +141,6 @@ def test_legacy_checkpoint_without_requirements_loads_empty_store(tmp_path, monk
     assert loaded["question_candidates"] == []
     assert loaded["eligible_question_candidates"] == []
     assert loaded["question_candidate_eligibility"] == {}
+    assert loaded["ranked_question_candidates"] == []
+    assert loaded["question_candidate_priority"] == {}
     assert loaded["requirement_question_history"] == []
