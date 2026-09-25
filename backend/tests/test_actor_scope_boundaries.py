@@ -211,7 +211,7 @@ def test_explicit_existing_actor_alias_relationship_remains_admissible(monkeypat
         update={"key": "primary_users"}
     )
     models(monkeypatch, {"ACTOR": [dict(
-        key="primary_users", roles=["customer"], aliases=["buyer"],
+        key="primary_users", roles=["customer"], aliases=["buyer", "seller"],
         value=text, evidence=text, confidence=1,
     )]})
     initial = state(text, existing=[existing])
