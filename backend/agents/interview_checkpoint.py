@@ -14,6 +14,7 @@ from langgraph.graph.message import add_messages
 from pydantic import BaseModel
 
 from agents.prd_schema import PRDContract
+from agents.requirements import ActiveRequirement
 from agents.state import DiscoveryScope, DiscoveryTopic, KnowledgeItem, TopicMaturity, TopicStatus
 
 
@@ -84,6 +85,10 @@ def load_checkpoint(session_id):
     state["topic_status"] = {DiscoveryTopic(key): TopicStatus(value) for key, value in state.get("topic_status", {}).items()}
     state["topic_maturity"] = {DiscoveryTopic(key): TopicMaturity(value) for key, value in state.get("topic_maturity", {}).items()}
     state["discovered_knowledge"] = [KnowledgeItem.model_validate(item) for item in state.get("discovered_knowledge", [])]
+    state["active_requirements"] = {
+        key: ActiveRequirement.model_validate(item)
+        for key, item in state.get("active_requirements", {}).items()
+    }
     if state.get("prd_contract"):
         state["prd_contract"] = PRDContract.model_validate(state["prd_contract"])
     if (state.get("answer_followup") or {}).get("scope"):
