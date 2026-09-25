@@ -7,6 +7,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from agents import graph, guardrails, knowledge_tracker as tracker, question_generator
 from agents.answer_contract import interpret_closed_answer
 from agents.state import DiscoveryScope as S, DiscoveryTopic as T, KnowledgeItem
+from coverage_test_utils import coverage_for_facts
 
 
 def state(answer="no"):
@@ -15,8 +16,14 @@ def state(answer="no"):
     initial = dict(current_topic=T.USER_ROLES, current_gap="secondary_users",
         discovery_scope=S.USER_APP, discovered_knowledge=[actor], topic_status={},
         topic_maturity={}, turn_count=2, awaiting_confirmation=False, pm_is_complete=False)
-    initial["messages"] = []
+    initial["gap_coverage"] = coverage_for_facts(initial, T.USER_ROLES)
     question = question_generator.question_generator_node(initial)["messages"][0]
+    initial["asked_gap"] = dict(
+        scope=S.USER_APP.value,
+        topic=T.USER_ROLES.value,
+        gap="secondary_users",
+        question=question.content,
+    )
     initial["messages"] = [question, HumanMessage(content=answer)]
     return initial
 
@@ -32,7 +39,7 @@ def test_no_is_stored_and_planner_moves_to_responsibilities(monkeypatch):
     no_extraction_calls(monkeypatch)
     monkeypatch.setattr(question_generator, "get_chat_model", lambda **_: SimpleNamespace(
         invoke=lambda _: AIMessage(content="What should a customer be able to do in the app?")))
-    result = graph.build_graph().invoke(state(), config={"recursion_limit": 12})
+    result = graph.build_graph().invoke(state(), config={"recursion_limit": 30})
     assert result["current_gap"] == "responsibilities::customer"
     assert result["question_retry_count"] == 0
     assert result["answer_followup"] is None
