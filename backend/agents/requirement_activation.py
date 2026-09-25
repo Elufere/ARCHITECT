@@ -25,6 +25,7 @@ class FactCondition:
     require_substantive: bool = True
     value_equals: Optional[str] = None
     value_word_prefixes: tuple[str, ...] = ()
+    value_excludes_word_prefixes: tuple[str, ...] = ()
 
     def matches(self, item: KnowledgeItem, scope: DiscoveryScope) -> bool:
         if (
@@ -39,12 +40,19 @@ class FactCondition:
         normalized = item.value.strip().lower()
         if self.value_equals is not None and normalized != self.value_equals.strip().lower():
             return False
+        words = re.findall(r"[a-z0-9]+", normalized)
         if self.value_word_prefixes:
-            words = re.findall(r"[a-z0-9]+", normalized)
             if not any(
                 word.startswith(prefix.lower())
                 for word in words
                 for prefix in self.value_word_prefixes
+            ):
+                return False
+        if self.value_excludes_word_prefixes:
+            if any(
+                word.startswith(prefix.lower())
+                for word in words
+                for prefix in self.value_excludes_word_prefixes
             ):
                 return False
         return True
@@ -262,7 +270,15 @@ LIFECYCLE_ACTIVATION_RULES: tuple[RequirementActivationRule, ...] = (
         id="lifecycle.role_transition.v1",
         description="Explicit role transitions imply a user-role lifecycle worth clarifying.",
         when=(
-            FactCondition(topic=DiscoveryTopic.USER_ROLES, key="role_transitions"),
+            FactCondition(
+                topic=DiscoveryTopic.USER_ROLES,
+                key="role_transitions",
+                value_word_prefixes=("switch", "chang", "transition", "move"),
+                value_excludes_word_prefixes=(
+                    "cannot", "never", "not", "no", "fixed", "prohibit",
+                    "forbid", "unchang",
+                ),
+            ),
         ),
         activates=(
             RequirementTemplate(
