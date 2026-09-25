@@ -105,6 +105,42 @@ def _decision_impact(candidate: QuestionCandidate) -> float:
     return 0.75
 
 
+def _requirement_uncertainty(candidate: QuestionCandidate) -> float:
+    if candidate.source != InquirySource.REQUIREMENT:
+        return candidate.uncertainty
+    status = candidate.coverage_status
+    base = {
+        "UNSEEN": 0.70,
+        "KNOWN_SHALLOW": 0.55,
+        "NEEDS_EXPANSION": 0.45,
+    }.get(getattr(status, "value", status), 0.60)
+    breadth = min(0.20, max(0, len(candidate.target_facets) - 1) * 0.10)
+    return _clamp(max(candidate.uncertainty if candidate.uncertainty != 1.0 else 0.0, base + breadth))
+
+
+def _question_cost(candidate: QuestionCandidate) -> float:
+    derived = min(0.15, max(0, len(candidate.target_facets) - 1) * 0.05)
+    return max(candidate.question_cost, derived)
+
+
+def _architecture_impact(
+    candidate: QuestionCandidate,
+    requirement: ActiveRequirement | None,
+) -> float:
+    if candidate.source == InquirySource.REQUIREMENT and requirement is not None:
+        return requirement.priority_hints.architecture_impact
+    return candidate.architecture_impact
+
+
+def _business_risk(
+    candidate: QuestionCandidate,
+    requirement: ActiveRequirement | None,
+) -> float:
+    if candidate.source == InquirySource.REQUIREMENT and requirement is not None:
+        return requirement.priority_hints.business_risk
+    return candidate.business_risk
+
+
 def _context_relevance(state: AgentState, candidate: QuestionCandidate) -> float:
     current_topic = state.get("current_topic")
     if current_topic is None:
@@ -168,11 +204,11 @@ def score_question_candidate(
         contradiction_pressure=1.0 if candidate.source == InquirySource.VALIDATION else 0.0,
         decision_impact=_decision_impact(candidate),
         dependency_unlock_value=_unlock_value(requirement, requirements),
-        uncertainty=candidate.uncertainty,
-        architecture_impact=candidate.architecture_impact,
-        business_risk=candidate.business_risk,
+        uncertainty=_requirement_uncertainty(candidate),
+        architecture_impact=_architecture_impact(candidate, requirement),
+        business_risk=_business_risk(candidate, requirement),
         context_relevance=_context_relevance(state, candidate),
-        question_cost_penalty=candidate.question_cost,
+        question_cost_penalty=_question_cost(candidate),
         repetition_penalty=_repetition_penalty(state, candidate),
         fatigue_penalty=_fatigue_penalty(state, candidate),
         premature_depth_penalty=_premature_depth_penalty(state, candidate),
