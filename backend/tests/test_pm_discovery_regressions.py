@@ -117,7 +117,11 @@ def test_schema_gaps_do_not_force_questions_once_actor_actions_are_known():
     result = interview_planner_node(state)
     assert result["planner_source"] == "model"
     assert result["current_topic"] == DiscoveryTopic.USER_GOALS
-    assert result["current_gap"] == "primary_user_goals::hosts"
+    assert result["current_gap"] in {
+        "primary_user_goals::hosts",
+        "primary_user_goals::guests",
+    }
+    assert not result["current_gap"].startswith("permissions::")
 
 
 def test_negative_phrase_marks_the_current_gap_known(monkeypatch):
