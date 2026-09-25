@@ -433,7 +433,15 @@ def ground_items(items, user_response, state, active_gap_review=None):
 def ground_batch(items, user_response, state, active_gap_review=None):
     eligible = []
     for item in items:
-        reason = category_contradiction(item.key, item.evidence, item.value)
+        reason = category_contradiction(
+            item.key,
+            item.evidence,
+            item.value,
+            direct_answer=(
+                item.topic == state.get("current_topic")
+                and item_directly_answers_gap(item, state.get("current_gap"))
+            ),
+        )
         if reason:
             print(f"CATEGORY REJECTED: {item.topic.value}.{item.key} owner={item.role} | {reason}")
         else:
@@ -615,7 +623,15 @@ def _admit_claim_item(
     if not valid:
         raise ValueError(reason)
 
-    semantic_reason = category_contradiction(item.key, item.evidence, item.value)
+    semantic_reason = category_contradiction(
+        item.key,
+        item.evidence,
+        item.value,
+        direct_answer=(
+            item.topic == state.get("current_topic")
+            and item_directly_answers_gap(item, state.get("current_gap"))
+        ),
+    )
     if semantic_reason:
         raise ValueError(semantic_reason)
 
