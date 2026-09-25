@@ -1,16 +1,19 @@
 """System-wide invariants for end-to-end Architect discovery tests."""
 from agents.discovery_coverage import fact_id
 from agents.requirements import RequirementStatus
+from agents.state import KnowledgeItem
 
 
 def assert_discovery_invariants(state):
     knowledge = state.get("discovered_knowledge", [])
     live_fact_ids = {fact_id(item) for item in knowledge}
-    superseded = {
-        record.get("fact_id")
-        for record in state.get("superseded_knowledge", [])
-        if isinstance(record, dict) and record.get("fact_id")
-    }
+    superseded = set()
+    for record in state.get("superseded_knowledge", []):
+        if not isinstance(record, dict):
+            continue
+        payload = record.get("fact")
+        if payload:
+            superseded.add(fact_id(KnowledgeItem.model_validate(payload)))
     requirements = state.get("active_requirements", {})
     coverage = state.get("requirement_coverage", {})
     dependencies = state.get("requirement_dependency_state", {})
