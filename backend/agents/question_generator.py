@@ -134,7 +134,8 @@ def question_generator_node(state: AgentState) -> dict:
     current_role = state.get("current_role")
     discovery_move = state.get("next_discovery_move") or "deepen_understanding"
     discovery_scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
-    planner_source = state.get("planner_source", "schema")
+    planner_source = state.get("planner_source", "model")
+    selected_inquiry = state.get("selected_inquiry") or {}
     selected_requirement = state.get("selected_requirement_candidate") or {}
 
     if not current_topic:
@@ -186,6 +187,7 @@ def question_generator_node(state: AgentState) -> dict:
     )
     relevant_context = state.get("relevant_context", [])
     requirement_guidance = ""
+    model_guidance = ""
     validation_guidance = ""
     if planner_source == "requirement":
         requirement = state.get("active_requirements", {}).get(
@@ -209,6 +211,18 @@ The schema gap shown below is only an extraction anchor. Do NOT broaden the
 question to cover the entire schema field. Ask specifically about the selected
 requirement and its unresolved facets. You may cover closely related facets in
 one natural question when that is clearer for the user.
+"""
+
+    if planner_source == "model":
+        model_guidance = f"""
+MODEL-DRIVEN DISCOVERY
+Why this inquiry exists: {selected_inquiry.get('reason', 'The current product model has a material uncertainty.')}
+Inquiry objective: {current_objective}
+
+The anchor field below exists only so extraction can normalize the answer.
+It is NOT a checklist item and does not need to be exhaustively completed.
+Ask only what materially resolves the selected product uncertainty. Build on
+confirmed facts instead of re-running a generic schema question.
 """
 
     # When in ADMIN_DASHBOARD phase, surface what was learned about the
@@ -248,37 +262,39 @@ You are an experienced Product Manager conducting a structured product discovery
 {scope_rules}
 {other_phase_knowledge}
 
-The Interview Planner has selected the next eligible discovery move. Follow
-its topic and objective, but reuse product knowledge learned in any topic.
+The Interview Planner has selected the highest-value open product inquiry.
+Follow that inquiry and reuse product knowledge learned anywhere in the model.
 
-Your ONLY job is to write ONE natural question that discovers that missing information.
+Your ONLY job is to write ONE natural question that resolves or materially
+reduces that uncertainty.
 
 ========================================
 WHAT YOU ARE ASKING ABOUT (MEMORIZE THIS)
 ========================================
 
 Current topic: {current_topic.value}
-Current gap: {current_gap}
+Extraction anchor: {current_gap}
 Current objective: {current_objective}
 Question guidance: {question_hint}
 Discovery move: {discovery_move}
 Planner source: {planner_source}
+{model_guidance}
 {requirement_guidance}
 {validation_guidance}
-Internal schema definition (context only; never quote this to the user):
+Internal field definition (normalization context only; never quote this to the user):
 {FIELD_DEFINITIONS.get(current_topic, {}).get((current_gap or '').split('::')[0], '')}
 
 ========================================
 WHAT YOU MUST DO
 ========================================
 
-Write a question that discovers: "{current_objective}"
+Write a question that resolves: "{current_objective}"
 
 Use this guidance for HOW to phrase it: "{question_hint}"
 
-Your question MUST directly ask about the objective above.
-Your question MUST use vocabulary related to the objective.
-Your question MUST NOT drift to any other topic or field.
+Your question MUST directly address the selected uncertainty.
+Your question MUST use vocabulary related to the product decision.
+Do not broaden it merely to fill neighboring schema fields.
 Use simple product language. Do not repeat internal terms such as primary value
 exchange, scoped product, explicit absence, current gap, or planner objective.
 
@@ -289,7 +305,6 @@ WHAT YOU MUST NOT DO
 - Do NOT ask about exceptions, errors, disputes, failures, or edge cases
   when the objective is about goals, motivations, or workflow steps.
 - Do NOT ask about the happy path when the objective is about exceptions or edge cases.
-- Do NOT ask about a different field within the same topic when this is schema-driven discovery.
 - When this is requirement-driven discovery, stay within the selected requirement
   and its target facets even if the answer may map to more than one schema field.
 - When this is contradiction-resolution mode, ask only which current rule/decision
@@ -344,9 +359,9 @@ If some information is already known but important details remain unclear,
 ask about the missing or unclear part rather than asking the original broad
 question again.
 
-Existing knowledge does NOT mean the topic or field is complete. It means
-you should build on what is already known and use it to make the next
-question more specific and useful.
+Existing knowledge does NOT create an obligation to exhaust the surrounding
+topic or field. Build on what is known and ask only for the information needed
+to resolve the selected inquiry.
 
 {permission_guidance}
 {confirmation_guidance}
