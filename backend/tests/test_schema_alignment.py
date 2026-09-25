@@ -342,13 +342,12 @@ def test_every_required_field_round_trips_through_its_pass_and_planner(monkeypat
     assert FIELD_DEFINITIONS[topic][key] in prompt
 
 
-def test_empty_actor_sets_waive_role_gaps_and_unlock_next_topic():
-    from agents.interview_planner import assess_topic_maturity
-    from agents.state import TopicMaturity
+def test_legacy_gap_diagnostic_does_not_create_topic_maturity_state():
     items = [KnowledgeItem(topic=T.USER_ROLES, scope=S.USER_APP, key=key,
                            value="none", absence="none", evidence="None apply.",
                            roles=[] if key.endswith("users") else None, confidence=1)
              for key in ("primary_users", "secondary_users", "multiple_roles", "role_transitions")]
     state = dict(discovery_scope=S.USER_APP, discovered_knowledge=items)
     assert build_gap_info(state, T.USER_ROLES)["missing_keys"]
-    assert assess_topic_maturity(state, T.USER_ROLES) != TopicMaturity.DECISION_READY
+    assert "topic_status" not in state
+    assert "topic_maturity" not in state
