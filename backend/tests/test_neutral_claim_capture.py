@@ -63,6 +63,8 @@ def test_seller_goal_answer_does_not_become_action_permission_or_end_state(monke
         claim("actor_action", "be protected from non-payment", second, role="seller"),
         claim("authorization_boundary", second, second, role="seller"),
         claim("workflow_end_state", "The seller gets paid once they fulfill what was agreed", first),
+        claim("validation_rule", second, second),
+        claim("eligibility_rule", first, first),
     ], calls)
 
     def unexpected(*_):
@@ -93,7 +95,10 @@ def test_seller_goal_answer_does_not_become_action_permission_or_end_state(monke
     assert added[0].topic == T.USER_GOALS
     assert added[0].key == "primary_user_goals"
     assert added[0].role == "seller"
-    assert not any(item.key in {"permissions", "end_state"} for item in added)
+    assert not any(
+        item.key in {"permissions", "end_state", "validation_rules", "eligibility_rules"}
+        for item in added
+    )
     assert not any(
         item.key == "responsibilities" and item.role == "seller"
         for item in added
