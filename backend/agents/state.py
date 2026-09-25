@@ -152,6 +152,8 @@ class AgentState(TypedDict):
     question_candidates: List[dict]
     eligible_question_candidates: List[dict]
     question_candidate_eligibility: Dict[str, dict]
+    ranked_question_candidates: List[dict]
+    question_candidate_priority: Dict[str, dict]
     requirement_question_history: List[dict]
     topic_status: Dict[DiscoveryTopic, TopicStatus]
     current_topic: Optional[DiscoveryTopic]
