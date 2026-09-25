@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from enum import Enum
 from itertools import combinations
+import json
 from typing import Dict, Iterable, List, Sequence
 
+from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, Field
 
 from agents.discovery_coverage import fact_id
@@ -244,14 +246,8 @@ def _review_unknown_pairs(
         ]
         try:
             result = conflict_model().invoke([
-                {
-                    "role": "system",
-                    "content": FACT_CONFLICT_INSTRUCTION,
-                },
-                {
-                    "role": "user",
-                    "content": str(payload),
-                },
+                SystemMessage(content=FACT_CONFLICT_INSTRUCTION),
+                HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
             ])
             if not isinstance(result, FactConflictBatch):
                 result = FactConflictBatch.model_validate(result)
