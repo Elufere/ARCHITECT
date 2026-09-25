@@ -30,7 +30,7 @@ def actor(role, secondary=False, scope=S.USER_APP):
 
 
 def run(monkeypatch, text, outputs, *, existing=(), topic=None, gap=None, question="",
-        reject=(), absence="unresolved", scope=S.USER_APP):
+        reject=(), absence="unresolved", scope=S.USER_APP, fact_acquisition=None):
     calls = []
     def invoke(name, messages):
         calls.append((name, messages))
@@ -54,6 +54,7 @@ def run(monkeypatch, text, outputs, *, existing=(), topic=None, gap=None, questi
     state = dict(messages=[AIMessage(content=delivered_question), HumanMessage(content=text)],
                  current_topic=topic, current_gap=gap, discovered_knowledge=list(existing),
                  discovery_scope=scope, topic_status={}, topic_maturity={}, turn_count=0,
+                 fact_acquisition=dict(fact_acquisition or {}),
                  asked_gap=(dict(scope=scope.value, topic=topic.value, gap=gap, question=delivered_question)
                             if topic and gap else None))
     state.update(tracker.knowledge_tracker_node(state))
@@ -73,9 +74,9 @@ def test_careconnect_shared_evidence_and_two_turn_planner_progression(monkeypatc
     }
     state, calls = run(monkeypatch, CARE, outputs)
     state.update(interview_planner_node(state))
-    assert state["current_gap"] == "primary_users"
-    assert state["next_discovery_move"] == "confirm_existing"
-    assert all(f"responsibilities::{r}" in state["missing_keys"] for r in ("patient", "healthcare_provider"))
+    assert state["planner_source"] == "model"
+    assert state["current_gap"] == "primary_user_goals::healthcare_provider"
+    assert state["next_discovery_move"] == "resolve_model_uncertainty"
     shared = [i for i in state["discovered_knowledge"] if i.evidence == patient]
     assert {(i.topic, i.key) for i in shared} == {(T.USER_ROLES, "responsibilities"), (T.CORE_WORKFLOW, "workflow_steps")}
     assert len(state["discovered_knowledge"]) == 6
@@ -88,14 +89,16 @@ def test_careconnect_shared_evidence_and_two_turn_planner_progression(monkeypatc
                 "GOAL": [raw("primary_user_goals", "find and book appointments", NO_OTHERS, role="patient")]}
     next_state, _ = run(monkeypatch, NO_OTHERS, polluted, existing=state["discovered_knowledge"],
         topic=T.USER_ROLES, gap="secondary_users", question="Are there any other users?", absence="none",
-        reject=[("workflow_steps", "patients and professionals use the app"), ("primary_user_goals", "find and book appointments")])
+        reject=[("workflow_steps", "patients and professionals use the app"), ("primary_user_goals", "find and book appointments")],
+        fact_acquisition=state["fact_acquisition"])
     prior = coverage_for_facts(state, T.USER_ROLES)
     next_state["gap_coverage"] = {
         key: value for key, value in prior.items()
         if key.endswith("|primary_users")
     }
     next_state.update(interview_planner_node(next_state))
-    assert next_state["current_gap"] == "responsibilities::patient"
+    assert next_state["planner_source"] == "model"
+    assert next_state["current_gap"] == "primary_user_goals::healthcare_provider"
     assert len(next_state["discovered_knowledge"]) == 7
     assert next_state["discovered_knowledge"][-1].absence == "none"
 
@@ -229,14 +232,14 @@ def test_actor_topic_scope_ownership_boundaries_and_legacy_spelling(monkeypatch)
     assert "manage schedules" not in permission_discovery_guidance(other_scope, "healthcare_provider")
 
 
-def test_serialized_completed_status_without_deliberate_coverage_is_reopened():
+def test_serialized_completed_status_does_not_hide_model_uncertainty():
     state = dict(discovery_scope=S.USER_APP, current_topic=None,
                  discovered_knowledge=[actor("patient")], topic_maturity={},
                  topic_status={T.USER_ROLES: TopicStatus.COMPLETED})
     plan = interview_planner_node(state)
+    assert plan["planner_source"] == "model"
     assert plan["current_topic"] == T.USER_ROLES
-    assert plan["topic_status"][T.USER_ROLES] == TopicStatus.PARTIAL
-    assert plan["current_gap"] == "primary_users"
+    assert plan["current_gap"] == "responsibilities::patient"
 
 
 def test_every_planner_field_has_storage_extraction_and_shared_semantics():
