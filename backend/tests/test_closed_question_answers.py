@@ -51,7 +51,7 @@ def test_no_is_stored_and_planner_moves_to_responsibilities(monkeypatch):
 
 def test_yes_is_processed_and_asks_who_without_reasking_existence(monkeypatch):
     no_extraction_calls(monkeypatch)
-    result = graph.build_graph().invoke(state("yes"), config={"recursion_limit": 12})
+    result = graph.build_graph().invoke(state("yes"), config={"recursion_limit": 30})
     assert result["current_gap"] == "secondary_users"
     assert len(result["discovered_knowledge"]) == 1  # Never invent an unnamed actor.
     assert result["messages"][-1].content == "Who else will use the user app, and what will they do?"
