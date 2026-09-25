@@ -124,9 +124,13 @@ def _repetition_penalty(state: AgentState, candidate: QuestionCandidate) -> floa
 
 
 def _fatigue_penalty(state: AgentState, candidate: QuestionCandidate) -> float:
+    def topic_value(entry: dict):
+        value = entry.get("topic")
+        return value.value if isinstance(value, DiscoveryTopic) else value
+
     count = sum(
         1 for entry in _recent_history(state)
-        if entry.get("topic") == candidate.topic.value
+        if topic_value(entry) == candidate.topic.value
     )
     return min(0.12, count * 0.03)
 
