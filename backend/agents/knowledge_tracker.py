@@ -331,7 +331,17 @@ def actor_identity_candidate_allowed(fact: ActorFact, state: AgentState, scope: 
 
     def mentions(label: str) -> bool:
         phrase = " ".join(canonical_role(label).split("_"))
-        return bool(phrase) and re.search(rf"\b{re.escape(phrase)}\b", normalized_evidence) is not None
+        if not phrase:
+            return False
+        forms = {phrase}
+        parts = phrase.split()
+        last = parts[-1]
+        if not last.endswith("s"):
+            forms.add(" ".join([*parts[:-1], last + "s"]))
+        return any(
+            re.search(rf"\b{re.escape(form)}\b", normalized_evidence) is not None
+            for form in forms
+        )
 
     return mentions(role) and any(mentions(alias) for alias in fact.aliases)
 
