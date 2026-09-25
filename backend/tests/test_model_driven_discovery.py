@@ -153,6 +153,66 @@ def test_incidental_cross_category_fact_does_not_skip_foundational_decision():
     assert {item.anchor_gap for item in inquiries} == {"primary_user_goals::customer"}
 
 
+def test_explicit_secondary_participant_creates_action_inquiry():
+    actor = fact(T.USER_ROLES, "primary_users", "customers", roles=["customer"])
+    responsibility = fact(
+        T.USER_ROLES,
+        "responsibilities",
+        "create transactions",
+        role="customer",
+        turn=2,
+    )
+    goal = fact(
+        T.USER_GOALS,
+        "primary_user_goals",
+        "complete transactions safely",
+        role="customer",
+        turn=3,
+    )
+    vendor = fact(
+        T.USER_ROLES,
+        "secondary_users",
+        "vendors also use the application",
+        roles=["vendor"],
+        turn=4,
+    )
+    state = state_with(actor, responsibility, goal, vendor)
+    state["fact_acquisition"] = {
+        fact_id(actor): {
+            "acquisition": "DIRECT",
+            "source_turn": 1,
+            "active_topic": T.USER_ROLES.value,
+            "active_gap": "primary_users",
+        },
+        fact_id(responsibility): {
+            "acquisition": "DIRECT",
+            "source_turn": 2,
+            "active_topic": T.USER_ROLES.value,
+            "active_gap": "responsibilities::customer",
+        },
+        fact_id(goal): {
+            "acquisition": "DIRECT",
+            "source_turn": 3,
+            "active_topic": T.USER_GOALS.value,
+            "active_gap": "primary_user_goals::customer",
+        },
+        fact_id(vendor): {
+            "acquisition": "INCIDENTAL",
+            "source_turn": 4,
+            "active_topic": T.CORE_WORKFLOW.value,
+            "active_gap": None,
+        },
+    }
+
+    inquiries = identify_open_inquiries(state)
+
+    assert any(
+        item.anchor_gap == "responsibilities::vendor"
+        and item.role == "vendor"
+        for item in inquiries
+    )
+
+
 def test_negative_role_transition_policy_does_not_activate_transition_depth():
     fixed = fact(
         T.USER_ROLES,
