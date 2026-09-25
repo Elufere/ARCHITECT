@@ -32,6 +32,13 @@ class RequirementActivationSource(BaseModel):
     activation_rule_id: Optional[str] = None
 
 
+class RequirementFacet(BaseModel):
+    id: str
+    label: str
+    description: str
+    required: bool = True
+
+
 class RequirementEvidenceRef(BaseModel):
     """Reference to existing knowledge/evidence rather than a copied fact."""
 
@@ -51,6 +58,7 @@ class ActiveRequirement(BaseModel):
     description: Optional[str] = None
     status: RequirementStatus = RequirementStatus.ACTIVE
     activation_sources: List[RequirementActivationSource] = Field(default_factory=list)
+    facets: List[RequirementFacet] = Field(default_factory=list)
     dependencies: List[str] = Field(default_factory=list)
     unlocks: List[str] = Field(default_factory=list)
     evidence_refs: List[RequirementEvidenceRef] = Field(default_factory=list)
