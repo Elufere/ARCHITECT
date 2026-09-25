@@ -35,7 +35,11 @@ def test_repeated_template_exits_graph_with_bounded_retries(monkeypatch):
     # generated draft, so a model-driven question can invoke the generator once
     # initially plus the bounded retry budget.
     assert len(calls) == 1 + guardrails.MAX_QUESTION_RETRIES
-    assert "already asked" in calls[0][0].content
+    assert any(
+        "already asked" in message.content.lower()
+        for message in calls[1]
+        if isinstance(message, SystemMessage)
+    )
     assert isinstance(result["messages"][-1], AIMessage)
     assert result["messages"][-1].content.startswith("I'm having trouble")
     assert result["messages"][-1].content.endswith(QUESTION)
