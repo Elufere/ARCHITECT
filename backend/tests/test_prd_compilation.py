@@ -279,6 +279,7 @@ def test_graph_returns_blocked_compilation_without_saving(monkeypatch, tmp_path)
     setup(monkeypatch, tmp_path, judge=lambda p: verdict(p, claim_supported=False, explanation="Unsupported claim"))
     monkeypatch.setattr(graph, "knowledge_tracker_node", lambda _: {})
     monkeypatch.setattr(graph, "interview_planner_node", lambda _: {"awaiting_confirmation": True})
+    monkeypatch.setattr(graph, "all_discovery_resolved", lambda _: True)
     result = graph.build_graph().invoke(state())
     assert not result["pm_is_complete"] and not result["awaiting_confirmation"]
     assert result["compilation_errors"] and result["prd_contract"] is None
