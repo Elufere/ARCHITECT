@@ -139,6 +139,16 @@ BASE_ACTIVATION_RULES: tuple[RequirementActivationRule, ...] = (
 )
 
 
+# Explicit state/status language is the conservative signal that the primary
+# workflow has a lifecycle worth expanding beyond the universal workflow schema.
+STATEFUL_WORD_PREFIXES = (
+    "state", "status", "draft", "pend", "activ", "approv", "reject",
+    "complet", "clos", "fulfill", "deliver", "cancell", "expir",
+    "archiv", "disabl", "delet", "lock", "unlock", "suspend",
+    "terminat", "publish", "unpublish", "paid", "unpaid",
+)
+
+
 # Lifecycle rules are activated only by grounded generic product facts. They
 # create questions worth investigating; they never assert the lifecycle answer.
 LIFECYCLE_ACTIVATION_RULES: tuple[RequirementActivationRule, ...] = (
@@ -148,6 +158,11 @@ LIFECYCLE_ACTIVATION_RULES: tuple[RequirementActivationRule, ...] = (
         when=(
             FactCondition(topic=DiscoveryTopic.CORE_WORKFLOW, key="trigger"),
             FactCondition(topic=DiscoveryTopic.CORE_WORKFLOW, key="workflow_steps"),
+            FactCondition(
+                topic=DiscoveryTopic.CORE_WORKFLOW,
+                key="end_state",
+                value_word_prefixes=STATEFUL_WORD_PREFIXES,
+            ),
         ),
         activates=(
             RequirementTemplate(
@@ -170,7 +185,11 @@ LIFECYCLE_ACTIVATION_RULES: tuple[RequirementActivationRule, ...] = (
         description="A workflow with an explicit end state implies meaningful state transitions worth clarifying.",
         when=(
             FactCondition(topic=DiscoveryTopic.CORE_WORKFLOW, key="workflow_steps"),
-            FactCondition(topic=DiscoveryTopic.CORE_WORKFLOW, key="end_state"),
+            FactCondition(
+                topic=DiscoveryTopic.CORE_WORKFLOW,
+                key="end_state",
+                value_word_prefixes=STATEFUL_WORD_PREFIXES,
+            ),
         ),
         activates=(
             RequirementTemplate(
@@ -194,7 +213,11 @@ LIFECYCLE_ACTIVATION_RULES: tuple[RequirementActivationRule, ...] = (
         description="An explicit completion condition and end state make post-completion lifecycle behavior relevant.",
         when=(
             FactCondition(topic=DiscoveryTopic.CORE_WORKFLOW, key="completion_condition"),
-            FactCondition(topic=DiscoveryTopic.CORE_WORKFLOW, key="end_state"),
+            FactCondition(
+                topic=DiscoveryTopic.CORE_WORKFLOW,
+                key="end_state",
+                value_word_prefixes=STATEFUL_WORD_PREFIXES,
+            ),
         ),
         activates=(
             RequirementTemplate(
