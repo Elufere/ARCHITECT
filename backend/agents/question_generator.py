@@ -207,8 +207,8 @@ Requirement description: {requirement.description or requirement.label}
 Unresolved facets this question may cover:
 {chr(10).join(targets) if targets else "- Clarify the unresolved requirement."}
 
-The schema gap shown below is only an extraction anchor. Do NOT broaden the
-question to cover the entire schema field. Ask specifically about the selected
+The anchor field shown below exists only for extraction normalization. Do NOT
+broaden the question to exhaust that field. Ask specifically about the selected
 requirement and its unresolved facets. You may cover closely related facets in
 one natural question when that is clearer for the user.
 """
@@ -309,7 +309,7 @@ WHAT YOU MUST NOT DO
   and its target facets even if the answer may map to more than one schema field.
 - When this is contradiction-resolution mode, ask only which current rule/decision
   applies; do not continue ordinary schema discovery in the same question.
-- Do NOT ask about future discovery topics.
+- Do NOT jump to unrelated product decisions just because they exist elsewhere in the model.
 - Do NOT ask for definitions.
 - Do NOT ask "what do you mean by..." unless the user explicitly used an ambiguous term.
 - Do NOT invent speculative scenarios. When the selected gap is an exception or
