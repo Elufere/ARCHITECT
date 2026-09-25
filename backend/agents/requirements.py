@@ -39,6 +39,13 @@ class RequirementFacet(BaseModel):
     required: bool = True
 
 
+class RequirementPriorityHints(BaseModel):
+    """Optional bounded product signals supplied by deterministic rules or config."""
+
+    architecture_impact: float = Field(default=0.5, ge=0, le=1)
+    business_risk: float = Field(default=0.5, ge=0, le=1)
+
+
 class RequirementEvidenceRef(BaseModel):
     """Reference to existing knowledge/evidence rather than a copied fact."""
 
@@ -62,6 +69,7 @@ class ActiveRequirement(BaseModel):
     dependencies: List[str] = Field(default_factory=list)
     unlocks: List[str] = Field(default_factory=list)
     evidence_refs: List[RequirementEvidenceRef] = Field(default_factory=list)
+    priority_hints: RequirementPriorityHints = Field(default_factory=RequirementPriorityHints)
     coverage_ref: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
