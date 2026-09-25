@@ -33,6 +33,9 @@ def test_exact_answer_advances_even_when_incidental_audit_fails(monkeypatch, inc
     def decide(name, schema, instruction, payload):
         if name == "GAP_ANSWER":
             return GapAnswer(resolution="unresolved", evidence=ANSWER, confidence=1)
+        if name != "GROUNDING":
+            from agents.knowledge_duplicates import FactComparison
+            return FactComparison(relation="new", confidence=1)
         audits.append(payload)
         candidates = payload["candidates"]
         if all(c["key"] == "responsibilities" for c in candidates):
