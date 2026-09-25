@@ -233,3 +233,56 @@ def test_explicit_external_participant_cannot_become_current_app_actor(monkeypat
         for item in batch
     )
     assert {item.key for item in batch} == {"downstream_dependency", "approval_rules"}
+
+
+def test_process_participant_does_not_become_secondary_actor_without_app_membership(monkeypatch):
+    text = "If there is a dispute, a mediator reviews the evidence."
+    calls = []
+    production_models(monkeypatch, [
+        claim("secondary_actor", "mediator", text, role="mediator"),
+        claim("workflow_steps", text, text),
+    ], calls)
+
+    batch = tracker.extract_passes(
+        text,
+        dict(
+            messages=[HumanMessage(content=text)],
+            discovery_scope=S.USER_APP,
+            discovered_knowledge=[actor("customer")],
+            current_topic=None,
+            current_gap=None,
+            turn_count=3,
+        ),
+        S.USER_APP,
+    )
+
+    assert not any(item.key == "secondary_users" for item in batch)
+    assert any(item.key == "workflow_steps" for item in batch)
+
+
+def test_direct_actor_answer_can_establish_membership_without_repeating_app_wording(monkeypatch):
+    text = "Vendors."
+    calls = []
+    production_models(monkeypatch, [
+        claim("secondary_actor", "vendor", text, role="vendor"),
+    ], calls)
+
+    batch = tracker.extract_passes(
+        text,
+        dict(
+            messages=[
+                AIMessage(content="Besides customers, who else uses the app?"),
+                HumanMessage(content=text),
+            ],
+            discovery_scope=S.USER_APP,
+            discovered_knowledge=[actor("customer")],
+            current_topic=T.USER_ROLES,
+            current_gap="secondary_users",
+            turn_count=3,
+        ),
+        S.USER_APP,
+    )
+
+    assert len(batch) == 1
+    assert batch[0].key == "secondary_users"
+    assert batch[0].roles == ["vendor"]
