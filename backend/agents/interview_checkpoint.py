@@ -18,7 +18,7 @@ from agents.requirements import ActiveRequirement
 from agents.state import DiscoveryScope, DiscoveryTopic, KnowledgeItem, TopicMaturity, TopicStatus
 
 
-CURSORS = {"conversation_manager", "extract", "plan", "generate", "guardrail", "compile_prd",
+CURSORS = {"conversation_manager", "extract", "activate_requirements", "plan", "generate", "guardrail", "compile_prd",
            "waiting", "phase_complete", "completed"}
 
 
@@ -146,7 +146,7 @@ def durable_node(name, node, next_node):
             merged["messages"] = add_messages(deepcopy(state.get("messages", [])), update["messages"])
         cursor = next_node(merged)
         status = {"conversation_manager": "PROCESSING_ANSWER", "extract": "PROCESSING_ANSWER",
-                  "plan": "ACTIVE", "generate": "GENERATING_QUESTION", "guardrail": "VALIDATING_QUESTION",
+                  "activate_requirements": "PROCESSING_REQUIREMENTS", "plan": "ACTIVE", "generate": "GENERATING_QUESTION", "guardrail": "VALIDATING_QUESTION",
                   "compile_prd": "COMPILING_PRD", "waiting": "WAITING_FOR_USER",
                   "phase_complete": "AWAITING_PHASE_CHOICE", "completed": "COMPLETED"}[cursor]
         metadata = dict(checkpoint_cursor=cursor, interview_status=status)
