@@ -43,7 +43,7 @@ def requirement(**overrides):
 def test_register_and_retrieve_requirement():
     item = requirement()
     store = register_requirement({}, item)
-    assert get_requirement(store, item.id) == item
+    assert get_requirement(store, item.id, scope=DiscoveryScope.USER_APP) == item
     assert list_requirements(store, topic=DiscoveryTopic.BUSINESS_RULES) == [item]
 
 
@@ -57,16 +57,21 @@ def test_requirement_status_transitions_preserve_record():
         RequirementStatus.INACTIVE,
         RequirementStatus.ACTIVE,
     ):
-        store = update_requirement_status(store, item.id, status)
-        assert store[item.id].status == status
-        assert store[item.id].activation_sources == item.activation_sources
+        store = update_requirement_status(store, item.id, status, scope=DiscoveryScope.USER_APP)
+        scoped = store[f"USER_APP|{item.id}"]
+        assert scoped.status == status
+        assert scoped.activation_sources == item.activation_sources
 
 
 def test_inactive_requirement_is_preserved_and_filterable():
     item = requirement()
-    store = update_requirement_status(register_requirement({}, item), item.id, RequirementStatus.INACTIVE)
-    assert item.id in store
-    assert list_requirements(store, status=RequirementStatus.INACTIVE) == [store[item.id]]
+    store = update_requirement_status(
+        register_requirement({}, item), item.id, RequirementStatus.INACTIVE,
+        scope=DiscoveryScope.USER_APP,
+    )
+    key = f"USER_APP|{item.id}"
+    assert key in store
+    assert list_requirements(store, status=RequirementStatus.INACTIVE) == [store[key]]
     assert list_requirements(store, status=RequirementStatus.ACTIVE) == []
 
 
@@ -74,9 +79,12 @@ def test_evidence_is_referenced_not_copied_as_knowledge():
     item = requirement()
     store = register_requirement({}, item)
     evidence = RequirementEvidenceRef(fact_id="abc123", source_turn=7)
-    store = attach_requirement_evidence(store, item.id, [evidence, evidence])
-    assert store[item.id].evidence_refs == [evidence]
-    dumped = store[item.id].model_dump()
+    store = attach_requirement_evidence(
+        store, item.id, [evidence, evidence], scope=DiscoveryScope.USER_APP
+    )
+    scoped = store[f"USER_APP|{item.id}"]
+    assert scoped.evidence_refs == [evidence]
+    dumped = scoped.model_dump()
     assert "value" not in dumped["evidence_refs"][0]
     assert "evidence" not in dumped["evidence_refs"][0]
 
@@ -100,14 +108,15 @@ def test_checkpoint_round_trip_rehydrates_active_requirements(tmp_path, monkeypa
         messages=[],
         discovery_scope=DiscoveryScope.USER_APP,
         discovered_knowledge=[],
-        active_requirements={item.id: item},
+        active_requirements={f"USER_APP|{item.id}": item},
         topic_status={},
         topic_maturity={},
     )
     save_checkpoint(state)
     loaded = load_checkpoint(session_id)
-    assert loaded["active_requirements"][item.id] == item
-    assert isinstance(loaded["active_requirements"][item.id], ActiveRequirement)
+    key = f"USER_APP|{item.id}"
+    assert loaded["active_requirements"][key] == item
+    assert isinstance(loaded["active_requirements"][key], ActiveRequirement)
 
 
 def test_legacy_checkpoint_without_requirements_loads_empty_store(tmp_path, monkeypatch):
