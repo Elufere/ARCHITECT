@@ -97,11 +97,18 @@ _inquiry_assessment_model = None
 
 
 class InquiryAssessment(BaseModel):
-    covered: bool
-    too_broad: bool
-    recap_of_known_information: bool
-    reason: str
+    """Semantic evidence audit for one proposed discovery frontier.
+
+    The model reports evidence and missing information separately. Coverage is
+    derived in code so "related context exists" cannot be mistaken for
+    "the requested information is already known".
+    """
+
     supporting_observation_ids: List[str] = Field(default_factory=list)
+    missing_information: List[str] = Field(default_factory=list)
+    too_broad: bool
+    recap_of_known_information: bool = False
+    reason: str
 
 
 def inquiry_assessment_model():
@@ -348,28 +355,40 @@ def _normalize_plan(
 INQUIRY_ASSESSMENT_INSTRUCTION = """Assess the proposed next discovery
 frontier before a question is generated.
 
-There are TWO independent failure modes to detect.
+Do NOT decide coverage from topical similarity. Separate what is KNOWN from what
+the proposed frontier still asks the founder to supply.
 
-1. ALREADY COVERED / RECAP:
-Judge meaning, not wording or decision_key names. covered=true when the founder's
-existing evidence already substantially answers the information need, including
-when the answer is distributed across several earlier turns. recap_of_known_information
-is true when the proposed move mostly asks the founder to narrate, summarize, or
-restate facts/process already present.
+Return:
+- supporting_observation_ids: only observation IDs whose founder evidence
+  DIRECTLY answers some or all of the proposed information need.
+- missing_information: each material part of the proposed information need that
+  is NOT directly answered by existing founder evidence.
+- recap_of_known_information=true ONLY when the proposed frontier asks the
+  founder to restate/summarize information that is already directly present and
+  there is no material new information to obtain.
+- too_broad=true when the frontier bundles multiple distinct product decisions,
+  multiple workflow stages, or multiple actors' journeys instead of one atomic
+  unresolved fork, state, relationship, rule, or causal link.
 
-2. TOO BROAD / BUNDLED:
-too_broad=true when the frontier asks for multiple distinct product decisions,
-multiple stages of a workflow, or multiple actors' journeys in one answer instead
-of one unresolved fork, state, relationship, rule, or causal link. End-to-end
-"walk me through the main steps from X to Y" requests are normally too broad.
-A valid frontier should be answerable as one coherent product decision.
+CRITICAL COVERAGE RULE:
+Related context is NOT an answer. Knowing WHO the actors are does not answer WHAT
+their responsibilities, permissions, goals, or workflows are. Knowing the product
+category does not answer who its actors are or what its workflow is. Knowing one
+stage of a process does not answer a different stage.
+
+If you can truthfully say "the founder has not provided X yet", then X MUST appear
+in missing_information and recap_of_known_information MUST be false.
+
+End-to-end requests such as "walk me through the main steps from X to Y" are
+normally too broad when X->Y spans several independent decisions. A valid frontier
+should be answerable as one coherent product decision.
 
 Only founder statements count as evidence. PM questions do not. Captured
 observations remain evidence even when canonical schema admission rejected them;
-an admission failure must not erase what the founder explicitly said.
+admission failure must not erase what the founder explicitly said.
 
-Do not mark a narrow unresolved follow-up as covered merely because related facts
-exist. Do not invent missing information.
+Do not invent missing information and do not treat implications from a product
+label as founder-provided facts.
 """
 
 
@@ -411,13 +430,22 @@ def _semantic_frontier_problem(
         print(f"INQUIRY ASSESSMENT SKIPPED: {exc}")
         return None
 
-    print(
-        f"INQUIRY ASSESSMENT: {plan.thread_id}/{frontier.decision_key} | "
-        f"covered={assessment.covered} | too_broad={assessment.too_broad} | "
-        f"recap={assessment.recap_of_known_information} | {assessment.reason}"
+    has_missing_information = bool(assessment.missing_information)
+    has_direct_support = bool(assessment.supporting_observation_ids)
+    covered = has_direct_support and not has_missing_information
+    recap = (
+        assessment.recap_of_known_information
+        and covered
     )
 
-    if assessment.covered or assessment.recap_of_known_information:
+    print(
+        f"INQUIRY ASSESSMENT: {plan.thread_id}/{frontier.decision_key} | "
+        f"covered={covered} | too_broad={assessment.too_broad} | "
+        f"recap={recap} | missing={assessment.missing_information} | "
+        f"{assessment.reason}"
+    )
+
+    if covered or recap:
         support = ", ".join(assessment.supporting_observation_ids) or "existing founder evidence"
         return (
             "The proposed information need is already substantially answered or "
