@@ -285,6 +285,13 @@ class ControlReply(BaseModel):
     suggestions: List[str] = Field(default_factory=list)
 
 
+class RecommendationRecord(BaseModel):
+    id: str = Field(default_factory=lambda: new_id("recommendation"))
+    statement: str
+    source_turn_id: str
+    status: KnowledgeStatus = KnowledgeStatus.PROPOSED
+
+
 class DiscoveryState(BaseModel):
     session_id: str
     raw_idea: str = ""
@@ -292,6 +299,7 @@ class DiscoveryState(BaseModel):
     source_turns: List[SourceTurn] = Field(default_factory=list)
     facts: List[FactRecord] = Field(default_factory=list)
     implications: List[ImplicationRecord] = Field(default_factory=list)
+    recommendations: List[RecommendationRecord] = Field(default_factory=list)
     requirements: Dict[str, RequirementRecord] = Field(default_factory=dict)
     contradictions: List[ContradictionRecord] = Field(default_factory=list)
     boundaries: List[DiscoveryBoundary] = Field(default_factory=list)
