@@ -13,7 +13,7 @@ from enum import Enum
 from typing import Dict, List, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from agents.discovery_coverage import fact_id
 from agents.llm import get_structured_model
@@ -54,14 +54,23 @@ class ThreadFrontierInquiry(BaseModel):
     business_risk: float = Field(default=0.5, ge=0, le=1)
     question_cost: float = Field(default=0.0, ge=0, le=1)
 
+    @field_validator("decision_key", mode="before")
+    @classmethod
+    def normalize_decision_key(cls, value):
+        if not isinstance(value, str):
+            return value
+        normalized = re.sub(r"[^a-z0-9_.-]+", "_", value.strip().lower()).strip("_.-")
+        return normalized[:80]
+
     @model_validator(mode="after")
     def valid_anchor(self):
         if self.anchor_gap:
             key = self.anchor_gap.split("::", 1)[0]
             if key not in TOPIC_KEY_MAP[self.topic]:
-                raise ValueError(
-                    f"anchor_gap '{self.anchor_gap}' is not valid for {self.topic.value}"
-                )
+                # anchor_gap is normalization metadata only. A useful thread
+                # decision must never be rejected merely because the model
+                # selected an imperfect legacy storage anchor.
+                self.anchor_gap = None
         return self
 
 
@@ -73,6 +82,14 @@ class DiscoveryThreadPlan(BaseModel):
     frontier: Optional[ThreadFrontierInquiry] = None
     relevant_requirement_ids: List[str] = Field(default_factory=list)
     rationale: str
+
+    @field_validator("thread_id", "parent_thread_id", mode="before")
+    @classmethod
+    def normalize_thread_ids(cls, value):
+        if value is None or not isinstance(value, str):
+            return value
+        normalized = re.sub(r"[^a-z0-9_.-]+", "_", value.strip().lower()).strip("_.-")
+        return normalized[:80] or None
 
 
 _thread_planner = None
@@ -100,7 +117,11 @@ The interview should feel like an excellent human PM conversation:
 2. Stay on one coherent discovery thread until the important local decisions are
    understandable. A child concept may temporarily become a child thread.
 3. Prefer high-information forks that eliminate materially different product
-   models. Examples of the reasoning pattern, NOT domain facts:
+   models. Before asking for an entire end-to-end workflow, resolve a foundational
+   product-shape fork when the current description is still broad enough to support
+   materially different structures. Ask the smallest question that will reshape
+   the model, then follow its consequences.
+   Examples of the reasoning pattern, NOT domain facts:
    - if a new entity appears, understand what it represents and how it relates
      to the current structure;
    - if a process step appears, understand the next unresolved causal link;
@@ -343,27 +364,36 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         SystemMessage(content=THREAD_PLANNER_INSTRUCTION),
         HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
     ]
+
+    problem = None
     try:
         plan = _normalize_plan(_invoke_thread_plan(messages), state, scope)
         problem = _plan_problem(plan, state, backlog)
         if problem is None:
             return plan
+    except Exception as first_exc:
+        raise_if_llm_failure(first_exc)
+        problem = f"Invalid structured thread plan: {first_exc}"
 
-        repair_payload = {
-            **payload,
-            "repair": {
-                "problem": problem,
-                "instruction": (
-                    "Return a different valid next move. Do not repeat the blocked "
-                    "thread decision and do not invent requirement IDs."
-                ),
-            },
-        }
+    print(f"DISCOVERY THREAD REPAIR: {problem}")
+    repair_payload = {
+        **payload,
+        "repair": {
+            "problem": problem,
+            "instruction": (
+                "Return one valid structured next move. Keep the next question on the "
+                "current causal/product-structure thread, do not repeat an answered "
+                "decision, use null for an uncertain anchor_gap, and do not invent "
+                "requirement IDs."
+            ),
+        },
+    }
+    try:
         repaired = _normalize_plan(
             _invoke_thread_plan([
                 SystemMessage(content=THREAD_PLANNER_INSTRUCTION + "\n"
-                    "The previous plan violated the conversation-control protocol. "
-                    "Repair the plan only; do not add product facts."),
+                    "The previous plan was invalid or violated the conversation-control "
+                    "protocol. Repair the plan only; do not add product facts."),
                 HumanMessage(content=json.dumps(repair_payload, ensure_ascii=False)),
             ]),
             state,
@@ -373,9 +403,9 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         if second_problem is not None:
             raise ValueError(second_problem)
         return repaired
-    except Exception as exc:
-        raise_if_llm_failure(exc)
-        raise ExtractionFailed("Discovery-thread planning failed") from exc
+    except Exception as second_exc:
+        raise_if_llm_failure(second_exc)
+        raise ExtractionFailed("Discovery-thread planning failed after one repair attempt") from second_exc
 
 
 def discovery_thread_node(state: AgentState) -> dict:
