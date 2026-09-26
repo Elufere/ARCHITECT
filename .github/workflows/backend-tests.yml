@@ -6,6 +6,10 @@ on:
       - feature/model-driven-discovery
   workflow_dispatch:
 
+concurrency:
+  group: backend-tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pytest:
     runs-on: ubuntu-latest
