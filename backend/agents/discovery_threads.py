@@ -403,11 +403,16 @@ all", "nothing else", or equivalent, that IS an explicit closure of that list:
 recent_answer_supports=true and do not invent a need for another confirmation.
 
 End-to-end requests such as "walk me through the main steps from X to Y" are
-normally too broad when X->Y spans several independent decisions. Likewise,
-asking for separate responsibilities or permissions for several independent
-actors in one question is normally too broad unless the comparison itself is the
-single unresolved decision. A valid frontier should be answerable as one coherent
-product decision.
+too broad when X->Y spans several independent decisions. Likewise, "when and how",
+"what changes in X, Y, and Z", or "what process applies and what conditions are
+required" are bundled inquiries unless they describe one indivisible choice.
+A valid frontier should require ONE substantive answer, not a checklist.
+
+When an existing canonical role's capabilities are already known and the founder
+says another user becomes that role, do not ask them to restate that role's
+features or permissions unless the evidence suggests the transitioned user is
+different. If that distinction is genuinely uncertain, ask only whether they
+become the same role or a distinct/limited version of it.
 
 DEPTH / MARGINAL VALUE:
 Product discovery is not an exhaustive interrogation. Once the governing product
@@ -593,8 +598,10 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "repair": {
             "problem": problem,
             "instruction": (
-                "Return one valid structured next move. Choose ONE atomic unresolved "
-                "decision. Stay on the current causal/product-structure thread only when "
+                "Return one valid structured next move. Choose EXACTLY ONE independently "
+                "answerable product decision. Do not combine timing, process, conditions, "
+                "permissions, features, or experience into one frontier. Stay on the "
+                "current causal/product-structure thread only when "
                 "it still has material product value; if the repair says the local thread "
                 "is sufficiently understood, move to a different high-value product "
                 "decision. Do not ask for an end-to-end workflow recap, exhaustive list, "
