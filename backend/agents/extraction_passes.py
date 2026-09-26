@@ -182,6 +182,14 @@ Critical distinctions:
   actor only when the user explicitly states that relationship. Never infer it
   merely from domain convention.
 
+Conversation-control language is NOT product knowledge. Questions, rhetorical
+challenges, complaints about the interview, or statements about who should answer
+a design question do not establish application actors, roles, permissions, or
+requirements. Examples such as "am I the product designer?", "that is the
+designer's job", and "you are asking irrelevant questions" must produce no
+product claim (or unclassified only when capture is necessary). Never turn an
+interrogative into an affirmative proposition.
+
 For every claim:
 - evidence MUST be one exact contiguous, case-sensitive substring of latest_response;
 - value must preserve only what that evidence states, including conditions/negation;
