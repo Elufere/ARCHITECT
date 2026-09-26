@@ -278,9 +278,9 @@ class CompletionAssessment(BaseModel):
     reason: str
 
 
-class AdviceResult(BaseModel):
-    suggestions: List[str] = Field(default_factory=list)
+class ControlReply(BaseModel):
     response: str
+    suggestions: List[str] = Field(default_factory=list)
 
 
 class DiscoveryState(BaseModel):
