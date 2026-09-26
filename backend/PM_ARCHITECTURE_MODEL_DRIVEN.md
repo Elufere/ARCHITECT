@@ -73,8 +73,17 @@ A grounded fact is not automatically an interview-completion signal.
 `product_model.py` remains a derived view of confirmed facts. The interview no
 longer walks the model by `DiscoveryTopic` order.
 
-The foundational inquiry frontier currently asks only for enough structure to
-make the product coherent:
+The model also contains first-class **product concepts** discovered directly from
+founder language: entities, structural relationships, and attributes that do not
+need to fit a legacy PRD field. For example, if the founder introduces an event,
+group, package, variant, deal, cart, shipment, or pickup location, that structure
+can become part of the reasoning model without inventing a schema key for it.
+These concepts are evidence-backed and are available to the discovery-thread
+planner, so newly introduced product structure can naturally determine the next
+question.
+
+The foundational inquiry frontier below is now only a compatibility fallback for
+callers that have not run discovery-thread planning:
 
 1. core actor(s)
 2. what each primary actor actually does
@@ -208,6 +217,23 @@ the same decision is hard-blocked after two deliveries.
 Question priority now includes information gain, causal relevance, and
 conversation continuity in addition to uncertainty, dependency unlock, impact,
 risk, and cost.
+
+### Collaborative advice without inventing facts
+
+A founder may temporarily ask the PM for help while answering a discovery
+question, for example: "Picture, description and price. Do you have more
+suggestions?"
+
+This is treated as an `advice_request`, not as permission to add requirements.
+The founder's own statements still pass through normal neutral claim capture.
+The PM may then give a short set of clearly optional suggestions and continue the
+same active discovery thread with one final question. Advisory text is never
+written to the confirmed fact ledger merely because the PM suggested it.
+
+For short follow-up answers such as "yes", extraction resolves context against
+the **trailing interview question**, not the advisory prose that preceded it.
+Delivered-question history likewise records the trailing question only, so
+collaborative advice cannot defeat semantic repetition protection.
 
 ## Capture architecture
 
