@@ -471,7 +471,10 @@ def _semantic_frontier_problem(
             "reason": frontier.reason,
         },
         "captured_founder_observations": _observation_payload(state, scope),
-        "discovery_boundaries": state.get("discovery_boundaries", [])[-50:],
+        "discovery_boundaries": [
+            item for item in state.get("discovery_boundaries", [])[-50:]
+            if not item.get("scope") or item.get("scope") == scope.value
+        ],
         "latest_conversation_intent": state.get("conversation_intent"),
         "confirmed_product_facts": _fact_payload(state, scope),
         "confirmed_product_concepts": _concept_payload(state, scope),
@@ -586,7 +589,10 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "raw_idea": state.get("raw_idea", ""),
         "latest_user_answer": _latest_human(state),
         "latest_conversation_intent": state.get("conversation_intent"),
-        "discovery_boundaries": state.get("discovery_boundaries", [])[-50:],
+        "discovery_boundaries": [
+            item for item in state.get("discovery_boundaries", [])[-50:]
+            if not item.get("scope") or item.get("scope") == scope.value
+        ],
         "recent_conversation": _recent_conversation(state),
         "new_confirmed_facts_this_turn": _latest_turn_facts(state, scope),
         "new_product_concepts_this_turn": _latest_turn_concepts(state, scope),
