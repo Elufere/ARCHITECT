@@ -97,6 +97,7 @@ def load_checkpoint(session_id):
     }
     state.setdefault("product_concepts", [])
     state.setdefault("captured_observations", [])
+    state.setdefault("discovery_boundaries", [])
     state.setdefault("model_implications", [])
     state.setdefault("thread_planning_enabled", True)
     state.setdefault("discovery_threads", {})
