@@ -34,7 +34,7 @@ PATTERNS = {
         re.I,
     ),
     "scope_objection": re.compile(
-        r"\b(?:that(?:'s| is) (?:a )?(?:very )?long process|"
+        r"\b(?:that(?:'s|s| is) (?:a )?(?:very )?long process|"
         r"this is (?:a )?(?:very )?long process|"
         r"you(?:'re| are) asking me to define (?:the )?(?:whole|entire|full)?\s*(?:process|flow|workflow)|"
         r"too (?:broad|much|many things)|"
@@ -125,10 +125,12 @@ def conversation_manager_node(state: AgentState) -> dict:
             )
         elif intent == "scope_objection":
             boundary["instruction"] = (
-                "Founder says the preceding question asks for too much at once. Preserve "
-                "the same product thread, but reduce the next inquiry to ONE small, "
-                "independently answerable part: one actor, one stage, one causal link, "
-                "or one governing decision. Do not ask for an end-to-end process."
+                "Founder says the preceding question asks for too much at once. For the immediate "
+                "replacement question, preserve the same product thread but reduce it to "
+                "ONE small, independently answerable part: one actor, one stage, one "
+                "causal link, or one governing decision. Later, this boundary only means "
+                "do not repeat the same oversized question; it does not permanently pin "
+                "the interview to this thread."
             )
         else:
             boundary["instruction"] = (
