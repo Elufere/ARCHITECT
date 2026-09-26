@@ -228,12 +228,8 @@ The founder has given interview-control feedback. These are not product facts:
             f"- type={item.get('type')} | {item.get('instruction')} | source: {item.get('evidence')}"
             for item in discovery_boundaries
         ) + """
-Apply each boundary according to its type.
-- For design_deferral/rejected_inquiry: do not retry that rejected detail.
-- For question_too_broad: if the latest conversation intent is scope_objection,
-  keep the same product thread but ask a much smaller question. On later turns,
-  simply avoid repeating the same oversized question; do not let this old
-  boundary pin the interview to that thread.
+Apply each boundary according to its stored instruction. Do not retry a detail
+the founder explicitly rejected or delegated.
 """
     output_job = (
         "Your job is to briefly reflect what you now understand from the founder's answer, "
