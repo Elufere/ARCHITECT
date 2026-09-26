@@ -47,7 +47,7 @@ def route_after_conversation_manager(state: AgentState) -> str:
         "product_information", "correction", "advice_request"
     }:
         return "extract"
-    if state.get("conversation_intent") in {"objection", "design_deferral", "scope_objection"}:
+    if state.get("conversation_intent") in {"objection", "design_deferral"}:
         # Interview feedback is control state, not product knowledge. Re-plan
         # from the persistent discovery boundary without extracting a fake fact.
         return "plan_threads"
