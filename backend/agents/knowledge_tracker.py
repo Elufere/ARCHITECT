@@ -1385,5 +1385,9 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         "active_answer_result": answer_receipt(state, direct_answer_items, discovered_knowledge,
                                                confirmed_existing=confirmed_prior_answer),
         "fact_acquisition": acquisition_records(state, discovered_knowledge, direct_answer_items),
-        "extraction_status": "SUCCESS" if extracted_items or confirmed_prior_answer else "NO_FACTS_FOUND",
+        "extraction_status": (
+            "SUCCESS"
+            if extracted_items or captured_concepts or confirmed_prior_answer
+            else "NO_FACTS_FOUND"
+        ),
     }
