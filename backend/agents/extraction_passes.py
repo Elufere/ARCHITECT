@@ -88,7 +88,7 @@ class NeutralClaim(BaseModel):
     subject: str | None = None
     relation: str | None = None
     object: str | None = None
-    confidence: float = Field(ge=0, le=1)
+    confidence: float = Field(default=1.0, ge=0, le=1)
     knowledge_state: KnowledgeState = KnowledgeState.CONFIRMED
     absence: Literal["none", "not_applicable"] | None = None
 
