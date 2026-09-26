@@ -76,6 +76,18 @@ def implication_payload(state: DiscoveryState) -> list[dict]:
     ]
 
 
+def recommendation_payload(state: DiscoveryState) -> list[dict]:
+    return [
+        {
+            "id": item.id,
+            "statement": item.statement,
+            "status": item.status.value,
+            "source_turn_id": item.source_turn_id,
+        }
+        for item in state.recommendations
+    ]
+
+
 def contradiction_payload(state: DiscoveryState) -> list[dict]:
     return [
         {
@@ -131,6 +143,7 @@ def product_context(state: DiscoveryState) -> dict:
         "tentative_facts": tentative_fact_payload(state),
         "requirements": requirement_payload(state),
         "proposed_implications": implication_payload(state),
+        "proposed_recommendations": recommendation_payload(state),
         "open_contradictions": contradiction_payload(state),
         "discovery_boundaries": boundary_payload(state),
         "question_history": history_payload(state),
