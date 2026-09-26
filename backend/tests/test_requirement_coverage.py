@@ -272,3 +272,19 @@ def test_requirement_coverage_repair_still_fails_closed(monkeypatch):
         assess_selected_requirement_answer(state, {key: req}, {})
 
     assert assessor.calls == 2
+
+
+def test_singleton_requirement_coverage_fact_id_is_normalized_to_list():
+    assessment = RequirementCoverageAssessment.model_validate({
+        "covered_facets": {"expected_behavior": "fact-123"},
+        "not_applicable_facets": {},
+    })
+    assert assessment.covered_facets == {"expected_behavior": ["fact-123"]}
+
+
+def test_singleton_not_applicable_fact_id_is_normalized_to_list():
+    assessment = RequirementCoverageAssessment.model_validate({
+        "covered_facets": {},
+        "not_applicable_facets": {"expected_behavior": "fact-456"},
+    })
+    assert assessment.not_applicable_facets == {"expected_behavior": ["fact-456"]}
