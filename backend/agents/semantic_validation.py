@@ -56,7 +56,8 @@ def category_contradiction(
             r"\b(?:requires?|required|depends?\s+on|dependency|prerequisite|"
             r"cannot\s+(?:proceed|continue|complete)\s+(?:until|without)|"
             r"before\s+.+\s+(?:can|may)\s+(?:proceed|continue|complete)|"
-            r"waiting\s+for|awaiting)\b",
+            r"waiting\s+for|awaiting|(?:remain|remains|stays?|is)\s+pending\s+until|"
+            r"pending\s+until|only\s+after)\b",
             evidence,
             re.I,
         )
@@ -124,7 +125,9 @@ def category_contradiction(
         explicit_terminal = re.search(
             r"\b(?:after\s+completion|once\s+(?:completed|resolved)|completed|resolved|"
             r"terminal|final\s+state|ends?\s+(?:as|in)|is\s+marked\s+(?:complete|"
-            r"completed|closed|archived|cancelled|canceled)|closed|archived)\b",
+            r"completed|closed|archived|cancelled|canceled)|closed|archived|"
+            r"status\s+(?:is|becomes)\s+(?:confirmed|completed|complete|closed|"
+            r"fulfilled|cancelled|canceled|archived))\b",
             evidence,
             re.I,
         )
