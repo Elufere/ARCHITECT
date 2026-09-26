@@ -81,7 +81,7 @@ class DiscoveryThreadPlan(BaseModel):
     parent_thread_id: Optional[str] = None
     frontier: Optional[ThreadFrontierInquiry] = None
     relevant_requirement_ids: List[str] = Field(default_factory=list)
-    rationale: str
+    rationale: str = ""
 
     @field_validator("thread_id", "parent_thread_id", mode="before")
     @classmethod
@@ -93,6 +93,23 @@ class DiscoveryThreadPlan(BaseModel):
 
 
 _thread_planner = None
+_inquiry_coverage_model = None
+
+
+class InquiryCoverageDecision(BaseModel):
+    covered: bool
+    reason: str
+    supporting_observation_ids: List[str] = Field(default_factory=list)
+
+
+def inquiry_coverage_model():
+    global _inquiry_coverage_model
+    if _inquiry_coverage_model is None:
+        _inquiry_coverage_model = get_structured_model(
+            call_name="discovery_threads.coverage",
+            schema=InquiryCoverageDecision,
+        )
+    return _inquiry_coverage_model
 
 
 def thread_planner_model():
@@ -221,6 +238,24 @@ def _concept_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]:
     return result[-40:]
 
 
+def _observation_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]:
+    """Founder evidence survives even when canonical schema admission rejects it."""
+    result = []
+    for observation in state.get("captured_observations", []):
+        if observation.get("scope") != scope.value:
+            continue
+        result.append({
+            "id": observation.get("id"),
+            "kind": observation.get("kind"),
+            "value": observation.get("value"),
+            "evidence": observation.get("evidence"),
+            "role": observation.get("role"),
+            "source_turn": observation.get("source_turn"),
+            "admission_status": observation.get("admission_status"),
+        })
+    return result[-80:]
+
+
 def _requirement_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]:
     eligible = set(state.get("eligible_requirement_keys", []))
     result = []
@@ -302,6 +337,71 @@ def _normalize_plan(
     })
 
 
+INQUIRY_COVERAGE_INSTRUCTION = """Determine whether the founder has ALREADY
+substantially answered the proposed discovery information need.
+
+Judge meaning, not wording or decision_key names. A rephrased question is covered
+when the existing founder evidence already supplies the substance it asks for.
+Only founder statements count as evidence; PM questions do not. Captured observations
+remain usable evidence even when canonical schema admission rejected them, because
+admission failure must not erase what the founder explicitly said.
+
+Return covered=false when the evidence is merely related but does not answer the
+proposed information need. Do not invent missing details or treat a broad mention
+as a complete answer to a narrower unresolved decision.
+"""
+
+
+def _semantic_frontier_problem(
+    plan: DiscoveryThreadPlan,
+    state: AgentState,
+    scope: DiscoveryScope,
+) -> str | None:
+    frontier = plan.frontier
+    if frontier is None:
+        return None
+    observations = _observation_payload(state, scope)
+    recent = _recent_conversation(state)
+    if not observations and not recent:
+        return None
+
+    payload = {
+        "proposed_frontier": {
+            "thread_id": plan.thread_id,
+            "decision_key": frontier.decision_key,
+            "objective": frontier.objective,
+            "question_hint": frontier.question_hint,
+        },
+        "captured_founder_observations": observations,
+        "recent_conversation": recent,
+        "delivered_question_history": _history_payload(state),
+    }
+    try:
+        result = inquiry_coverage_model().invoke([
+            SystemMessage(content=INQUIRY_COVERAGE_INSTRUCTION),
+            HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+        ])
+        decision = (
+            result
+            if isinstance(result, InquiryCoverageDecision)
+            else InquiryCoverageDecision.model_validate(result)
+        )
+    except Exception as exc:
+        raise_if_llm_failure(exc)
+        # Coverage is a duplicate-prevention guard, not a reason to kill the
+        # interview if its own semantic check cannot be parsed.
+        print(f"INQUIRY COVERAGE CHECK SKIPPED: {exc}")
+        return None
+
+    if decision.covered:
+        support = ", ".join(decision.supporting_observation_ids) or "recent founder evidence"
+        return (
+            "The proposed information need is already substantially answered "
+            f"({support}): {decision.reason}"
+        )
+    return None
+
+
 def _plan_problem(
     plan: DiscoveryThreadPlan,
     state: AgentState,
@@ -325,6 +425,13 @@ def _plan_problem(
                 f"Decision '{frontier.decision_key}' already received a usable answer; "
                 "advance to the next causal decision."
             )
+        semantic_problem = _semantic_frontier_problem(
+            plan,
+            state,
+            state.get("discovery_scope", DiscoveryScope.USER_APP),
+        )
+        if semantic_problem is not None:
+            return semantic_problem
     if frontier is None and backlog and not plan.relevant_requirement_ids:
         return (
             "The plan has no model frontier and no relevant requirement, but eligible "
@@ -355,6 +462,7 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "new_product_concepts_this_turn": _latest_turn_concepts(state, scope),
         "confirmed_product_facts": _fact_payload(state, scope),
         "confirmed_product_concepts": _concept_payload(state, scope),
+        "captured_observations": _observation_payload(state, scope),
         "current_threads": state.get("discovery_threads", {}),
         "active_thread_id": state.get("active_discovery_thread"),
         "delivered_question_history": _history_payload(state),
