@@ -949,18 +949,30 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
             rejection_reason = str(exc)
             print(f"CLAIM REJECTED: {claim.kind} | {exc} | evidence={claim.evidence!r}")
         finally:
-            observation = _captured_observation(
-                claim,
-                scope,
-                state.get("turn_count", 0),
-                admission_status,
-                rejection_reason,
-            )
-            observations.append(observation)
-            print(
-                f"OBSERVATION STORED: {observation['id']} | "
-                f"{claim.kind} | {admission_status}"
-            )
+            # Observation memory is for founder evidence, not model guesses.
+            # Semantic/canonical admission may fail without losing the statement,
+            # but evidence that cannot be grounded in THIS user response must
+            # never enter durable memory.
+            grounded_evidence = recover_evidence_span(claim.evidence, user_response)
+            if grounded_evidence is None:
+                print(
+                    f"OBSERVATION DROPPED (ungrounded): {claim.kind} | "
+                    f"evidence={claim.evidence!r}"
+                )
+            else:
+                grounded_claim = claim.model_copy(update={"evidence": grounded_evidence})
+                observation = _captured_observation(
+                    grounded_claim,
+                    scope,
+                    state.get("turn_count", 0),
+                    admission_status,
+                    rejection_reason,
+                )
+                observations.append(observation)
+                print(
+                    f"OBSERVATION STORED: {observation['id']} | "
+                    f"{claim.kind} | {admission_status}"
+                )
 
     # Claim semantics have already been classified once and admitted through the
     # deterministic field gates above. Do not send the same propositions through
