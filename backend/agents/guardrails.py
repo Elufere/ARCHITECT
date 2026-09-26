@@ -185,6 +185,9 @@ Reject if the question:
 - changes to another topic
 - drifts to a different product decision that does not help resolve the Current objective
 - asks multiple unrelated objectives; closely related target facets of one selected requirement are allowed
+- when Planner source is "model", broadens one frontier decision into an end-to-end
+  workflow recap, asks for "main steps from X to Y", or combines multiple actors'
+  journeys/stages instead of resolving the selected uncertainty
 - asks implementation
 - asks architecture
 - asks roadmap planning unrelated to the selected gap (MVP_SCOPE questions about
@@ -202,7 +205,10 @@ Do NOT reject merely because it mentions users, permissions, workflows,
 approvals, validation, or business concepts, PROVIDED it is asking about
 the Current gap specifically.
 
-If the question directly discovers the current objective, it MUST pass.
+If the question directly discovers the current objective, it should pass ONLY
+when it stays at the objective's intended granularity. A question can mention the
+objective and still be invalid if it expands into a multi-stage recap or bundled
+multi-actor workflow.
 
 Return the schema.
 """
