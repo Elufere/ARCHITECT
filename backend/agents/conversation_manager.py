@@ -12,15 +12,15 @@ PATTERNS = {
     "clarification": re.compile(r"\b(what do you mean|what are you asking|can you explain|clarify|rephrase|i (?:don't|do not) understand)\b", re.I),
     "rationale_request": re.compile(r"\b(why are you asking|why do you need|why does that matter)\b", re.I),
     "summary_request": re.compile(r"\b(summarize|summary|recap|where are we)\b", re.I),
+    "correction": re.compile(
+        r"\b(actually|correction|i changed my mind|that's not right|instead|"
+        r"wrong|not if|you are still not|update (?:number )?\d+|i said)\b", re.I
+    ),
     "advice_request": re.compile(
         r"\b(?:do you have (?:any |more )?suggestions?|any (?:other )?suggestions?|"
         r"what (?:would|do) you suggest|what else (?:should|could) (?:we|i) (?:add|include|consider)|"
         r"can you suggest|what would you recommend|any recommendations?)\b",
         re.I,
-    ),
-    "correction": re.compile(
-        r"\b(actually|correction|i changed my mind|that's not right|instead|"
-        r"wrong|not if|you are still not|update (?:number )?\d+|i said)\b", re.I
     ),
     "confirmation": re.compile(
         r"^\s*(?:yes|yeah|yep|correct|that's correct|this is correct|"
