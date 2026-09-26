@@ -189,6 +189,21 @@ def question_generator_node(state: AgentState) -> dict:
     model_guidance = ""
     validation_guidance = ""
     advice_requested = state.get("conversation_intent") == "advice_request"
+    discovery_boundaries = state.get("discovery_boundaries", [])[-50:]
+    boundary_guidance = ""
+    if discovery_boundaries:
+        boundary_guidance = """
+PERSISTENT DISCOVERY BOUNDARIES
+The founder has explicitly rejected or delegated some lines of questioning.
+These are conversation-control constraints, not product facts:
+""" + "\n".join(
+            f"- {item.get('instruction')} | source: {item.get('evidence')}"
+            for item in discovery_boundaries
+        ) + """
+Do not ask for these details again in different wording. If the selected
+objective conflicts with a boundary, ask a different valid product question
+rather than trying to work around the boundary.
+"""
     output_job = (
         "Your job is to give brief PM suggestions requested by the founder, then end with "
         "ONE natural question that resolves or materially reduces the selected uncertainty."
@@ -328,6 +343,7 @@ Planner source: {planner_source}
 {requirement_guidance}
 {validation_guidance}
 {advice_guidance}
+{boundary_guidance}
 Internal field definition (normalization context only; never quote this to the user):
 {FIELD_DEFINITIONS.get(current_topic, {}).get((current_gap or '').split('::')[0], '')}
 
