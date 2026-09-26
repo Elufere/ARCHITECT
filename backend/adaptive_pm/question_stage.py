@@ -178,6 +178,15 @@ class QuestionStage:
             QuestionAudit,
         )
 
+    @staticmethod
+    def _valid_question_shape(question: str) -> bool:
+        text = question.strip()
+        return bool(
+            text
+            and text.endswith("?")
+            and text.count("?") == 1
+        )
+
     def select(
         self,
         state: InterviewState,
@@ -189,7 +198,10 @@ class QuestionStage:
             if audit.reject_candidate:
                 continue
 
-            if audit.passed:
+            if (
+                audit.passed
+                and self._valid_question_shape(candidate.question)
+            ):
                 return candidate, candidate.question.strip()
 
             # A single rewrite is allowed only for wording/granularity.
@@ -202,6 +214,7 @@ class QuestionStage:
                 if (
                     second.passed
                     and not second.reject_candidate
+                    and self._valid_question_shape(revised.question)
                 ):
                     return candidate, revised.question
 
