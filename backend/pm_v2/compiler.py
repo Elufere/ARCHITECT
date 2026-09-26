@@ -15,7 +15,8 @@ Compile an implementation-ready PRD from the supplied discovery state.
 Authority rules:
 - Confirmed active founder facts are the only source of confirmed product claims.
 - Every factual statement and compiled requirement must cite supporting source_fact_ids.
-- Proposed implications must remain visibly proposed and may not be written as facts.
+- Proposed implications and PM recommendations must remain visibly proposed and
+  may not be written as confirmed facts.
 - Deferred decisions remain deferred.
 - Unknown matters become open questions, not invented requirements.
 - Do not reconstruct or rely on the raw conversation.
@@ -69,6 +70,11 @@ def compile_prd(state: DiscoveryState) -> ImplementationReadyPRD:
         for item in state.implications
         if item.status == KnowledgeStatus.PROPOSED
     ]
+    proposed_recommendations = [
+        item.statement
+        for item in state.recommendations
+        if item.status == KnowledgeStatus.PROPOSED
+    ]
 
     result = structured_call(
         call_name="prd_compile",
@@ -80,6 +86,7 @@ def compile_prd(state: DiscoveryState) -> ImplementationReadyPRD:
             "deferred_requirement_keys": deferred,
             "unresolved_requirements": unresolved,
             "proposed_implications": proposed_implications,
+            "proposed_recommendations": proposed_recommendations,
         },
         max_tokens=5000,
     )
