@@ -1310,6 +1310,9 @@ def knowledge_tracker_node(state: AgentState) -> dict:
     else:
         extracted_items = extract_passes(user_response, state, current_scope)
         captured_concepts = list(getattr(extracted_items, "concepts", []))
+        observation_candidates = dict(
+            getattr(extracted_items, "observation_candidates", {})
+        )
         captured_observations = merge_captured_observations(
             captured_observations,
             list(getattr(extracted_items, "observations", [])),
@@ -1339,12 +1342,39 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         if getattr(extracted_items, "grounding_required", True):
             before_grounding = list(extracted_items)
             extracted_items = ground_items(extracted_items, user_response, state, absence)
+
+            grounded_candidates = set()
+            for observation_id, candidate in observation_candidates.items():
+                if candidate in extracted_items:
+                    grounded_candidates.add(observation_id)
+
+            if observation_candidates:
+                updated_observations = []
+                for observation in captured_observations:
+                    observation_id = observation.get("id")
+                    if observation_id not in observation_candidates:
+                        updated_observations.append(observation)
+                        continue
+                    if observation_id in grounded_candidates:
+                        updated_observations.append({
+                            **observation,
+                            "admission_status": "GROUNDED",
+                            "rejection_reason": None,
+                        })
+                    else:
+                        updated_observations.append({
+                            **observation,
+                            "admission_status": "SEMANTIC_REJECTED",
+                            "rejection_reason": "LLM semantic grounding did not support this canonical interpretation",
+                        })
+                captured_observations = updated_observations
+
             for rejected in before_grounding:
                 if rejected not in extracted_items:
                     print("CANDIDATE FINAL REJECT (grounding):", rejected.model_dump(mode="json"))
         else:
             extracted_items = list(extracted_items)
-            print(f"CLAIM ADMISSION: {len(extracted_items)} fact(s) accepted without cross-category grounding")
+            print(f"CLAIM ADMISSION: {len(extracted_items)} fact(s) accepted without semantic grounding")
     product_concepts = merge_product_concepts(
         state.get("product_concepts", []),
         captured_concepts,
