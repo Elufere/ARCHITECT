@@ -11,7 +11,7 @@ import json
 from typing import Dict, Iterable, List, Sequence
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from agents.discovery_coverage import fact_id
 from agents.llm import get_structured_model
@@ -68,6 +68,21 @@ class RequirementCoverageAssessment(BaseModel):
 
     covered_facets: Dict[str, List[str]] = Field(default_factory=dict)
     not_applicable_facets: Dict[str, List[str]] = Field(default_factory=dict)
+
+    @field_validator("covered_facets", "not_applicable_facets", mode="before")
+    @classmethod
+    def normalize_single_fact_ids(cls, value):
+        """Structured models sometimes emit one fact ID as a scalar string.
+
+        The protocol is semantically unambiguous in that case, so normalize the
+        wire shape instead of spending a repair call or aborting the interview.
+        """
+        if not isinstance(value, dict):
+            return value
+        normalized = {}
+        for facet_id, fact_ids in value.items():
+            normalized[facet_id] = [fact_ids] if isinstance(fact_ids, str) else fact_ids
+        return normalized
 
     @model_validator(mode="after")
     def no_overlap(self):
@@ -325,8 +340,9 @@ A facet is NOT_APPLICABLE only when the supplied facts explicitly establish that
 the facet does not apply. Silence, uncertainty, "I don't know", or lack of detail
 is not NOT_APPLICABLE.
 
-Return fact IDs exactly as supplied. Do not invent IDs. Leave unresolved facets
-out of both mappings. Assess only the target facet IDs.
+Return fact IDs exactly as supplied. Do not invent IDs. EVERY mapping value must
+be a JSON ARRAY of fact-ID strings, even when exactly one fact supports the facet.
+Leave unresolved facets out of both mappings. Assess only the target facet IDs.
 """
 
 
