@@ -9,7 +9,12 @@ from agents.conversation_language import clarification_reply, clarification_ques
 
 
 PATTERNS = {
-    "clarification": re.compile(r"\b(what do you mean|what are you asking|can you explain|clarify|rephrase|i (?:don't|do not) understand)\b", re.I),
+    "clarification": re.compile(
+        r"\b(what do you mean|what are you asking|can you explain|clarify|rephrase|"
+        r"i (?:don't|do not) understand|too technical|simpler terms?|explain (?:it )?simply|"
+        r"explain in simpler terms?)\b",
+        re.I,
+    ),
     "rationale_request": re.compile(r"\b(why are you asking|why do you need|why does that matter)\b", re.I),
     "summary_request": re.compile(r"\b(summarize|summary|recap|where are we)\b", re.I),
     "correction": re.compile(
@@ -24,7 +29,9 @@ PATTERNS = {
     ),
     "confirmation": re.compile(
         r"^\s*(?:yes|yeah|yep|correct|that's correct|this is correct|"
-        r"yes,? (?:this|that) is correct)\s*[.!]*\s*$", re.I
+        r"yes,? (?:this|that) is correct|that(?:'s| is) all|that will be all|"
+        r"nothing else|no more)\s*[.!]*\s*$",
+        re.I,
     ),
     "objection": re.compile(
         r"\b(i told you already|already told you|you asked (?:me )?already|"
