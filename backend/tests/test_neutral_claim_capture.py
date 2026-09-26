@@ -459,3 +459,92 @@ def test_requirement_anchor_cannot_turn_history_rule_into_ownership(monkeypatch)
     )
 
     assert batch == []
+
+
+def test_emergent_product_structure_is_preserved_outside_schema(monkeypatch):
+    text = "There are groups, and packages are inside groups. A group can use NGN or USD."
+    calls = []
+    production_models(monkeypatch, [
+        claim(
+            "product_entity",
+            "Groups are part of the product structure",
+            "There are groups",
+            subject="group",
+        ),
+        claim(
+            "entity_relationship",
+            "packages are inside groups",
+            "packages are inside groups",
+            subject="package",
+            relation="contained_in",
+            object="group",
+        ),
+        claim(
+            "entity_attribute",
+            "A group can use NGN or USD",
+            "A group can use NGN or USD",
+            subject="group",
+            relation="currency",
+            object="NGN or USD",
+        ),
+    ], calls)
+
+    batch = tracker.extract_passes(
+        text,
+        dict(
+            messages=[HumanMessage(content=text)],
+            discovery_scope=S.USER_APP,
+            discovered_knowledge=[],
+            current_topic=T.CORE_WORKFLOW,
+            current_gap="workflow_steps",
+            turn_count=3,
+        ),
+        S.USER_APP,
+    )
+
+    assert batch == []
+    assert len(batch.concepts) == 3
+    assert {item.kind.value for item in batch.concepts} == {
+        "ENTITY", "RELATIONSHIP", "ATTRIBUTE"
+    }
+    assert any(
+        item.subject == "package"
+        and item.relation == "contained_in"
+        and item.object == "group"
+        for item in batch.concepts
+    )
+
+
+def test_knowledge_tracker_adds_product_concepts_to_product_model(monkeypatch):
+    text = "Packages are inside groups."
+    calls = []
+    production_models(monkeypatch, [
+        claim(
+            "entity_relationship",
+            "Packages are inside groups",
+            "Packages are inside groups",
+            subject="package",
+            relation="contained_in",
+            object="group",
+        ),
+    ], calls)
+    monkeypatch.setattr(tracker, "confirms_existing", lambda *_: False)
+    monkeypatch.setattr(tracker, "interpret_closed_answer", lambda *_: None)
+    monkeypatch.setattr(tracker, "extract_gap_absence", lambda *_: None)
+
+    state = dict(
+        messages=[HumanMessage(content=text)],
+        discovery_scope=S.USER_APP,
+        current_topic=None,
+        current_gap=None,
+        discovered_knowledge=[],
+        product_concepts=[],
+        superseded_knowledge=[],
+        fact_acquisition={},
+        turn_count=0,
+    )
+    result = tracker.knowledge_tracker_node(state)
+
+    assert len(result["product_concepts"]) == 1
+    assert "PRODUCT_STRUCTURE" in result["product_model"]
+    assert "package -[contained_in]-> group" in result["product_model"]["PRODUCT_STRUCTURE"][0]
