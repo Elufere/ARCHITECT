@@ -76,7 +76,7 @@ def new_session():
         discovery_scope=DiscoveryScope.USER_APP, turn_count=0, awaiting_confirmation=False,
         discovered_knowledge=[], superseded_knowledge=[], product_concepts=[],
         model_implications=[],
-        discovery_threads={}, active_discovery_thread=None, thread_frontier=None,
+        thread_planning_enabled=True, discovery_threads={}, active_discovery_thread=None, thread_frontier=None,
         thread_relevant_requirement_ids=[],
         active_requirements={}, requirement_coverage={}, requirement_dependency_state={},
         eligible_requirement_keys=[], open_inquiries=[], selected_inquiry=None,
