@@ -337,7 +337,11 @@ and categories. For each evidence_id, list ONLY the TOPIC.key
 meanings explicitly expressed by that quote. Multiple meanings may coexist.
 Then return supported_ids for candidates whose own quote entails their full value,
 polarity, scope and actor. A fact appearing elsewhere cannot rescue a wrong quote.
-Use latest_response/question only to resolve references and short answers.
+Use latest_response/question only to resolve references and short answers. The
+active question is NOT a relevance gate for product knowledge: a founder may
+answer the question and volunteer adjacent facts in the same response. Judge each
+candidate from its own quote and category. Never reject an otherwise supported
+candidate merely because it does not answer the active question.
 confirmed_actor_context contains previously confirmed actor declarations with
 their source quotes. Use it to resolve identity and explicitly established role
 relationships: a capacity of an existing actor is not automatically a new actor.
@@ -447,6 +451,15 @@ Critical distinctions:
   category as tentative information only, never as confirmed membership. Reject
   an unsupported CONFIRMED declaration, an invented participant, or a tentative
   current-app candidate whose quote explicitly places it outside this application.
+- A person/team mentioned only as the implementation owner of a technical,
+  design, infrastructure, or engineering detail is not a current-app actor unless
+  the quote independently establishes that they use/interact with the scoped app.
+  Delegating a detail to specialists is interview-control feedback, not actor
+  membership or a responsibility in the product model.
+- System/application behavior belongs to the system/process, not to whichever
+  user role appeared in the question. Do not accept an actor responsibility when
+  the candidate's own quote says the app/system/service chooses, routes,
+  validates, calculates, or otherwise performs the behavior.
 - Actor membership alone establishes no workflow, responsibility or goal.
 - For responsibilities, merely saying an actor uses the platform is participation,
   not a specific product activity. Its quote supports no responsibility category.
