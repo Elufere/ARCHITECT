@@ -156,6 +156,59 @@ ready to compile even when legacy schema fields are still uncovered.
 
 `all_required_gaps_resolved()` remains only as a legacy diagnostic.
 
+## Conversation architecture: discovery threads
+
+The interview agenda is no longer the foundational schema sequence and is not
+the globally highest-scoring active requirement.
+
+After consistency validation, `discovery_threads.plan` chooses the coherent
+part of the product currently being understood and its next causal decision.
+
+A thread represents a product line of reasoning such as a core interaction,
+checkout, fulfillment, invitations, settlement, access, or a product-specific
+concept discovered from the founder's own answers. These names are examples,
+not a predefined taxonomy.
+
+The thread planner receives confirmed facts, recent conversation, delivered
+decision history, active thread state, and the eligible requirement backlog. It
+returns:
+- the active thread and optional parent thread;
+- ONE model-level frontier decision, when another causal/product-structure
+  decision should be understood before deeper requirements;
+- requirement IDs relevant to the active thread now.
+
+This produces the control rule:
+
+```
+confirmed answer
+    ↓
+product model changes
+    ↓
+what structure/process/decision did this reveal?
+    ↓
+what is the next causal decision needed to make THIS part coherent?
+    ↓
+ask it
+```
+
+Requirements remain completeness and consequence checks. They may enter the
+question frontier when relevant to the active thread, but they do not globally
+interrupt a coherent normal-flow discussion merely because their priority score
+is high.
+
+The old `actors → actions → goals → workflow → completion` model frontier remains
+only as a compatibility fallback for focused tests/direct callers that have not
+run the thread-planning node. It is not the normal graph runtime.
+
+Delivered questions record `thread_id` and `decision_key`. A thread decision
+that received a usable answer cannot simply be paraphrased and asked again; a
+second attempt is allowed only when the prior turn produced no usable facts, and
+the same decision is hard-blocked after two deliveries.
+
+Question priority now includes information gain, causal relevance, and
+conversation continuity in addition to uncertainty, dependency unlock, impact,
+risk, and cost.
+
 ## Capture architecture
 
 Production discovery no longer runs six category-specific extraction calls over
