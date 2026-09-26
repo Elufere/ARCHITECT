@@ -21,6 +21,11 @@ from agents.state import (
 from agents.semantic_validation import GapAnswer, GroundingResult, GroundingResponse, GAP_INSTRUCTION, ROLE_POLICY_INSTRUCTION, GROUNDING_INSTRUCTION, category_contradiction
 from agents.discovery_fields import OVERLAP_RULES, field_contract
 from agents.product_model import build_product_model
+from agents.product_concepts import (
+    ProductConcept,
+    ProductConceptKind,
+    merge_product_concepts,
+)
 from agents.absence_supersession import matching_absences, can_replace_absence, supersession_record
 from agents.answer_contract import interpret_closed_answer
 from agents.evidence_spans import recover_evidence_span
@@ -516,11 +521,12 @@ def ground_batch(items, user_response, state, active_gap_review=None):
 
 
 class ExtractedBatch(list):
-    """List of extracted facts plus whether the legacy semantic audit is required."""
+    """Extracted schema facts plus parallel first-class product concepts."""
 
-    def __init__(self, items=(), *, grounding_required=True):
+    def __init__(self, items=(), *, grounding_required=True, concepts=None):
         super().__init__(items)
         self.grounding_required = grounding_required
+        self.concepts = list(concepts or [])
 
 
 def _claim_prompt(state: AgentState, scope: DiscoveryScope) -> str:
@@ -701,6 +707,33 @@ def _explicit_other_surface(evidence: str, scope: DiscoveryScope) -> bool:
     ))
 
 
+def _concept_from_claim(
+    claim: NeutralClaim,
+    scope: DiscoveryScope,
+    turn: int,
+) -> ProductConcept:
+    kind = {
+        "product_entity": ProductConceptKind.ENTITY,
+        "entity_relationship": ProductConceptKind.RELATIONSHIP,
+        "entity_attribute": ProductConceptKind.ATTRIBUTE,
+    }[claim.kind]
+    if not claim.subject:
+        raise ValueError(f"{claim.kind} requires subject")
+    if kind != ProductConceptKind.ENTITY and (not claim.relation or not claim.object):
+        raise ValueError(f"{claim.kind} requires subject/relation/object")
+    return ProductConcept(
+        kind=kind,
+        scope=scope,
+        subject=claim.subject,
+        relation=claim.relation,
+        object=claim.object,
+        value=claim.value,
+        evidence=claim.evidence,
+        confidence=claim.confidence,
+        source_turn=turn,
+    )
+
+
 def _admit_claim_item(
     claim: NeutralClaim,
     state: AgentState,
@@ -836,6 +869,7 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
 
     primary_roles, secondary_roles = _existing_actor_sets(state, scope)
     accepted: list[KnowledgeItem] = []
+    concepts: list[ProductConcept] = []
 
     # Identity claims establish same-turn owners before owned propositions are admitted.
     ordered = sorted(
@@ -844,6 +878,27 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
     )
     for _, claim in ordered:
         try:
+            if claim.kind in ("product_entity", "entity_relationship", "entity_attribute"):
+                concept = _concept_from_claim(
+                    claim, scope, state.get("turn_count", 0)
+                )
+                valid_evidence, reason = validate_extraction(
+                    KnowledgeItem(
+                        topic=DiscoveryTopic.CORE_WORKFLOW,
+                        scope=scope,
+                        key="workflow_steps",
+                        value=concept.value,
+                        evidence=concept.evidence,
+                        confidence=concept.confidence,
+                        source_turn=concept.source_turn,
+                    ),
+                    state["messages"][-1].content,
+                    None,
+                )
+                if not valid_evidence:
+                    raise ValueError(reason)
+                concepts.append(concept)
+                continue
             item = _admit_claim_item(
                 claim,
                 {**state, "discovered_knowledge": [*state.get("discovered_knowledge", []), *accepted]},
@@ -865,7 +920,11 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
     # Claim semantics have already been classified once and admitted through the
     # deterministic field gates above. Do not send the same propositions through
     # a second cross-category LLM audit; ambiguity was required to stay unclassified.
-    return ExtractedBatch(accepted, grounding_required=False)
+    return ExtractedBatch(
+        accepted,
+        grounding_required=False,
+        concepts=concepts,
+    )
 
 
 def extract_passes(user_response: str, state: AgentState,
