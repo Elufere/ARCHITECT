@@ -287,10 +287,15 @@ def filter_question_candidates(
             reasons.extend(_requirement_reasons(state, candidate))
 
         signature = _candidate_signature(candidate)
-        if signature in recent_signatures:
+        repeat_count = _thread_decision_repeat_count(state, candidate)
+        ambiguous_thread_retry = (
+            candidate.thread_id
+            and repeat_count == 1
+            and state.get("extraction_status") == "NO_FACTS_FOUND"
+        )
+        if signature in recent_signatures and not ambiguous_thread_retry:
             reasons.append(CandidateBlockReason.RECENTLY_ASKED_SAME_TARGET)
 
-        repeat_count = _thread_decision_repeat_count(state, candidate)
         if repeat_count >= 2:
             reasons.append(CandidateBlockReason.REPEATED_THREAD_DECISION)
         elif repeat_count == 1 and state.get("extraction_status") != "NO_FACTS_FOUND":
