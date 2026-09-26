@@ -33,9 +33,19 @@ PATTERNS = {
         r"nothing else|no more)\s*[.!]*\s*$",
         re.I,
     ),
+    "design_deferral": re.compile(
+        r"\b(?:am i (?:the )?(?:product |ui/?ux )?designer|"
+        r"(?:that|this|it)(?:'s| is) (?:the )?designer'?s? job|"
+        r"(?:that|this|it) is for (?:the )?(?:product |ui/?ux )?designer|"
+        r"leave (?:that|this|it) (?:to|for) (?:the )?(?:product |ui/?ux )?designer|"
+        r"designer should decide|designer can decide)\b",
+        re.I,
+    ),
     "objection": re.compile(
         r"\b(i told you already|already told you|you asked (?:me )?already|"
-        r"stop asking|you keep asking)\b", re.I
+        r"stop asking|you keep asking|you are asking irrelevant questions|"
+        r"you're asking irrelevant questions|irrelevant questions?|"
+        r"that(?:'s| is) irrelevant|this is irrelevant|not relevant)\b", re.I
     ),
     "uncertainty": re.compile(r"\b(i don't know|not sure|haven't decided|uncertain)\b", re.I),
 }
@@ -70,10 +80,39 @@ def conversation_manager_node(state: AgentState) -> dict:
         return {**update, "messages": [AIMessage(content=(
             "That is fine—I’ll keep it as an open decision and continue with the parts that are known."
         ))]}
-    # An objection is handled by the knowledge tracker: it searches earlier
-    # user answers for evidence for the currently repeated gap.  Do not add an
-    # acknowledgement here, because that would make the latest message AI and
-    # prevent the repair pass from seeing the user's objection.
-    if intent == "objection":
-        return update
+
+    if intent in ("design_deferral", "objection"):
+        boundaries = list(state.get("discovery_boundaries", []))
+        previous_question = next(
+            (
+                message.content
+                for message in reversed(messages[:-1])
+                if isinstance(message, AIMessage)
+            ),
+            "",
+        )
+        boundary = {
+            "type": "design_deferral" if intent == "design_deferral" else "rejected_inquiry",
+            "source_turn": state.get("turn_count", 0),
+            "evidence": messages[-1].content,
+            "question": previous_question,
+            "thread_id": state.get("active_discovery_thread"),
+            "decision_key": (state.get("selected_inquiry") or {}).get("decision_key"),
+            "objective": state.get("current_objective"),
+        }
+        if intent == "design_deferral":
+            boundary["instruction"] = (
+                "Founder delegates UI/interface/navigation/design implementation details "
+                "to the designer. Do not ask the founder to specify those details unless "
+                "a concrete product decision cannot be made without them."
+            )
+        else:
+            boundary["instruction"] = (
+                "Founder rejected the immediately preceding inquiry as irrelevant or repeated. "
+                "Do not retry, paraphrase, or deepen that inquiry; choose a materially different "
+                "product decision."
+            )
+        boundaries.append(boundary)
+        return {**update, "discovery_boundaries": boundaries[-50:]}
+
     return update
