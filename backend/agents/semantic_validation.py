@@ -75,7 +75,7 @@ def category_contradiction(
             re.I,
         )
         if not explicit_boundary:
-            return "Evidence states no explicit authorization, prohibition, exclusivity, or access boundary"
+            return "Evidence states no explicit authorization boundary, prohibition, exclusivity, or access boundary"
 
     if key == "responsibilities":
         proposed = (value or "").strip().lower()
