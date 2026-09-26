@@ -364,7 +364,7 @@ def test_missing_owned_role_resolves_from_canonical_actor_aliases(monkeypatch):
         aliases={"customer": ["buyer", "seller"]},
         confidence=1,
     )
-    text = "Either the buyer or seller can propose changes before funding."
+    text = "Either the buyer or seller is allowed to propose changes before funding."
     calls = []
     production_models(monkeypatch, [
         claim("authorization_boundary", text, text),
