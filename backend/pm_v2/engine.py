@@ -98,7 +98,13 @@ class PMDiscoveryEngine:
             self._record_boundary(state, turn, interpretation)
             if interpretation.intent == TurnIntent.UNCERTAINTY:
                 self._defer_pending_requirements(state)
-            response = self._next_question_or_complete(state)
+            next_response = self._next_question_or_complete(state)
+            acknowledgement = {
+                TurnIntent.DESIGN_DEFERRAL: "Understood — I’ll leave that design detail to the designer.",
+                TurnIntent.OBJECTION: "Got it — I’ll move off that line of questioning.",
+                TurnIntent.UNCERTAINTY: "That’s fine — we can leave that decision open for now.",
+            }[interpretation.intent]
+            response = f"{acknowledgement}\n\n{next_response}"
             state.turn_count += 1
             return TurnResult(response=response, state=state)
 
@@ -348,6 +354,15 @@ class PMDiscoveryEngine:
                     matched.source_turn_ids.append(turn.id)
                 if item["evidence"] not in matched.evidence:
                     matched.evidence.append(item["evidence"])
+                if (
+                    matched.status == KnowledgeStatus.PROPOSED
+                    and KnowledgeStatus(item["status"]) == KnowledgeStatus.CONFIRMED
+                ):
+                    matched.status = KnowledgeStatus.CONFIRMED
+                    matched.statement = (
+                        decision.canonical_statement.strip() or matched.statement
+                    )
+                    committed.append(matched.id)
                 continue
 
             new_fact = FactRecord(
@@ -536,26 +551,57 @@ class PMDiscoveryEngine:
             payload={"context": product_context(state)},
             max_tokens=3000,
         )
-        valid_fact_ids = {item.id for item in state.facts if item.active}
+        active_confirmed_fact_ids = {
+            item.id
+            for item in state.facts
+            if item.active and item.status == KnowledgeStatus.CONFIRMED
+        }
         for assessment in result.items:
             requirement = state.requirements.get(
                 self._normalize_key(assessment.key)
             )
             if requirement is None:
                 continue
-            requirement.status = assessment.status
-            requirement.coverage = assessment.coverage
-            requirement.depth = assessment.depth
+
+            supporting = [
+                identity
+                for identity in assessment.supporting_fact_ids
+                if identity in active_confirmed_fact_ids
+            ]
             requirement.evidence_fact_ids = self._unique(
                 [
-                    *requirement.evidence_fact_ids,
                     *[
                         identity
-                        for identity in assessment.supporting_fact_ids
-                        if identity in valid_fact_ids
+                        for identity in requirement.evidence_fact_ids
+                        if identity in active_confirmed_fact_ids
                     ],
+                    *supporting,
                 ]
             )
+
+            evidence_required_statuses = {
+                KnowledgeStatus.CONFIRMED,
+                KnowledgeStatus.REJECTED,
+                KnowledgeStatus.NOT_APPLICABLE,
+            }
+            if (
+                assessment.status in evidence_required_statuses
+                and not supporting
+                and not requirement.evidence_fact_ids
+            ):
+                # A semantic assessor cannot promote a requirement to an
+                # authoritative state without founder evidence.
+                if requirement.status not in evidence_required_statuses:
+                    requirement.status = (
+                        KnowledgeStatus.PROPOSED
+                        if requirement.implication_ids
+                        else KnowledgeStatus.UNKNOWN
+                    )
+            else:
+                requirement.status = assessment.status
+
+            requirement.coverage = assessment.coverage
+            requirement.depth = assessment.depth
             requirement.missing_decisions = self._unique(
                 assessment.missing_decisions
             )
