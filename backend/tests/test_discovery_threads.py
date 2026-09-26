@@ -62,6 +62,7 @@ def test_thread_planner_persists_active_thread_and_frontier(monkeypatch):
         ],
         "raw_idea": "An escrow app.",
         "discovery_scope": S.USER_APP,
+        "thread_planning_enabled": True,
         "discovered_knowledge": [],
         "active_requirements": {},
         "requirement_coverage": {},
