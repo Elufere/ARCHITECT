@@ -143,10 +143,11 @@ product-manager interview. You do not create product facts. Confirmed facts are
 authoritative; requirements are a backlog of decisions, not an interview agenda.
 
 The interview should feel like an excellent human PM conversation:
-1. Start with what CHANGED in the founder's latest answer. The payload explicitly
-   identifies facts and product concepts captured on the latest turn. Follow the
-   product structure, relationship, state, rule, or causal process that those new
-   decisions just revealed.
+1. Start by understanding what CHANGED in the founder's latest answer. The
+   payload explicitly identifies facts and product concepts captured on the latest
+   turn. Treat that as strong continuity context, not an automatic instruction to
+   keep drilling it. Follow the newly revealed structure/rule only when its NEXT
+   uncertainty still beats the best grounded alternative elsewhere.
 2. Stay on one coherent discovery thread only while its NEXT unresolved decision
    is still among the highest-value questions available. Continuity is a
    tie-breaker, not a reason to exhaust a thread. Once the governing structure of
@@ -339,6 +340,7 @@ def _requirement_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]
             and (coverage.get("facets", {}).get(facet.id, {}).get("state") == "UNKNOWN"
                  or facet.id not in coverage.get("facets", {}))
         ]
+        dependency = state.get("requirement_dependency_state", {}).get(key, {})
         result.append({
             "requirement_key": key,
             "requirement_id": requirement.id,
@@ -347,6 +349,11 @@ def _requirement_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]
             "topic": requirement.topic.value,
             "parent_gap": requirement.parent_gap,
             "unresolved_facets": unresolved,
+            "dependencies": list(requirement.dependencies),
+            "unlocks": list(requirement.unlocks),
+            "dependency_eligible": dependency.get("eligible"),
+            "architecture_impact": requirement.priority_hints.architecture_impact,
+            "business_risk": requirement.priority_hints.business_risk,
         })
     return result[:30]
 
