@@ -3,7 +3,6 @@ from agents.llm import get_chat_model
 
 from agents.state import AgentState, DiscoveryScope, KnowledgeState
 from agents.product_model import format_product_model
-from agents.product_concepts import ProductConcept
 from agents.discovery_fields import FIELD_DEFINITIONS
 from agents.answer_contract import additional_actors_question
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
@@ -69,11 +68,6 @@ def latest_confirmed_understanding(state: AgentState, scope: DiscoveryScope) -> 
         ):
             role = f" [{fact.role}]" if fact.role else ""
             items.append(f"{fact.topic.value}.{fact.key}{role}: {fact.value}")
-
-    for raw in state.get("product_concepts", []):
-        concept = raw if isinstance(raw, ProductConcept) else ProductConcept.model_validate(raw)
-        if concept.scope == scope and concept.source_turn == turn:
-            items.append(f"{concept.kind.value}: {concept.value}")
 
     return list(dict.fromkeys(items))
 
