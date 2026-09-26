@@ -432,3 +432,30 @@ def test_history_statement_is_not_a_downstream_dependency(monkeypatch):
     )
 
     assert batch == []
+
+
+def test_requirement_anchor_cannot_turn_history_rule_into_ownership(monkeypatch):
+    text = "Changes affect the transaction going forward; they should never overwrite previous terms."
+    calls = []
+    production_models(monkeypatch, [
+        claim("ownership_rule", text, text),
+    ], calls)
+
+    batch = tracker.extract_passes(
+        text,
+        dict(
+            messages=[
+                AIMessage(content="Do modifications rewrite transaction history?"),
+                HumanMessage(content=text),
+            ],
+            discovery_scope=S.USER_APP,
+            discovered_knowledge=[],
+            current_topic=T.BUSINESS_RULES,
+            current_gap="ownership_rules",
+            planner_source="requirement",
+            turn_count=9,
+        ),
+        S.USER_APP,
+    )
+
+    assert batch == []
