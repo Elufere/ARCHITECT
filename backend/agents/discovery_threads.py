@@ -204,16 +204,16 @@ The interview should feel like an excellent human PM conversation:
     - rejected_inquiry means the founder rejected that inquiry as irrelevant or
       repeated. Do not retry, paraphrase, or deepen it. Move to a materially
       different product decision.
-    - question_too_broad means the founder did NOT reject the product thread;
-      they rejected the amount being asked at once. When latest_conversation_intent
-      is scope_objection, stay on the same thread and decompose the previous inquiry
-      into one smaller decision. On later turns, this boundary only prevents
-      repeating the same oversized inquiry; it does not permanently pin the thread.
     These are NOT product facts and must never be converted into requirements.
 12. If latest_conversation_intent is design_deferral or objection, the NEXT move
-    must demonstrate that feedback was respected. If it is scope_objection, the
-    NEXT move must stay on the same product thread while shrinking the question
-    to one actor/stage/causal link.
+    must demonstrate that feedback was respected.
+13. Read the founder's latest answer semantically, not only as product content.
+    If it is primarily feedback about the INTERVIEW QUESTION itself — for example
+    that the question asks for too much reasoning, too much of a process, or too
+    many decisions at once — do not require a special phrase or intent label.
+    Preserve the underlying product thread and replace the oversized inquiry with
+    one smaller independently answerable decision. Do not store that feedback as
+    product knowledge.
 
 Choose a stable short thread_id and decision_key based on meaning, not wording.
 Examples of generic thread shapes are core_interaction, checkout, fulfillment,
@@ -473,12 +473,6 @@ to a designer, or repeats/deepens an inquiry they rejected as irrelevant, set
 should_move_on=true even if that detail remains unknown. Unknown does not mean
 worth asking.
 
-A question_too_broad boundary is different: do NOT set should_move_on merely
-because the founder rejected the previous question's size. When the latest
-conversation intent is scope_objection, the underlying thread remains active:
-reject any frontier that again asks for several steps/actors/stages and require
-one smaller decision from that same thread. On later turns, use the boundary only
-to prevent recurrence of the oversized form.
 """
 
 
