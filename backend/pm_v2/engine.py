@@ -58,7 +58,7 @@ class PMDiscoveryEngine:
             state.raw_idea = user_message
 
         interpretation = self._interpret_turn(state, turn)
-        self._mark_previous_question_answered(state, interpretation.intent)
+        self._mark_previous_question_answered(state, interpretation)
 
         if interpretation.intent in {
             TurnIntent.CLARIFICATION,
@@ -67,6 +67,12 @@ class PMDiscoveryEngine:
             TurnIntent.ADVICE_REQUEST,
         }:
             response = self._control_response(state, turn, interpretation.intent)
+            if (
+                interpretation.intent
+                in {TurnIntent.CLARIFICATION, TurnIntent.RATIONALE_REQUEST, TurnIntent.ADVICE_REQUEST}
+                and response.rstrip().endswith("?")
+            ):
+                state.pending_question = response.strip()
             state.turn_count += 1
             return TurnResult(response=response, state=state)
 
@@ -137,18 +143,15 @@ class PMDiscoveryEngine:
         return result.response.strip()
 
     def _mark_previous_question_answered(
-        self, state: DiscoveryState, intent: TurnIntent
+        self, state: DiscoveryState, interpretation: TurnInterpretation
     ) -> None:
         if not state.question_history:
             return
         previous = state.question_history[-1]
         if previous.status != "ASKED":
             return
-        if intent in {
-            TurnIntent.PRODUCT_INFORMATION,
-            TurnIntent.CORRECTION,
-            TurnIntent.CONFIRMATION,
-        }:
+        intent = interpretation.intent
+        if interpretation.answers_previous_question:
             previous.status = "ANSWERED"
         elif intent == TurnIntent.UNCERTAINTY:
             previous.status = "DEFERRED"
@@ -336,6 +339,10 @@ class PMDiscoveryEngine:
             ):
                 matched.active = False
                 matched.superseded_by = new_fact.id
+                if decision.relation == FactRelation.CORRECTION:
+                    for conflict in state.contradictions:
+                        if matched.id in conflict.fact_ids:
+                            conflict.resolved = True
 
             state.facts.append(new_fact)
             committed.append(new_fact.id)
