@@ -93,10 +93,19 @@ class PMDiscoveryEngine:
         )
 
         if new_fact_ids:
-            self._derive_implications(state, new_fact_ids)
+            confirmed_new_fact_ids = [
+                identity
+                for identity in new_fact_ids
+                if (
+                    (fact := self._fact_by_id(state, identity)) is not None
+                    and fact.status == KnowledgeStatus.CONFIRMED
+                )
+            ]
+            if confirmed_new_fact_ids:
+                self._derive_implications(state, confirmed_new_fact_ids)
+                self._detect_contradictions(state, confirmed_new_fact_ids)
             self._activate_requirements(state, new_fact_ids)
             self._assess_requirements(state)
-            self._detect_contradictions(state, new_fact_ids)
 
         response = self._next_question_or_complete(state)
         state.turn_count += 1
@@ -242,6 +251,7 @@ class PMDiscoveryEngine:
                     "statement": verdict.normalized_statement.strip()
                     or candidate.statement,
                     "evidence": candidate.evidence,
+                    "status": candidate.status.value,
                     "confidence": candidate.confidence,
                     "negative": candidate.negative,
                 }
@@ -297,9 +307,13 @@ class PMDiscoveryEngine:
                         "domains": fact.domains,
                         "entities": fact.entities,
                         "negative": fact.negative,
+                        "status": fact.status.value,
                     }
                     for fact in state.facts
-                    if fact.active and fact.status == KnowledgeStatus.CONFIRMED
+                    if fact.active and fact.status in {
+                        KnowledgeStatus.CONFIRMED,
+                        KnowledgeStatus.PROPOSED,
+                    }
                 ],
             },
             max_tokens=2200,
@@ -327,6 +341,7 @@ class PMDiscoveryEngine:
                 statement=decision.canonical_statement.strip() or item["statement"],
                 domains=item["domains"],
                 entities=item["entities"],
+                status=KnowledgeStatus(item["status"]),
                 confidence=item["confidence"],
                 negative=item["negative"],
                 source_turn_ids=[turn.id],
@@ -421,10 +436,15 @@ class PMDiscoveryEngine:
             ]
             existing = state.requirements.get(key)
             if existing is None:
+                confirmed_basis = any(
+                    (fact := self._fact_by_id(state, identity)) is not None
+                    and fact.status == KnowledgeStatus.CONFIRMED
+                    for identity in fact_ids
+                )
                 status = (
-                    KnowledgeStatus.PROPOSED
-                    if implication_ids and not fact_ids
-                    else KnowledgeStatus.UNKNOWN
+                    KnowledgeStatus.UNKNOWN
+                    if confirmed_basis
+                    else KnowledgeStatus.PROPOSED
                 )
                 state.requirements[key] = RequirementRecord(
                     key=key,
