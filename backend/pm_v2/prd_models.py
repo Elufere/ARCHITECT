@@ -25,3 +25,4 @@ class ImplementationReadyPRD(BaseModel):
     deferred_decisions: List[str] = Field(default_factory=list)
     open_questions: List[str] = Field(default_factory=list)
     proposed_implications: List[str] = Field(default_factory=list)
+    proposed_recommendations: List[str] = Field(default_factory=list)
