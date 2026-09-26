@@ -223,15 +223,16 @@ def question_generator_node(state: AgentState) -> dict:
     if discovery_boundaries:
         boundary_guidance = """
 PERSISTENT DISCOVERY BOUNDARIES
-The founder has explicitly rejected or delegated some lines of questioning.
-These are conversation-control constraints, not product facts:
+The founder has given interview-control feedback. These are not product facts:
 """ + "\n".join(
-            f"- {item.get('instruction')} | source: {item.get('evidence')}"
+            f"- type={item.get('type')} | {item.get('instruction')} | source: {item.get('evidence')}"
             for item in discovery_boundaries
         ) + """
-Do not ask for these details again in different wording. If the selected
-objective conflicts with a boundary, ask a different valid product question
-rather than trying to work around the boundary.
+Apply each boundary according to its type.
+- For design_deferral/rejected_inquiry: do not retry that rejected detail.
+- For question_too_broad: keep the same product thread, but ask a much smaller
+  question. Do NOT respond by abandoning the thread or switching to an unrelated
+  product decision.
 """
     output_job = (
         "Your job is to briefly reflect what you now understand from the founder's answer, "
@@ -306,6 +307,12 @@ not several related questions joined together. Never ask "when and how", "X, Y,
 and Z", or "what happens and are there conditions" in one turn. If the planner
 objective itself contains several dimensions, choose the ONE dimension with the
 highest product impact and ask only that.
+
+For workflows, "one question" is not enough if the expected answer is a long
+sequence. Never ask for the main actions/steps/flow from one stage to another
+when multiple actions are involved, and never combine multiple actors' workflow
+responsibilities in one question. Ask for one small transition or decision, such
+as the first meaningful action for one actor, then continue from the answer.
 
 Use founder-friendly product language. Prefer simple phrases such as "what happens
 next", "who can do this", "is this the same role", or "what should the user do"
