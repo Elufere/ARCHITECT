@@ -170,6 +170,15 @@ Critical distinctions:
   release after completion; it does NOT by itself define what makes the transaction successful.
 - 'can', 'may', or 'should be able to' is ordinary capability unless the source
   also states an authorization boundary.
+- When the founder explicitly describes the application as being "for" named
+  functional roles to perform an in-app exchange/action (for example "an app for
+  hosts to sell to guests"), capture those named roles as current-app actors and
+  capture the explicitly stated actor action. Do not require a separate sentence
+  saying "the users are...".
+- Founder/product-builder intent such as "I want to create an app..." is not a
+  role-owned desired_outcome unless the desired result is explicitly attributed
+  to a product actor. Preserve the raw idea elsewhere rather than inventing an
+  actor-owned goal.
 - Do not manufacture actor identity from a later mention of an already-known actor.
   Use actor context only to resolve names/pronouns/capacities.
 - Resolve pronoun ownership from the latest response first, then from the last
