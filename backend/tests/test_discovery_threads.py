@@ -455,3 +455,82 @@ def test_thread_planner_receives_latest_model_delta(monkeypatch):
     assert [item["subject"] for item in captured["payload"]["new_product_concepts_this_turn"]] == [
         "group"
     ]
+
+
+def test_invalid_frontier_anchor_degrades_to_none_instead_of_failing():
+    frontier = threads.ThreadFrontierInquiry.model_validate({
+        "decision_key": "Group Access",
+        "topic": "BUSINESS_RULES",
+        "anchor_gap": "workflow_steps",
+        "objective": "Understand how group access works.",
+        "question_hint": "Ask who can see a group's packages.",
+        "reason": "Access was introduced by the latest answer.",
+    })
+
+    assert frontier.decision_key == "group_access"
+    assert frontier.anchor_gap is None
+
+
+def test_thread_planner_repairs_malformed_first_structured_response(monkeypatch):
+    calls = []
+    valid = {
+        "thread_id": "access",
+        "thread_label": "Access",
+        "thread_objective": "Understand how invited users gain access to packages.",
+        "parent_thread_id": None,
+        "frontier": {
+            "decision_key": "group_access",
+            "topic": "BUSINESS_RULES",
+            "anchor_gap": "visibility_rules",
+            "objective": "Understand how group membership controls package visibility.",
+            "question_hint": "Ask what determines which groups and packages an invited user can see.",
+            "reason": "The latest answer introduced invitation-gated visibility.",
+            "related_fact_ids": [],
+            "information_gain": 0.9,
+            "causal_relevance": 1,
+            "conversation_continuity": 1,
+            "architecture_impact": 0.7,
+            "business_risk": 0.5,
+            "question_cost": 0,
+        },
+        "relevant_requirement_ids": [],
+        "rationale": "Follow the newly introduced access rule.",
+    }
+
+    class Planner:
+        def invoke(self, _messages):
+            calls.append(1)
+            if len(calls) == 1:
+                return {
+                    "thread_id": "Access Thread",
+                    "thread_label": "Access",
+                    # Missing thread_objective/frontier/rationale makes the
+                    # first structured response invalid.
+                }
+            return valid
+
+    monkeypatch.setattr(threads, "thread_planner_model", lambda: Planner())
+    state = {
+        "messages": [
+            AIMessage(content="How does someone get access to packages?"),
+            HumanMessage(content="Users are invited to a group before they can see packages."),
+        ],
+        "raw_idea": "An ecommerce app for packages.",
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [],
+        "product_concepts": [],
+        "active_requirements": {},
+        "requirement_coverage": {},
+        "eligible_requirement_keys": [],
+        "requirement_question_history": [],
+        "discovery_threads": {},
+        "active_discovery_thread": "core_workflow",
+        "turn_count": 1,
+        "extraction_status": "SUCCESS",
+    }
+
+    plan = threads.plan_discovery_thread(state)
+
+    assert len(calls) == 2
+    assert plan.thread_id == "access"
+    assert plan.frontier.decision_key == "group_access"
