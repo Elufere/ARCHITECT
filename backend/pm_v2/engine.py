@@ -489,6 +489,29 @@ class PMDiscoveryEngine:
             )
             existing.risk = max(existing.risk, proposal.risk)
 
+        # Safety net for dependency propagation: if the model references a
+        # dependency but omits its own proposal, retain it as a PROPOSED
+        # requirement so it cannot disappear from the requirement graph.
+        referenced_dependencies = {
+            dependency
+            for requirement in state.requirements.values()
+            for dependency in requirement.dependencies
+            if dependency
+        }
+        for dependency in referenced_dependencies:
+            if dependency in state.requirements:
+                continue
+            state.requirements[dependency] = RequirementRecord(
+                key=dependency,
+                label=dependency.replace(".", " ").replace("_", " ").title(),
+                description=(
+                    "Dependency activated by another product requirement; "
+                    "requires validation before it can be treated as confirmed."
+                ),
+                status=KnowledgeStatus.PROPOSED,
+                activation_reason="Dependency propagation",
+            )
+
     def _assess_requirements(self, state: DiscoveryState) -> None:
         if not state.requirements:
             return
@@ -579,44 +602,28 @@ class PMDiscoveryEngine:
                 + completion.reason
             )
 
-        candidates = structured_call(
-            call_name="question_candidates",
-            schema=QuestionCandidateBatch,
-            instruction=QUESTION_CANDIDATES,
-            payload={
-                "blocking_requirement_keys": completion.blocking_requirement_keys,
-                "unresolved_high_impact": completion.unresolved_high_impact,
-                "context": product_context(state),
-            },
-            max_tokens=2800,
+        first_candidates = self._generate_question_candidates(
+            state, completion, repair_feedback=None
         )
-        if not candidates.items:
+        selected, audit_feedback = self._audit_and_select(
+            state, first_candidates
+        )
+
+        if selected is None:
+            # One semantic repair pass only. This is intentionally different
+            # from blindly regenerating the same question until something passes.
+            repaired_candidates = self._generate_question_candidates(
+                state,
+                completion,
+                repair_feedback=audit_feedback,
+            )
+            selected, _ = self._audit_and_select(
+                state, repaired_candidates
+            )
+
+        if selected is None:
             return self._no_question_fallback(state, completion)
 
-        audit = structured_call(
-            call_name="question_audit",
-            schema=QuestionAuditBatch,
-            instruction=QUESTION_AUDIT,
-            payload={
-                "candidates": [
-                    item.model_dump(mode="json") for item in candidates.items
-                ],
-                "context": product_context(state),
-            },
-            max_tokens=1800,
-        )
-        audit_by_id = {item.candidate_id: item for item in audit.items}
-        eligible = [
-            item
-            for item in candidates.items
-            if (audit_by_id.get(item.id) is not None)
-            and audit_by_id[item.id].eligible
-            and item.decision_key not in self._blocked_decision_keys(state)
-        ]
-        if not eligible:
-            return self._no_question_fallback(state, completion)
-
-        selected = max(eligible, key=self._priority_score)
         state.pending_question = selected.question.strip()
         state.pending_decision_key = selected.decision_key
         state.pending_requirement_keys = [
@@ -635,20 +642,122 @@ class PMDiscoveryEngine:
         )
         return selected.question.strip()
 
+    def _generate_question_candidates(
+        self,
+        state: DiscoveryState,
+        completion: CompletionAssessment,
+        repair_feedback: list[dict] | None,
+    ) -> list[QuestionCandidate]:
+        instruction = QUESTION_CANDIDATES
+        if repair_feedback:
+            instruction += (
+                "\nThe previous candidate set failed quality review. Generate "
+                "materially different candidates that address the audit reasons. "
+                "Do not merely paraphrase rejected candidates. If no legitimate "
+                "high-value question exists, return an empty list."
+            )
+        result = structured_call(
+            call_name=(
+                "question_candidates_repair"
+                if repair_feedback
+                else "question_candidates"
+            ),
+            schema=QuestionCandidateBatch,
+            instruction=instruction,
+            payload={
+                "blocking_requirement_keys": completion.blocking_requirement_keys,
+                "unresolved_high_impact": completion.unresolved_high_impact,
+                "repair_feedback": repair_feedback or [],
+                "context": product_context(state),
+            },
+            max_tokens=2800,
+        )
+        return result.items
+
+    def _audit_and_select(
+        self,
+        state: DiscoveryState,
+        candidates: list[QuestionCandidate],
+    ) -> tuple[QuestionCandidate | None, list[dict]]:
+        if not candidates:
+            return None, []
+
+        audit = structured_call(
+            call_name="question_audit",
+            schema=QuestionAuditBatch,
+            instruction=QUESTION_AUDIT,
+            payload={
+                "candidates": [
+                    item.model_dump(mode="json") for item in candidates
+                ],
+                "context": product_context(state),
+            },
+            max_tokens=1800,
+        )
+        audit_by_id = {item.candidate_id: item for item in audit.items}
+        blocked_keys = self._blocked_decision_keys(state)
+        eligible = [
+            item
+            for item in candidates
+            if (audit_by_id.get(item.id) is not None)
+            and audit_by_id[item.id].eligible
+            and item.decision_key not in blocked_keys
+        ]
+        feedback = [
+            {
+                "candidate": item.model_dump(mode="json"),
+                "audit": (
+                    audit_by_id[item.id].model_dump(mode="json")
+                    if item.id in audit_by_id
+                    else {"eligible": False, "reason": "No audit verdict returned"}
+                ),
+            }
+            for item in candidates
+            if item not in eligible
+        ]
+        if not eligible:
+            return None, feedback
+        return max(eligible, key=self._priority_score), feedback
+
     def _no_question_fallback(
         self, state: DiscoveryState, completion: CompletionAssessment
     ) -> str:
-        # Fail safe: do not invent a low-value question just to keep the loop alive.
+        # Fail safe: never lower the quality bar simply to keep asking.
         state.pending_question = None
         state.pending_decision_key = None
         state.pending_requirement_keys = []
+
+        unresolved_blockers = [
+            req
+            for req in state.requirements.values()
+            if req.status in {KnowledgeStatus.UNKNOWN, KnowledgeStatus.PROPOSED}
+            and req.missing_decisions
+            and max(req.business_impact, req.architecture_impact, req.risk) >= 0.65
+        ]
+        open_blocking_conflicts = [
+            conflict
+            for conflict in state.contradictions
+            if conflict.blocking and not conflict.resolved
+        ]
+        if not unresolved_blockers and not open_blocking_conflicts:
+            state.complete = True
+            state.completion_reason = (
+                "No further high-value question survived the quality audit; "
+                "remaining unknowns are low-value or deferred."
+            )
+            return (
+                "Discovery is complete enough for an implementation-ready PRD. "
+                + state.completion_reason
+            )
+
         state.completion_reason = (
-            "No question passed the high-value discovery audit. "
+            "No candidate question passed the quality audit while material "
+            "unknowns still remain. "
             + completion.reason
         )
         return (
-            "I don't have another high-value discovery question that passes the "
-            "current quality checks. "
+            "I can't justify another question without lowering the discovery "
+            "quality bar. "
             + completion.reason
         )
 
