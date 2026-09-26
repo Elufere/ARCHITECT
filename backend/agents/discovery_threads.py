@@ -81,7 +81,7 @@ class DiscoveryThreadPlan(BaseModel):
     parent_thread_id: Optional[str] = None
     frontier: Optional[ThreadFrontierInquiry] = None
     relevant_requirement_ids: List[str] = Field(default_factory=list)
-    rationale: str
+    rationale: str = ""
 
     @field_validator("thread_id", "parent_thread_id", mode="before")
     @classmethod
@@ -93,6 +93,25 @@ class DiscoveryThreadPlan(BaseModel):
 
 
 _thread_planner = None
+_inquiry_assessment_model = None
+
+
+class InquiryAssessment(BaseModel):
+    covered: bool
+    too_broad: bool
+    recap_of_known_information: bool
+    reason: str
+    supporting_observation_ids: List[str] = Field(default_factory=list)
+
+
+def inquiry_assessment_model():
+    global _inquiry_assessment_model
+    if _inquiry_assessment_model is None:
+        _inquiry_assessment_model = get_structured_model(
+            call_name="discovery_threads.assess_inquiry",
+            schema=InquiryAssessment,
+        )
+    return _inquiry_assessment_model
 
 
 def thread_planner_model():
@@ -117,10 +136,13 @@ The interview should feel like an excellent human PM conversation:
 2. Stay on one coherent discovery thread until the important local decisions are
    understandable. A child concept may temporarily become a child thread.
 3. Prefer high-information forks that eliminate materially different product
-   models. Before asking for an entire end-to-end workflow, resolve a foundational
-   product-shape fork when the current description is still broad enough to support
-   materially different structures. Ask the smallest question that will reshape
-   the model, then follow its consequences.
+   models. NEVER ask the founder to narrate an entire end-to-end workflow as one
+   question when that workflow contains several distinct actors, stages, or
+   decisions. Resolve one foundational product-shape fork or one causal link at a
+   time. Ask the smallest question that will reshape the model, then follow its
+   consequences. A question such as "walk me through the main steps from X to Y"
+   is a recap/bundle, not a frontier decision, unless X->Y itself is one atomic
+   transition whose rule is the unresolved decision.
    Examples of the reasoning pattern, NOT domain facts:
    - if a new entity appears, understand what it represents and how it relates
      to the current structure;
@@ -141,9 +163,12 @@ The interview should feel like an excellent human PM conversation:
    a human can answer them together (for example actor identity plus explicitly
    stated role relationship).
 8. Never repeat an underlying decision merely with different wording. The
-   delivered-question history contains thread_id + decision_key. If a decision
-   was clearly answered, move on. If it was asked twice, choose another decision
-   or another thread rather than paraphrasing it again.
+   delivered-question history contains thread_id + decision_key, but wording and
+   IDs are not the source of truth: use the founder's accumulated evidence too.
+   If the substance was already answered across one or several earlier answers,
+   move on. Never ask the founder to summarize or restate an already-known flow.
+   If a decision was asked twice, choose another decision or another thread rather
+   than paraphrasing it again.
 9. The frontier is an UNCERTAINTY/DECISION, never an invented answer. Use the
    product's own vocabulary.
 10. anchor_gap is optional normalization metadata only. Use null when no existing
@@ -219,6 +244,24 @@ def _concept_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]:
             continue
         result.append(concept.model_dump(mode="json"))
     return result[-40:]
+
+
+def _observation_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]:
+    """Founder evidence survives even when canonical schema admission rejects it."""
+    result = []
+    for observation in state.get("captured_observations", []):
+        if observation.get("scope") != scope.value:
+            continue
+        result.append({
+            "id": observation.get("id"),
+            "kind": observation.get("kind"),
+            "value": observation.get("value"),
+            "evidence": observation.get("evidence"),
+            "role": observation.get("role"),
+            "source_turn": observation.get("source_turn"),
+            "admission_status": observation.get("admission_status"),
+        })
+    return result[-80:]
 
 
 def _requirement_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]:
@@ -302,6 +345,92 @@ def _normalize_plan(
     })
 
 
+INQUIRY_ASSESSMENT_INSTRUCTION = """Assess the proposed next discovery
+frontier before a question is generated.
+
+There are TWO independent failure modes to detect.
+
+1. ALREADY COVERED / RECAP:
+Judge meaning, not wording or decision_key names. covered=true when the founder's
+existing evidence already substantially answers the information need, including
+when the answer is distributed across several earlier turns. recap_of_known_information
+is true when the proposed move mostly asks the founder to narrate, summarize, or
+restate facts/process already present.
+
+2. TOO BROAD / BUNDLED:
+too_broad=true when the frontier asks for multiple distinct product decisions,
+multiple stages of a workflow, or multiple actors' journeys in one answer instead
+of one unresolved fork, state, relationship, rule, or causal link. End-to-end
+"walk me through the main steps from X to Y" requests are normally too broad.
+A valid frontier should be answerable as one coherent product decision.
+
+Only founder statements count as evidence. PM questions do not. Captured
+observations remain evidence even when canonical schema admission rejected them;
+an admission failure must not erase what the founder explicitly said.
+
+Do not mark a narrow unresolved follow-up as covered merely because related facts
+exist. Do not invent missing information.
+"""
+
+
+def _semantic_frontier_problem(
+    plan: DiscoveryThreadPlan,
+    state: AgentState,
+    scope: DiscoveryScope,
+) -> str | None:
+    frontier = plan.frontier
+    if frontier is None:
+        return None
+
+    payload = {
+        "proposed_frontier": {
+            "thread_id": plan.thread_id,
+            "decision_key": frontier.decision_key,
+            "objective": frontier.objective,
+            "question_hint": frontier.question_hint,
+            "reason": frontier.reason,
+        },
+        "captured_founder_observations": _observation_payload(state, scope),
+        "confirmed_product_facts": _fact_payload(state, scope),
+        "confirmed_product_concepts": _concept_payload(state, scope),
+        "recent_conversation": _recent_conversation(state),
+        "delivered_question_history": _history_payload(state),
+    }
+    try:
+        result = inquiry_assessment_model().invoke([
+            SystemMessage(content=INQUIRY_ASSESSMENT_INSTRUCTION),
+            HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+        ])
+        assessment = (
+            result
+            if isinstance(result, InquiryAssessment)
+            else InquiryAssessment.model_validate(result)
+        )
+    except Exception as exc:
+        raise_if_llm_failure(exc)
+        print(f"INQUIRY ASSESSMENT SKIPPED: {exc}")
+        return None
+
+    print(
+        f"INQUIRY ASSESSMENT: {plan.thread_id}/{frontier.decision_key} | "
+        f"covered={assessment.covered} | too_broad={assessment.too_broad} | "
+        f"recap={assessment.recap_of_known_information} | {assessment.reason}"
+    )
+
+    if assessment.covered or assessment.recap_of_known_information:
+        support = ", ".join(assessment.supporting_observation_ids) or "existing founder evidence"
+        return (
+            "The proposed information need is already substantially answered or "
+            f"is a recap of known information ({support}): {assessment.reason}"
+        )
+    if assessment.too_broad:
+        return (
+            "The proposed frontier bundles multiple product decisions or workflow "
+            f"stages instead of one atomic uncertainty: {assessment.reason}"
+        )
+    return None
+
+
 def _plan_problem(
     plan: DiscoveryThreadPlan,
     state: AgentState,
@@ -325,6 +454,13 @@ def _plan_problem(
                 f"Decision '{frontier.decision_key}' already received a usable answer; "
                 "advance to the next causal decision."
             )
+        semantic_problem = _semantic_frontier_problem(
+            plan,
+            state,
+            state.get("discovery_scope", DiscoveryScope.USER_APP),
+        )
+        if semantic_problem is not None:
+            return semantic_problem
     if frontier is None and backlog and not plan.relevant_requirement_ids:
         return (
             "The plan has no model frontier and no relevant requirement, but eligible "
@@ -355,6 +491,7 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "new_product_concepts_this_turn": _latest_turn_concepts(state, scope),
         "confirmed_product_facts": _fact_payload(state, scope),
         "confirmed_product_concepts": _concept_payload(state, scope),
+        "captured_observations": _observation_payload(state, scope),
         "current_threads": state.get("discovery_threads", {}),
         "active_thread_id": state.get("active_discovery_thread"),
         "delivered_question_history": _history_payload(state),
@@ -381,10 +518,11 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "repair": {
             "problem": problem,
             "instruction": (
-                "Return one valid structured next move. Keep the next question on the "
-                "current causal/product-structure thread, do not repeat an answered "
-                "decision, use null for an uncertain anchor_gap, and do not invent "
-                "requirement IDs."
+                "Return one valid structured next move. Keep it on the current "
+                "causal/product-structure thread. Choose ONE atomic unresolved decision; "
+                "do not ask for an end-to-end workflow recap, do not repeat or summarize "
+                "an answered decision, use null for an uncertain anchor_gap, and do not "
+                "invent requirement IDs."
             ),
         },
     }
