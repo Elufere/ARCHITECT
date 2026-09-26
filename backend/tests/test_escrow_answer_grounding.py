@@ -15,11 +15,19 @@ from replay_escrow_responsibilities import initial_state, ANSWER, ACTORS
 CAPTURE = json.loads((Path(__file__).parent / "fixtures" / "escrow_responsibilities_extraction.json").read_text(encoding="utf-8-sig"))
 
 
-def setup_models(monkeypatch):
+def setup_models(monkeypatch, *, include_incidental_workflow=False):
     prompts = {}
     def invoke(name, messages):
         prompts[name] = messages[0].content
-        return {"parsed": {"items": CAPTURE.get(name, [])}}
+        items = list(CAPTURE.get(name, []))
+        if name == "WORKFLOW" and include_incidental_workflow:
+            items.append(dict(
+                key="workflow_steps",
+                value="buyer and seller transaction flow",
+                evidence=ANSWER,
+                confidence=1,
+            ))
+        return {"parsed": {"items": items}}
     monkeypatch.setattr(tracker, "extraction_models", lambda: {
         name: SimpleNamespace(invoke=lambda messages, n=name: invoke(n, messages))
         for name, *_ in tracker.PASSES})
@@ -28,7 +36,7 @@ def setup_models(monkeypatch):
 
 @pytest.mark.parametrize("incidental_failure", ["malformed", "rejected"])
 def test_exact_answer_advances_even_when_incidental_audit_fails(monkeypatch, incidental_failure):
-    prompts = setup_models(monkeypatch)
+    prompts = setup_models(monkeypatch, include_incidental_workflow=True)
     audits = []
     def decide(name, schema, instruction, payload):
         if name == "GAP_ANSWER":
