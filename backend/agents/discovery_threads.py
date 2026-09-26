@@ -187,6 +187,17 @@ The interview should feel like an excellent human PM conversation:
 10. anchor_gap is optional normalization metadata only. Use null when no existing
     storage field cleanly represents the decision; never distort the question to
     fit a schema field.
+11. Respect discovery_boundaries as persistent interview-control memory.
+    - design_deferral means UI/interface/navigation/design implementation detail
+      has been delegated away from the founder. Do not ask it again in different
+      wording unless a concrete unresolved product decision genuinely depends on it.
+    - rejected_inquiry means the founder rejected that inquiry as irrelevant or
+      repeated. Do not retry, paraphrase, or deepen it. Move to a materially
+      different product decision.
+    These are NOT product facts and must never be converted into requirements.
+12. If latest_conversation_intent is design_deferral or objection, the NEXT move
+    must demonstrate that feedback was respected. Do not remain on the rejected
+    narrow inquiry merely because details are still unknown.
 
 Choose a stable short thread_id and decision_key based on meaning, not wording.
 Examples of generic thread shapes are core_interaction, checkout, fulfillment,
@@ -433,6 +444,12 @@ as founder text and must be interpreted independently.
 
 Do not invent missing information and do not treat implications from a product
 label as founder-provided facts.
+
+Discovery boundaries are conversation-control constraints, not missing product
+facts. If a proposed frontier asks for detail the founder explicitly delegated
+to a designer, or repeats/deepens an inquiry they rejected as irrelevant, set
+should_move_on=true even if that detail remains unknown. Unknown does not mean
+worth asking.
 """
 
 
@@ -454,6 +471,8 @@ def _semantic_frontier_problem(
             "reason": frontier.reason,
         },
         "captured_founder_observations": _observation_payload(state, scope),
+        "discovery_boundaries": state.get("discovery_boundaries", [])[-50:],
+        "latest_conversation_intent": state.get("conversation_intent"),
         "confirmed_product_facts": _fact_payload(state, scope),
         "confirmed_product_concepts": _concept_payload(state, scope),
         "recent_conversation": _recent_conversation(state),
@@ -566,6 +585,8 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "scope": scope.value,
         "raw_idea": state.get("raw_idea", ""),
         "latest_user_answer": _latest_human(state),
+        "latest_conversation_intent": state.get("conversation_intent"),
+        "discovery_boundaries": state.get("discovery_boundaries", [])[-50:],
         "recent_conversation": _recent_conversation(state),
         "new_confirmed_facts_this_turn": _latest_turn_facts(state, scope),
         "new_product_concepts_this_turn": _latest_turn_concepts(state, scope),
