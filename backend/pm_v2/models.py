@@ -69,6 +69,7 @@ class PendingFact(BaseModel):
 
 class TurnInterpretation(BaseModel):
     intent: TurnIntent = TurnIntent.PRODUCT_INFORMATION
+    answers_previous_question: bool = False
     facts: List[PendingFact] = Field(default_factory=list)
     control_reason: str = ""
     boundary_summary: Optional[str] = None
