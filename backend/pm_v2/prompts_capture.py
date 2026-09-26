@@ -16,6 +16,11 @@ UNCERTAINTY = explicitly does not know / has not decided.
 DESIGN_DEFERRAL = delegates UI, interface, navigation, or design detail.
 OBJECTION = says the inquiry is irrelevant, repeated, already answered, or should stop.
 
+Also set answers_previous_question=true only when the latest user message
+substantively resolves or explicitly closes the immediately preceding PM
+question. A message may contain valid product information while not answering
+the pending question.
+
 Then capture atomic facts actually asserted by the latest user response.
 
 Rules:
