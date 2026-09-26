@@ -19,7 +19,7 @@ from agents.state import (
     KnowledgeState,
     TOPIC_KEY_MAP,
 )
-from agents.semantic_validation import GapAnswer, GroundingResult, GroundingResponse, GAP_INSTRUCTION, ROLE_POLICY_INSTRUCTION, GROUNDING_INSTRUCTION, category_contradiction
+from agents.semantic_validation import GapAnswer, GroundingResult, GroundingResponse, GAP_INSTRUCTION, ROLE_POLICY_INSTRUCTION, GROUNDING_INSTRUCTION
 from agents.discovery_fields import OVERLAP_RULES, field_contract
 from agents.product_model import build_product_model
 from agents.product_concepts import (
