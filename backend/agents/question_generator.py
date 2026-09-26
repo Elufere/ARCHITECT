@@ -254,6 +254,11 @@ to make that part of the product coherent.
 Do not repeat an underlying decision in new wording. Do not jump to a globally
 important requirement merely because it exists elsewhere in the model.
 
+Ask ONE atomic product question. Do not turn a narrow frontier into an end-to-end
+workflow recap, a "main steps from X to Y" request, or a combined journey for
+multiple actors. If the selected uncertainty concerns one transition, rule,
+relationship, state, or fork, ask only about that decision.
+
 The anchor field below exists only so extraction can normalize the answer.
 It is NOT a checklist item and does not need to be exhaustively completed.
 Ask only what materially resolves the selected product uncertainty.
