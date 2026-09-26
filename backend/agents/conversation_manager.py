@@ -2,16 +2,17 @@
 
 import re
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from agents.state import AgentState
-from agents.conversation_language import clarification_reply, clarification_question
+from agents.conversation_language import clarification_reply, clarification_question, final_question_text
+from agents.llm import get_chat_model
 
 
 PATTERNS = {
     "clarification": re.compile(
         r"\b(what do you mean|what are you asking|can you explain|clarify|rephrase|"
-        r"i (?:don't|do not) understand|too technical|simpler terms?|explain (?:it )?simply|"
+        r"i (?:don'?t|do not) (?:understand|get it)|too technical|simpler terms?|explain (?:it )?simply|"
         r"explain in simpler terms?)\b",
         re.I,
     ),
@@ -58,6 +59,57 @@ def classify_turn(content: str) -> str:
     return "product_information"
 
 
+def semantic_clarification_reply(state: AgentState, founder_message: str) -> str:
+    """Clarify the existing decision without replanning or creating product facts."""
+    previous = next(
+        (
+            message.content
+            for message in reversed(state.get("messages", [])[:-1])
+            if isinstance(message, AIMessage)
+        ),
+        "",
+    )
+    previous_question = final_question_text(previous)
+    objective = state.get("current_objective") or ""
+    guidance = state.get("question_hint") or ""
+    context = "\n".join(
+        f"- {item}"
+        for item in state.get("relevant_context", [])[:8]
+    ) or "None"
+
+    try:
+        response = get_chat_model(
+            call_name="conversation_manager.clarify",
+            max_tokens=140,
+        ).invoke([
+            SystemMessage(content="""You are a product manager clarifying the exact
+question you just asked because the founder said they did not understand it.
+
+Do not choose a new discovery topic or a new product decision.
+Do not extract or invent product facts.
+Do not deepen the question.
+Answer the founder's clarification directly, then rephrase the SAME intended
+decision in simpler language. If the founder asks whether you meant a particular
+stage or interpretation, explicitly say whether that matches the supplied
+previous question/objective. Keep the reply concise. End with at most ONE
+question, and that question must still ask only the same decision."""),
+            HumanMessage(content=(
+                f"Previous PM question: {previous_question}\n"
+                f"Selected objective: {objective}\n"
+                f"Question guidance: {guidance}\n"
+                f"Relevant confirmed context:\n{context}\n"
+                f"Founder's clarification request: {founder_message}"
+            )),
+        ])
+        text = response.content.strip()
+        if text:
+            return text
+    except Exception as exc:
+        print(f"SEMANTIC CLARIFICATION FALLBACK: {exc}")
+
+    return clarification_reply(state)
+
+
 def conversation_manager_node(state: AgentState) -> dict:
     messages = state.get("messages", [])
     if not messages or not isinstance(messages[-1], HumanMessage):
@@ -67,7 +119,17 @@ def conversation_manager_node(state: AgentState) -> dict:
     update = {"conversation_intent": intent, "is_correction": intent == "correction",
               "question_retry_count": 0}
     if intent == "clarification":
-        return {**update, "messages": [AIMessage(content=clarification_reply(state))]}
+        return {
+            **update,
+            "messages": [
+                AIMessage(
+                    content=semantic_clarification_reply(
+                        state,
+                        messages[-1].content,
+                    )
+                )
+            ],
+        }
     if intent == "rationale_request":
         return {**update, "messages": [AIMessage(content=(
             "It helps us agree how this part of the app should work. " + clarification_question(state)
