@@ -13,7 +13,8 @@ from agents.llm_errors import ExtractionFailed
 from agents.llm import get_structured_model
 from pydantic import BaseModel
 
-from agents.state import DiscoveryScope
+from agents.state import DiscoveryScope, KnowledgeState
+from agents.product_concepts import ProductConcept
 from agents.role_utils import role_identity, split_role_labels
 from agents.conversation_language import clarification_question, final_question_text
 
@@ -146,6 +147,9 @@ Persistent discovery boundaries:
 Question/response:
 {agent_output}
 
+Confirmed knowledge established from the founder's latest answer:
+{latest_confirmed_understanding}
+
 The planner has already determined that this is the next missing piece of
 information.
 
@@ -158,8 +162,26 @@ knowledge presence alone does not mean the gap has been deliberately resolved.
 Previously asked questions for this topic:
 {previous_questions}
 
-Your job is to determine whether the question is asking specifically about
-the Current objective.
+Your job has TWO checks:
+
+1. UNDERSTANDING CHECK
+The PM response may contain a short acknowledgement before the final question.
+That acknowledgement must faithfully reflect confirmed founder knowledge.
+It may paraphrase or combine supplied confirmed facts, but it must NOT present
+a PM inference, recommendation, implementation choice, UI behavior, workflow,
+business rule, or technical mechanism as founder-confirmed knowledge.
+If the response mentions an implication that is not directly confirmed, it must
+be explicitly tentative (for example "this suggests" or "this may mean").
+Do not require the acknowledgement to mention every latest fact; concise is good.
+If there was no confirmed knowledge on the latest turn, a response containing
+no acknowledgement is valid.
+Reject the response if its acknowledgement invents or upgrades unconfirmed
+information. Explain exactly which claim is unsupported.
+
+2. QUESTION CHECK
+Determine whether the FINAL interview question asks specifically about the
+Current objective. Ignore the acknowledgement when judging question count and
+question scope; only the final interview question should seek information.
 
 When Planner source is "model", the Current gap is only an extraction anchor.
 Validate the question against the Current objective. Do not require neighboring
@@ -177,14 +199,17 @@ supplied contradiction. It may quote or summarize the two incompatible confirmed
 statements and ask which CURRENT rule/decision applies. It must not choose a side,
 silently merge them, or drift into unrelated discovery.
 
-When Conversation intent is "advice_request", the PM may give a brief set of
-non-authoritative suggestions before the final interview question. Those suggestions
+When Conversation intent is "advice_request", the PM may first reflect confirmed
+understanding and then give a brief set of non-authoritative suggestions before
+the final interview question. Those suggestions
 must be clearly framed as options, must stay within the active product decision,
 and must not be treated as confirmed founder choices. Evaluate the FINAL question
 against the Current objective. Reject advice that drifts into implementation,
 architecture, or a generic feature wishlist.
 
-Reject if the question:
+Reject if the response:
+- presents unsupported or inferred information in the acknowledgement as though
+  the founder confirmed it
 - violates a persistent discovery boundary by retrying, paraphrasing, or deepening
   a line of questioning the founder explicitly delegated or rejected
 - changes to another topic
@@ -433,10 +458,30 @@ def evaluate_question(state: dict) -> dict:
                 requirement_context=requirement_context,
                 validation_context=validation_context,
                 agent_output=last_message.content,
+                latest_confirmed_understanding="\n".join([
+                    *[
+                        f"- {item.topic.value}.{item.key}: {item.value}"
+                        for item in state.get("discovered_knowledge", [])
+                        if item.scope == state.get("discovery_scope")
+                        and item.knowledge_state == KnowledgeState.CONFIRMED
+                        and item.source_turn == state.get("turn_count", 0)
+                    ],
+                    *[
+                        f"- {concept.kind.value}: {concept.value}"
+                        for concept in [
+                            raw if isinstance(raw, ProductConcept)
+                            else ProductConcept.model_validate(raw)
+                            for raw in state.get("product_concepts", [])
+                        ]
+                        if concept.scope == state.get("discovery_scope")
+                        and concept.source_turn == state.get("turn_count", 0)
+                    ],
+                ]) or "None",
                 known_facts="\n".join(
                     f"- {item.key}: {item.value}"
                     for item in state.get("discovered_knowledge", [])
                     if item.topic == current_topic
+                    and item.knowledge_state == KnowledgeState.CONFIRMED
                 ) or "None",
                 previous_questions="\n".join(f"- {question}" for question in prior_ai_questions[-5:]) or "None",
             )
