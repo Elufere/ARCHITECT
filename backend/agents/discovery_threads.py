@@ -414,9 +414,12 @@ rule, architecture boundary, money movement, authorization model, or lifecycle,
 set should_move_on=true. A founder request to avoid technical depth is also strong
 evidence that implementation-level follow-ups should stop.
 
-Only founder statements count as evidence. PM questions do not. Captured
-observations remain evidence even when canonical schema admission rejected them;
-admission failure must not erase what the founder explicitly said.
+Only founder statements count as evidence. PM questions do not. Captured observations remain useful when canonical STRUCTURAL admission
+failed, because their exact founder evidence still exists. However, an observation
+with admission_status="SEMANTIC_REJECTED" means the LLM grounding audit found that
+the proposed interpretation was not supported. Do NOT use that observation's
+kind/value as direct support for an inquiry. Its raw evidence may only be treated
+as founder text and must be interpreted independently.
 
 Do not invent missing information and do not treat implications from a product
 label as founder-provided facts.
