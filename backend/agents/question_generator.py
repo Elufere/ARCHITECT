@@ -203,13 +203,16 @@ def question_generator_node(state: AgentState) -> dict:
 REQUIREMENT-DRIVEN DISCOVERY
 Selected requirement: {requirement.label}
 Requirement description: {requirement.description or requirement.label}
+Active discovery thread: {selected_requirement.get('thread_id') or state.get('active_discovery_thread') or 'none'}
 Unresolved facets this question may cover:
 {chr(10).join(targets) if targets else "- Clarify the unresolved requirement."}
 
 The anchor field shown below exists only for extraction normalization. Do NOT
 broaden the question to exhaust that field. Ask specifically about the selected
-requirement and its unresolved facets. You may cover closely related facets in
-one natural question when that is clearer for the user.
+requirement and its unresolved facets. Keep the question connected to the active
+discovery thread; do not use this requirement as an excuse to jump into another
+part of the product. You may cover closely related facets in one natural question
+when that is clearer for the user.
 """
 
     if planner_source == "model":
