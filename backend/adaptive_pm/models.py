@@ -267,6 +267,7 @@ class InterviewState(BaseModel):
     last_decision_key: str | None = None
     observations: list[Observation] = Field(default_factory=list)
     knowledge: dict[str, KnowledgeRecord] = Field(default_factory=dict)
+    knowledge_history: list[KnowledgeRecord] = Field(default_factory=list)
     concepts: dict[str, ProductConcept] = Field(default_factory=dict)
     requirements: dict[str, RequirementRecord] = Field(default_factory=dict)
     implications: dict[str, ImplicationRecord] = Field(default_factory=dict)
