@@ -63,6 +63,7 @@ class PendingFact(BaseModel):
     id: str = Field(default_factory=lambda: new_id("candidate"))
     statement: str
     evidence: str
+    status: KnowledgeStatus = KnowledgeStatus.CONFIRMED
     confidence: float = Field(default=1.0, ge=0, le=1)
     negative: bool = False
 
