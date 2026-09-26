@@ -220,8 +220,10 @@ Reject if the response:
 - closely related target facets of one selected requirement may be combined only
   when Planner source is "requirement" and they form one natural decision
 - when Planner source is "model", broadens one frontier decision into an end-to-end
-  workflow recap, asks for "main steps from X to Y", or combines multiple actors'
-  journeys/stages instead of resolving the selected uncertainty
+  workflow recap, asks for "main steps from X to Y", "main actions from X to Y",
+  or combines multiple actors' journeys/stages instead of resolving the selected
+  uncertainty. Reject even if this is grammatically one question: if a natural
+  answer requires several sequential actions, it is too broad
 - uses technical or implementation-shaped wording when the same product decision
   can be asked in simple founder-facing language
 - asks implementation
@@ -247,8 +249,10 @@ objective and still be invalid if it expands into a multi-stage recap, bundles
 several dimensions, or asks for a checklist-like answer.
 
 For model-driven discovery, prefer ONE short founder-facing question. Examples of
-invalid shapes include "when and how...", "what changes in A, B, and C?", and
-"...what happens, and are there any conditions?".
+invalid shapes include "when and how...", "what changes in A, B, and C?",
+"...what happens, and are there any conditions?", and "what are the main actions
+A and B perform from X to Y?". A valid workflow question should usually ask about
+one actor and one stage/transition at a time.
 
 Return the schema.
 """
