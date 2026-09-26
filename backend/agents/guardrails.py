@@ -301,7 +301,14 @@ def evaluate_question(state: dict) -> dict:
     # --------------------------------------------------------
     if not last_message.content.strip().endswith("?"):
         logger.warning("Planner output is not a question. Forcing retry.")
-        rejection = SystemMessage(content=NOT_A_QUESTION_REJECTION)
+        rejection_text = (
+            "CRITICAL ERROR: Because the founder asked for suggestions, you may give brief "
+            "advice first, but you must end with exactly ONE interview question ending in '?'. "
+            "Keep suggestions as options, not confirmed product facts."
+            if state.get("conversation_intent") == "advice_request"
+            else NOT_A_QUESTION_REJECTION
+        )
+        rejection = SystemMessage(content=rejection_text)
         return {"messages": [rejection]}
 
     current_role = state.get("current_role")
@@ -344,9 +351,10 @@ def evaluate_question(state: dict) -> dict:
     # Check 2: Deterministic duplicate-question check
     # --------------------------------------------------------
     prior_ai_questions = delivered_prior_questions(messages)
+    current_question = final_question_text(last_message.content)
     duplicate = next(
         (question for question in prior_ai_questions
-         if questions_are_semantic_duplicates(last_message.content, question)),
+         if questions_are_semantic_duplicates(current_question, question)),
         None,
     )
     if duplicate:
