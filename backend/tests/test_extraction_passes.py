@@ -210,11 +210,11 @@ def test_explicit_success_signal_is_still_accepted():
 
 def test_success_criterion_semantic_support_is_audited(monkeypatch):
     from agents.semantic_validation import GroundingResult
-    quote = "The appointment is confirmed."
+    quote = "Success means the appointment is confirmed."
     unsupported = KnowledgeItem(topic=DiscoveryTopic.USER_GOALS, scope=DiscoveryScope.USER_APP,
                                 key="success_criteria", value="The payment is complete.",
                                 evidence=quote, role="patient", confidence=1)
-    supported = unsupported.model_copy(update={"value": quote})
+    supported = unsupported.model_copy(update={"value": "The appointment is confirmed."})
     # Source-quote validation alone cannot prove that a different value follows.
     assert tracker.validate_extraction(unsupported, quote)[0]
     monkeypatch.setattr(tracker, "semantic_decision", lambda *_: GroundingResult(evidence_categories={"0": ["USER_GOALS.success_criteria"]}, supported_ids=[1]))
