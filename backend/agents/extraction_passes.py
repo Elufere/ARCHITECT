@@ -121,7 +121,9 @@ Kinds:
   process, a back-office tool, or an external system is not a current-app actor.
 - actor_action: something a known/current actor explicitly does, performs, manages,
   submits, confirms, pays, reviews, creates, etc. A benefit received by the actor
-  is NOT an actor action.
+  is NOT an actor action. System/application/service behavior is NOT an actor
+  action and must never be reassigned to an actor merely because that actor was
+  named in the preceding question.
 - authorization_boundary: an explicit permission, prohibition, exclusivity,
   access restriction, or conditional authority. Ordinary capability is not one.
 - multiple_roles / role_transition: explicit policy about one person/account
@@ -132,7 +134,10 @@ Kinds:
 - success_condition: an explicit definition of what makes the user's/product's
   goal successful. Merely saying what happens after success is not a definition.
 - motivation: an explicit reason/problem explaining why the product or outcome is wanted.
-- workflow_steps: an explicitly stated normal sequence or handoff.
+- workflow_steps: an explicitly stated normal sequence, routing decision, or
+  handoff performed by the product/process. System behavior such as choosing a
+  route/provider from a product value belongs here when it is stated as part of
+  the process; do not rewrite it as a nearby user's responsibility.
 - workflow_trigger: an explicitly stated event/action that starts the workflow.
   The first action mentioned in a narrative is not automatically the trigger.
 - workflow_completion: an explicit condition that makes the normal workflow complete.
@@ -181,6 +186,9 @@ Critical distinctions:
   actor-owned goal.
 - Do not manufacture actor identity from a later mention of an already-known actor.
   Use actor context only to resolve names/pronouns/capacities.
+- Do not manufacture a new actor from an implementation owner, vendor, specialist,
+  technical team, or external participant. Mention alone proves participation in
+  the surrounding discussion, not membership in the current app.
 - Resolve pronoun ownership from the latest response first, then from the last
   question only when needed. When the last question names multiple actors, do
   NOT automatically assign the answer to the grammatical subject of the question.
@@ -192,12 +200,15 @@ Critical distinctions:
   merely from domain convention.
 
 Conversation-control language is NOT product knowledge. Questions, rhetorical
-challenges, complaints about the interview, or statements about who should answer
-a design question do not establish application actors, roles, permissions, or
-requirements. Examples such as "am I the product designer?", "that is the
-designer's job", and "you are asking irrelevant questions" must produce no
-product claim (or unclassified only when capture is necessary). Never turn an
-interrogative into an affirmative proposition.
+challenges, complaints about the interview, or statements delegating a technical,
+implementation, design, or specialist decision do not establish application
+actors, roles, permissions, or requirements. A person or team mentioned only as
+the party who will decide, implement, or handle a technical detail is not thereby
+a user of the scoped product. Capture an actor only when the founder explicitly
+establishes that actor's interaction with the CURRENT application. Otherwise emit
+no product claim (or unclassified only when capture is necessary). Never turn an
+interrogative, delegation, or interview objection into an affirmative product
+proposition.
 
 For every claim:
 - evidence MUST be one exact contiguous, case-sensitive substring of latest_response;
