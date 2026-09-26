@@ -323,3 +323,112 @@ def test_active_gap_absence_is_not_committed_by_claim_capture(monkeypatch):
 
     assert batch == []
     assert getattr(batch, "grounding_required") is False
+
+
+def test_missing_primary_actor_role_is_repaired_from_explicit_direct_answer(monkeypatch):
+    text = "the main users are customers who can either be a buyer or seller in a transaction"
+    calls = []
+    production_models(monkeypatch, [
+        claim("primary_actor", text, text),
+    ], calls)
+
+    batch = tracker.extract_passes(
+        text,
+        dict(
+            messages=[
+                AIMessage(content="Who are the main users of the app?"),
+                HumanMessage(content=text),
+            ],
+            discovery_scope=S.USER_APP,
+            discovered_knowledge=[],
+            current_topic=T.USER_ROLES,
+            current_gap="primary_users",
+            turn_count=1,
+        ),
+        S.USER_APP,
+    )
+
+    assert len(batch) == 1
+    assert batch[0].roles == ["customer"]
+    assert batch[0].aliases == {"customer": ["buyer", "seller"]}
+
+
+def test_missing_owned_role_resolves_from_canonical_actor_aliases(monkeypatch):
+    customer = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="primary_users",
+        value="customers can be buyers or sellers",
+        evidence="customers can be buyers or sellers",
+        roles=["customer"],
+        aliases={"customer": ["buyer", "seller"]},
+        confidence=1,
+    )
+    text = "Either the buyer or seller can propose changes before funding."
+    calls = []
+    production_models(monkeypatch, [
+        claim("authorization_boundary", text, text),
+    ], calls)
+
+    batch = tracker.extract_passes(
+        text,
+        dict(
+            messages=[HumanMessage(content=text)],
+            discovery_scope=S.USER_APP,
+            discovered_knowledge=[customer],
+            current_topic=T.BUSINESS_RULES,
+            current_gap="ownership_rules",
+            turn_count=5,
+        ),
+        S.USER_APP,
+    )
+
+    assert len(batch) == 1
+    assert batch[0].key == "permissions"
+    assert batch[0].role == "customer"
+
+
+def test_intermediate_dispute_state_is_not_terminal_end_state(monkeypatch):
+    text = "Once either party raises a dispute, the transaction moves into a disputed state."
+    calls = []
+    production_models(monkeypatch, [
+        claim("workflow_end_state", text, text),
+    ], calls)
+
+    batch = tracker.extract_passes(
+        text,
+        dict(
+            messages=[HumanMessage(content=text)],
+            discovery_scope=S.USER_APP,
+            discovered_knowledge=[],
+            current_topic=T.USER_ROLES,
+            current_gap="primary_users",
+            turn_count=2,
+        ),
+        S.USER_APP,
+    )
+
+    assert batch == []
+
+
+def test_history_statement_is_not_a_downstream_dependency(monkeypatch):
+    text = "Any changes or state transitions should remain in the transaction history."
+    calls = []
+    production_models(monkeypatch, [
+        claim("workflow_dependency", text, text),
+    ], calls)
+
+    batch = tracker.extract_passes(
+        text,
+        dict(
+            messages=[HumanMessage(content=text)],
+            discovery_scope=S.USER_APP,
+            discovered_knowledge=[],
+            current_topic=T.CORE_WORKFLOW,
+            current_gap="workflow_steps",
+            turn_count=6,
+        ),
+        S.USER_APP,
+    )
+
+    assert batch == []
