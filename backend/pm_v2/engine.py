@@ -24,6 +24,7 @@ from .models import (
     QuestionCandidate,
     QuestionCandidateBatch,
     QuestionHistoryItem,
+    RecommendationRecord,
     ReconciliationBatch,
     RequirementActivationBatch,
     RequirementAssessmentBatch,
@@ -66,13 +67,26 @@ class PMDiscoveryEngine:
             TurnIntent.SUMMARY_REQUEST,
             TurnIntent.ADVICE_REQUEST,
         }:
-            response = self._control_response(state, turn, interpretation.intent)
+            reply = self._control_response(state, turn, interpretation.intent)
+            if interpretation.intent == TurnIntent.ADVICE_REQUEST:
+                existing = {item.statement.strip().lower() for item in state.recommendations}
+                for suggestion in reply.suggestions:
+                    normalized = suggestion.strip()
+                    if normalized and normalized.lower() not in existing:
+                        state.recommendations.append(
+                            RecommendationRecord(
+                                statement=normalized,
+                                source_turn_id=turn.id,
+                            )
+                        )
+                        existing.add(normalized.lower())
+            response = reply.response.strip()
             if (
                 interpretation.intent
                 in {TurnIntent.CLARIFICATION, TurnIntent.RATIONALE_REQUEST, TurnIntent.ADVICE_REQUEST}
                 and response.rstrip().endswith("?")
             ):
-                state.pending_question = response.strip()
+                state.pending_question = response
             state.turn_count += 1
             return TurnResult(response=response, state=state)
 
@@ -136,7 +150,7 @@ class PMDiscoveryEngine:
 
     def _control_response(
         self, state: DiscoveryState, turn: SourceTurn, intent: TurnIntent
-    ) -> str:
+    ) -> ControlReply:
         result = structured_call(
             call_name="control_response",
             schema=ControlReply,
@@ -149,7 +163,7 @@ class PMDiscoveryEngine:
             },
             max_tokens=700,
         )
-        return result.response.strip()
+        return result
 
     def _mark_previous_question_answered(
         self, state: DiscoveryState, interpretation: TurnInterpretation
