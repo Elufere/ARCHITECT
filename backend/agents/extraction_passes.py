@@ -147,8 +147,15 @@ Critical distinctions:
 For every claim:
 - evidence MUST be one exact contiguous, case-sensitive substring of latest_response;
 - value must preserve only what that evidence states, including conditions/negation;
-- role is the canonical actor ID only when the proposition is actor-owned;
-- actor identity claims put the canonical actor ID in role and may list explicit aliases;
+- role is REQUIRED for primary_actor, secondary_actor, actor_action,
+  authorization_boundary, and desired_outcome. Use one canonical actor ID.
+- actor identity claims put the canonical actor ID in role. When the source
+  explicitly says one actor can act as named capacities (for example customer
+  acting as buyer or seller), keep the canonical actor in role and put those
+  capacity labels in aliases.
+- when one action/boundary applies to several labels that are aliases of the SAME
+  canonical actor, emit one claim owned by that canonical actor. When they are
+  genuinely different actors, emit separate owned claims.
 - use knowledge_state=INFERRED only for genuinely tentative current-app membership;
 - do not use prompt examples or prior facts as new evidence;
 - do not invent benefits, actions, rules, states, or ownership;
