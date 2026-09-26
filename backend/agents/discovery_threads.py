@@ -93,8 +93,10 @@ product-manager interview. You do not create product facts. Confirmed facts are
 authoritative; requirements are a backlog of decisions, not an interview agenda.
 
 The interview should feel like an excellent human PM conversation:
-1. Follow the product structure or causal process that the founder's latest
-   answer just revealed.
+1. Start with what CHANGED in the founder's latest answer. The payload explicitly
+   identifies facts and product concepts captured on the latest turn. Follow the
+   product structure, relationship, state, rule, or causal process that those new
+   decisions just revealed.
 2. Stay on one coherent discovery thread until the important local decisions are
    understandable. A child concept may temporarily become a child thread.
 3. Prefer high-information forks that eliminate materially different product
@@ -168,6 +170,24 @@ def _fact_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]:
             "source_turn": item.source_turn,
         })
     return result[-40:]
+
+
+def _latest_turn_facts(state: AgentState, scope: DiscoveryScope) -> list[dict]:
+    turn = state.get("turn_count", 0)
+    return [
+        item
+        for item in _fact_payload(state, scope)
+        if item.get("source_turn") == turn
+    ]
+
+
+def _latest_turn_concepts(state: AgentState, scope: DiscoveryScope) -> list[dict]:
+    turn = state.get("turn_count", 0)
+    return [
+        item
+        for item in _concept_payload(state, scope)
+        if item.get("source_turn") == turn
+    ]
 
 
 def _concept_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]:
@@ -310,6 +330,8 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "raw_idea": state.get("raw_idea", ""),
         "latest_user_answer": _latest_human(state),
         "recent_conversation": _recent_conversation(state),
+        "new_confirmed_facts_this_turn": _latest_turn_facts(state, scope),
+        "new_product_concepts_this_turn": _latest_turn_concepts(state, scope),
         "confirmed_product_facts": _fact_payload(state, scope),
         "confirmed_product_concepts": _concept_payload(state, scope),
         "current_threads": state.get("discovery_threads", {}),
