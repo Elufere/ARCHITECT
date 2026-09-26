@@ -393,6 +393,10 @@ def _semantic_frontier_problem(
         print(f"INQUIRY COVERAGE CHECK SKIPPED: {exc}")
         return None
 
+    print(
+        f"INQUIRY COVERAGE: {plan.thread_id}/{frontier.decision_key} | "
+        f"covered={decision.covered} | {decision.reason}"
+    )
     if decision.covered:
         support = ", ".join(decision.supporting_observation_ids) or "recent founder evidence"
         return (
