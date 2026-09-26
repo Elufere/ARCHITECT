@@ -3,6 +3,7 @@ from agents.llm import get_chat_model
 
 from agents.state import AgentState, DiscoveryScope, KnowledgeState
 from agents.product_model import format_product_model
+from agents.product_concepts import ProductConcept
 from agents.discovery_fields import FIELD_DEFINITIONS
 from agents.answer_contract import additional_actors_question
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
@@ -49,6 +50,32 @@ def format_recent_messages(messages: list) -> str:
             formatted_strings.append(f"PM: {msg.content}")
 
     return "\n".join(formatted_strings)
+
+
+def latest_confirmed_understanding(state: AgentState, scope: DiscoveryScope) -> list[str]:
+    """Return only grounded/canonical knowledge established on the current founder turn.
+
+    This is user-facing acknowledgement context, not a new reasoning layer.
+    It deliberately excludes inferred implications and PM recommendations.
+    """
+    turn = state.get("turn_count", 0)
+    items = []
+
+    for fact in state.get("discovered_knowledge", []):
+        if (
+            fact.scope == scope
+            and fact.knowledge_state == KnowledgeState.CONFIRMED
+            and fact.source_turn == turn
+        ):
+            role = f" [{fact.role}]" if fact.role else ""
+            items.append(f"{fact.topic.value}.{fact.key}{role}: {fact.value}")
+
+    for raw in state.get("product_concepts", []):
+        concept = raw if isinstance(raw, ProductConcept) else ProductConcept.model_validate(raw)
+        if concept.scope == scope and concept.source_turn == turn:
+            items.append(f"{concept.kind.value}: {concept.value}")
+
+    return list(dict.fromkeys(items))
 
 
 def _same_role(first: str | None, second: str | None) -> bool:
@@ -185,6 +212,11 @@ def question_generator_node(state: AgentState) -> dict:
         and discovery_move in ("confirm_inference", "confirm_existing") else ""
     )
     relevant_context = state.get("relevant_context", [])
+    latest_understanding = latest_confirmed_understanding(state, discovery_scope)
+    understanding_context = (
+        "\n".join(f"- {item}" for item in latest_understanding)
+        if latest_understanding else "None captured on this turn."
+    )
     requirement_guidance = ""
     model_guidance = ""
     validation_guidance = ""
@@ -208,10 +240,13 @@ objective conflicts with a boundary, ask a different valid product question
 rather than trying to work around the boundary.
 """
     output_job = (
-        "Your job is to give brief PM suggestions requested by the founder, then end with "
-        "ONE natural question that resolves or materially reduces the selected uncertainty."
+        "Your job is to briefly reflect what you now understand from the founder's answer, "
+        "give brief PM suggestions they explicitly requested, then end with ONE natural "
+        "question that resolves or materially reduces the selected uncertainty."
         if advice_requested
-        else "Your ONLY job is to write ONE natural question that resolves or materially reduces that uncertainty."
+        else "Your job is to briefly reflect what you now understand from the founder's "
+             "answer, then end with ONE natural question that resolves or materially "
+             "reduces the selected uncertainty."
     )
     advice_guidance = """
 COLLABORATIVE PM ADVICE MODE
@@ -400,6 +435,9 @@ CONTEXT
 Already known about this topic:
 {chr(10).join(topic_knowledge) if topic_knowledge else "Nothing yet"}
 
+Confirmed knowledge established from the founder's LATEST answer:
+{understanding_context}
+
 Confirmed context selected for this question (do not ask the user to
 re-establish any of these facts):
 {chr(10).join(f"- {fact}" for fact in relevant_context) if relevant_context else "None"}
@@ -416,6 +454,27 @@ USE EXISTING KNOWLEDGE
 ========================================
 
 Existing knowledge is authoritative context.
+
+Before the final question, briefly show the founder what you understood from
+their latest answer. This acknowledgement is part of the conversation, not a
+new product-reasoning step.
+
+UNDERSTANDING RULES:
+- Base the acknowledgement primarily on "Confirmed knowledge established from
+  the founder's LATEST answer" above.
+- You may connect it to older CONFIRMED knowledge only when the connection is
+  directly supported by the supplied context.
+- Paraphrase naturally; do not merely copy schema keys or dump the raw ledger.
+- Do NOT introduce a new workflow, UI behavior, business rule, requirement,
+  technical mechanism, or product decision as though the founder confirmed it.
+- If you mention a useful implication that is not confirmed, explicitly frame it
+  as tentative with language such as "That suggests..." or "That may mean...".
+  Never use tentative implications as evidence that a requirement is settled.
+- Keep this short: normally 1-3 sentences. Do not produce a mini-PRD or a long
+  bullet list after every answer.
+- If no confirmed knowledge was captured from the latest answer, do not invent
+  an acknowledgement just to satisfy the format; proceed naturally to the question.
+- The FINAL line/paragraph must still contain exactly ONE interview question.
 
 Before asking a question, review all known information about the current
 topic. Do not ask the user to provide information that is already clearly
@@ -439,7 +498,7 @@ to resolve the selected inquiry.
 OUTPUT
 ========================================
 
-{"Because the founder asked for suggestions: give concise advisory options first, then end with exactly ONE interview question. The suggestions are not confirmed product facts." if advice_requested else "Return ONLY the question. No preamble. No explanation."}
+{"Briefly reflect the confirmed understanding first, then give concise advisory options, and end with exactly ONE interview question. Clearly keep suggestions separate from confirmed product facts." if advice_requested else "Briefly reflect the confirmed understanding first, then end with exactly ONE interview question. Do not add any other questions."}
 """
     if not current_objective or not question_hint:
         raise ValueError(
