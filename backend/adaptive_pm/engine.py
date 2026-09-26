@@ -90,9 +90,18 @@ class AdaptivePMEngine:
         return f"obs_{digest}"
 
     def _capture(self, state: InterviewState, user_message: str) -> TurnCapture:
+        previous_pm_response = next(
+            (
+                item.get("text")
+                for item in reversed(state.recent_messages[:-1])
+                if item.get("speaker") == "pm"
+            ),
+            None,
+        )
         payload = {
             "current_founder_message": user_message,
             "previous_pm_question": state.last_question,
+            "previous_pm_response": previous_pm_response,
             "previous_decision_key": state.last_decision_key,
             "recent_conversation": state.recent_messages[-4:],
             "known_actor_entity_names": sorted({
@@ -130,9 +139,18 @@ class AdaptivePMEngine:
     ) -> list[Observation]:
         if not capture.facts:
             return []
+        previous_pm_response = next(
+            (
+                item.get("text")
+                for item in reversed(state.recent_messages[:-1])
+                if item.get("speaker") == "pm"
+            ),
+            None,
+        )
         payload = {
             "current_founder_message": user_message,
             "previous_pm_question": state.last_question,
+            "previous_pm_response": previous_pm_response,
             "facts": [fact.model_dump(mode="json") for fact in capture.facts],
         }
         audit = self._invoke_structured(
@@ -228,14 +246,16 @@ class AdaptivePMEngine:
                 for identity in mutation.observation_ids
                 if identity in observation_ids
             ]
+            existing = state.knowledge.get(mutation.key)
 
             if mutation.action == "REJECT":
-                existing = state.knowledge.get(mutation.key)
                 if existing:
-                    state.knowledge[mutation.key] = existing.model_copy(update={
+                    rejected = existing.model_copy(update={
                         "status": KnowledgeStatus.REJECTED,
                         "last_updated_turn": state.turn_count,
                     })
+                    state.knowledge_history.append(rejected)
+                    state.knowledge.pop(mutation.key, None)
                 continue
 
             status = (
@@ -244,56 +264,116 @@ class AdaptivePMEngine:
                 else mutation.status
             )
 
+            # Confirmed canonical knowledge must trace to grounded user evidence.
+            # Derived material belongs in implications, not in confirmed knowledge.
+            if status == KnowledgeStatus.CONFIRMED and not valid_obs:
+                print(
+                    f"KNOWLEDGE MUTATION DROPPED (no grounded evidence): "
+                    f"{mutation.action} {mutation.key}"
+                )
+                continue
+
+            evidence_ids = list(valid_obs)
+            entities = list(mutation.entities)
+            requirement_ids = list(mutation.affected_requirement_ids)
+
+            if existing and mutation.action in ("ADD", "REFINE"):
+                evidence_ids = list(dict.fromkeys([
+                    *existing.evidence_observation_ids,
+                    *evidence_ids,
+                ]))
+                entities = list(dict.fromkeys([*existing.entities, *entities]))
+                requirement_ids = list(dict.fromkeys([
+                    *existing.affected_requirement_ids,
+                    *requirement_ids,
+                ]))
+
+            if existing and mutation.action == "SUPERSEDE":
+                state.knowledge_history.append(
+                    existing.model_copy(update={
+                        "status": KnowledgeStatus.REJECTED,
+                        "last_updated_turn": state.turn_count,
+                    })
+                )
+
             record = KnowledgeRecord(
                 key=mutation.key,
                 statement=mutation.statement,
                 category=mutation.category,
                 status=status,
-                evidence_observation_ids=valid_obs,
-                entities=mutation.entities,
-                affected_requirement_ids=mutation.affected_requirement_ids,
+                evidence_observation_ids=evidence_ids,
+                entities=entities,
+                affected_requirement_ids=requirement_ids,
                 first_seen_turn=(
-                    state.knowledge[mutation.key].first_seen_turn
-                    if mutation.key in state.knowledge
+                    existing.first_seen_turn
+                    if existing
                     else state.turn_count
                 ),
                 last_updated_turn=state.turn_count,
             )
 
             if mutation.replaces_key and mutation.replaces_key != mutation.key:
-                old = state.knowledge.get(mutation.replaces_key)
+                old = state.knowledge.pop(mutation.replaces_key, None)
                 if old:
-                    state.knowledge[mutation.replaces_key] = old.model_copy(update={
-                        "status": KnowledgeStatus.REJECTED,
-                        "last_updated_turn": state.turn_count,
-                    })
+                    state.knowledge_history.append(
+                        old.model_copy(update={
+                            "status": KnowledgeStatus.REJECTED,
+                            "last_updated_turn": state.turn_count,
+                        })
+                    )
 
             state.knowledge[mutation.key] = record
 
         for concept in update.concepts:
-            if concept.evidence_observation_ids:
-                concept = concept.model_copy(update={
-                    "evidence_observation_ids": [
-                        identity
-                        for identity in concept.evidence_observation_ids
-                        if identity in observation_ids
-                    ]
-                })
+            valid_evidence = [
+                identity
+                for identity in concept.evidence_observation_ids
+                if identity in observation_ids
+            ]
+            if not valid_evidence:
+                print(f"PRODUCT CONCEPT DROPPED (no grounded evidence): {concept.id}")
+                continue
+            concept = concept.model_copy(
+                update={"evidence_observation_ids": valid_evidence}
+            )
             state.concepts[concept.id] = concept
 
+        knowledge_keys = set(state.knowledge)
         for requirement in update.requirement_updates:
-            state.requirements[requirement.id] = RequirementRecord(
-                **requirement.model_dump()
-            )
+            payload = requirement.model_dump()
+            payload["evidence_knowledge_keys"] = [
+                key
+                for key in requirement.evidence_knowledge_keys
+                if key in knowledge_keys
+            ]
+            state.requirements[requirement.id] = RequirementRecord(**payload)
 
         for implication in update.implications:
-            implication = implication.model_copy(
-                update={"status": KnowledgeStatus.PROPOSED}
-            )
+            valid_sources = [
+                key
+                for key in implication.source_knowledge_keys
+                if key in knowledge_keys
+            ]
+            if not valid_sources:
+                print(f"IMPLICATION DROPPED (no canonical source): {implication.id}")
+                continue
+            implication = implication.model_copy(update={
+                "status": KnowledgeStatus.PROPOSED,
+                "source_knowledge_keys": valid_sources,
+            })
             state.implications[implication.id] = implication
 
         for contradiction in update.contradictions:
-            state.contradictions[contradiction.id] = contradiction
+            valid_keys = [
+                key
+                for key in contradiction.knowledge_keys
+                if key in knowledge_keys
+            ]
+            if len(valid_keys) < 2:
+                continue
+            state.contradictions[contradiction.id] = contradiction.model_copy(
+                update={"knowledge_keys": valid_keys}
+            )
 
         for key in update.resolved_decision_keys:
             if key in state.decisions:
@@ -405,14 +485,15 @@ class AdaptivePMEngine:
             if audit.passed:
                 return candidate, candidate.question.strip()
 
-            if audit.revised_question and all([
-                audit.atomic,
-                audit.relevant,
-                audit.non_repetitive,
-                audit.respects_boundaries,
-                not audit.implementation_detail,
-            ]):
-                return candidate, audit.revised_question.strip()
+            # One semantic rewrite is allowed for wording/granularity problems.
+            # The revised question must pass the same audit before delivery.
+            if audit.revised_question:
+                revised = candidate.model_copy(
+                    update={"question": audit.revised_question.strip()}
+                )
+                second_audit = self._audit_question(state, revised)
+                if second_audit.passed and not second_audit.reject_candidate:
+                    return candidate, revised.question
 
         return None
 
@@ -494,7 +575,11 @@ class AdaptivePMEngine:
 
         plan = self._plan(state, capture.intent)
 
-        if plan.completion.complete:
+        blocking_contradictions = any(
+            item.blocking and not item.resolved
+            for item in state.contradictions.values()
+        )
+        if plan.completion.complete and not blocking_contradictions:
             state.complete = True
             response = (
                 "Discovery is sufficiently complete for the current product scope."
