@@ -43,7 +43,9 @@ def route_after_plan(state: AgentState) -> str:
 
 def route_after_conversation_manager(state: AgentState) -> str:
     """Only knowledge and corrections should flow into the extraction pipeline."""
-    if state.get("conversation_intent") in {"product_information", "correction", "objection"}:
+    if state.get("conversation_intent") in {
+        "product_information", "correction", "objection", "advice_request"
+    }:
         return "extract"
     # A short confirmation can itself answer a discovery question. Never drop
     # it just because the intent classifier recognized the word "yes".
