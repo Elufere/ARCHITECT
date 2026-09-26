@@ -505,8 +505,9 @@ Do NOT decide coverage from topical similarity. Separate what is KNOWN from what
 the proposed frontier still asks the founder to supply.
 
 Return:
-- supporting_observation_ids: only observation IDs whose founder evidence
-  DIRECTLY answers some or all of the proposed information need.
+- supporting_observation_ids: only UNIQUE observation IDs whose founder evidence
+  DIRECTLY answers some or all of the proposed information need. Never repeat an
+  ID and return at most 12 IDs.
 - recent_answer_supports=true when the immediately preceding founder answer
   directly resolves the proposed information need through conversational context,
   even if that short answer is not a stored observation.
@@ -514,7 +515,8 @@ Return:
   is directly answered by founder evidence. If any material part remains unknown,
   it MUST be false.
 - missing_information: every material part of the proposed information need that
-  is NOT directly answered by existing founder evidence. If your reason says
+  is NOT directly answered by existing founder evidence, stated once each (at most
+  8 items). If your reason says
   something is unknown, unspecified, not explained, or still needed, that item
   MUST appear here. Never return an empty list while describing missing detail.
 - recap_of_known_information=true ONLY when the proposed frontier asks the
