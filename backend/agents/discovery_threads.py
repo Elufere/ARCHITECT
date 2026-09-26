@@ -169,9 +169,12 @@ The interview should feel like an excellent human PM conversation:
 6. Requirements may be relevant to the current thread. Return only supplied
    requirement IDs that should be eligible NOW. Leave unrelated requirements
    deferred; do not delete or resolve them.
-7. Ask one decision at a time, but naturally combine inseparable dimensions when
-   a human can answer them together (for example actor identity plus explicitly
-   stated role relationship).
+7. Ask EXACTLY one product decision at a time. "One decision" means one
+   independently answerable uncertainty. Do not bundle timing + process +
+   conditions, permissions + features + experience, or actor identity +
+   responsibilities into one frontier. If the founder could answer one part
+   without answering another, they are separate decisions. Prefer the single
+   highest-value one and leave the rest for later.
 8. Never repeat an underlying decision merely with different wording. The
    delivered-question history contains thread_id + decision_key, but wording and
    IDs are not the source of truth: use the founder's accumulated evidence too.
@@ -372,10 +375,12 @@ Return:
 - recap_of_known_information=true ONLY when the proposed frontier asks the
   founder to restate/summarize information that is already directly present and
   there is no material new information to obtain.
-- too_broad=true when the frontier bundles multiple distinct product decisions,
-  multiple workflow stages, multiple actors' journeys, OR independent
-  responsibilities/permissions/goals for several actors into one answer instead
-  of one atomic unresolved fork, state, relationship, rule, or causal link.
+- too_broad=true when the frontier contains more than ONE independently
+  answerable uncertainty. This includes timing + process + conditions;
+  permissions + features + experience; multiple workflow stages; multiple actors'
+  journeys; or independent responsibilities/permissions/goals. If the founder
+  could answer one requested part while leaving another unanswered, it is too
+  broad. Choose one atomic fork, state, relationship, rule, or causal link.
 - should_move_on=true when the local decision is already sufficiently understood
   for product discovery and the proposed follow-up has low marginal value: e.g.
   it asks for UI/mechanism/implementation detail, repeatedly seeks an exhaustive
