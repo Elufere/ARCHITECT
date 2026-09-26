@@ -438,7 +438,7 @@ def ground_items(items, user_response, state, active_gap_review=None):
 def ground_batch(items, user_response, state, active_gap_review=None):
     eligible = []
     for item in items:
-        reason = category_contradiction(
+        reason = None if item.absence else category_contradiction(
             item.key,
             item.evidence,
             item.value,
