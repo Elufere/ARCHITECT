@@ -105,9 +105,12 @@ class InquiryAssessment(BaseModel):
     """
 
     supporting_observation_ids: List[str] = Field(default_factory=list)
+    recent_answer_supports: bool = False
     missing_information: List[str] = Field(default_factory=list)
     too_broad: bool
     recap_of_known_information: bool = False
+    should_move_on: bool = False
+    depth_reason: str = ""
     reason: str
 
 
@@ -361,14 +364,24 @@ the proposed frontier still asks the founder to supply.
 Return:
 - supporting_observation_ids: only observation IDs whose founder evidence
   DIRECTLY answers some or all of the proposed information need.
+- recent_answer_supports=true when the immediately preceding founder answer
+  directly resolves the proposed information need through conversational context,
+  even if that short answer is not a stored observation.
 - missing_information: each material part of the proposed information need that
   is NOT directly answered by existing founder evidence.
 - recap_of_known_information=true ONLY when the proposed frontier asks the
   founder to restate/summarize information that is already directly present and
   there is no material new information to obtain.
 - too_broad=true when the frontier bundles multiple distinct product decisions,
-  multiple workflow stages, or multiple actors' journeys instead of one atomic
-  unresolved fork, state, relationship, rule, or causal link.
+  multiple workflow stages, multiple actors' journeys, OR independent
+  responsibilities/permissions/goals for several actors into one answer instead
+  of one atomic unresolved fork, state, relationship, rule, or causal link.
+- should_move_on=true when the local decision is already sufficiently understood
+  for product discovery and the proposed follow-up has low marginal value: e.g.
+  it asks for UI/mechanism/implementation detail, repeatedly seeks an exhaustive
+  list after the governing rule is clear, re-confirms an answer already closed
+  by the founder, or continues drilling the same local subject while higher-level
+  product structure remains unexplored. Set depth_reason to explain why.
 
 CRITICAL COVERAGE RULE:
 Related context is NOT an answer. Knowing WHO the actors are does not answer WHAT
@@ -379,9 +392,27 @@ stage of a process does not answer a different stage.
 If you can truthfully say "the founder has not provided X yet", then X MUST appear
 in missing_information and recap_of_known_information MUST be false.
 
+Interpret concise answers against the immediately preceding PM question. If the PM
+asked "are there any others?" and the founder replies "that's all", "that will be
+all", "nothing else", or equivalent, that IS an explicit closure of that list:
+recent_answer_supports=true and do not invent a need for another confirmation.
+
 End-to-end requests such as "walk me through the main steps from X to Y" are
-normally too broad when X->Y spans several independent decisions. A valid frontier
-should be answerable as one coherent product decision.
+normally too broad when X->Y spans several independent decisions. Likewise,
+asking for separate responsibilities or permissions for several independent
+actors in one question is normally too broad unless the comparison itself is the
+single unresolved decision. A valid frontier should be answerable as one coherent
+product decision.
+
+DEPTH / MARGINAL VALUE:
+Product discovery is not an exhaustive interrogation. Once the governing product
+rule is clear, do not keep drilling merely because more implementation detail,
+examples, UI mechanics, exhaustive enumeration, or edge specificity could exist.
+If two or more recent questions have stayed on the same narrow decision and the
+next answer would not materially change the product model, PRD decision, business
+rule, architecture boundary, money movement, authorization model, or lifecycle,
+set should_move_on=true. A founder request to avoid technical depth is also strong
+evidence that implementation-level follow-ups should stop.
 
 Only founder statements count as evidence. PM questions do not. Captured
 observations remain evidence even when canonical schema admission rejected them;
@@ -431,7 +462,7 @@ def _semantic_frontier_problem(
         return None
 
     has_missing_information = bool(assessment.missing_information)
-    has_direct_support = bool(assessment.supporting_observation_ids)
+    has_direct_support = bool(assessment.supporting_observation_ids) or assessment.recent_answer_supports
     covered = has_direct_support and not has_missing_information
     recap = (
         assessment.recap_of_known_information
@@ -441,15 +472,23 @@ def _semantic_frontier_problem(
     print(
         f"INQUIRY ASSESSMENT: {plan.thread_id}/{frontier.decision_key} | "
         f"covered={covered} | too_broad={assessment.too_broad} | "
-        f"recap={recap} | missing={assessment.missing_information} | "
-        f"{assessment.reason}"
+        f"recap={recap} | move_on={assessment.should_move_on} | "
+        f"missing={assessment.missing_information} | {assessment.reason}"
     )
 
     if covered or recap:
-        support = ", ".join(assessment.supporting_observation_ids) or "existing founder evidence"
+        support = (
+            ", ".join(assessment.supporting_observation_ids)
+            or ("the founder's latest contextual answer" if assessment.recent_answer_supports else "existing founder evidence")
+        )
         return (
             "The proposed information need is already substantially answered or "
             f"is a recap of known information ({support}): {assessment.reason}"
+        )
+    if assessment.should_move_on:
+        return (
+            "This local thread is sufficiently understood and the proposed follow-up "
+            f"has low marginal discovery value: {assessment.depth_reason or assessment.reason}"
         )
     if assessment.too_broad:
         return (
@@ -546,11 +585,13 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "repair": {
             "problem": problem,
             "instruction": (
-                "Return one valid structured next move. Keep it on the current "
-                "causal/product-structure thread. Choose ONE atomic unresolved decision; "
-                "do not ask for an end-to-end workflow recap, do not repeat or summarize "
-                "an answered decision, use null for an uncertain anchor_gap, and do not "
-                "invent requirement IDs."
+                "Return one valid structured next move. Choose ONE atomic unresolved "
+                "decision. Stay on the current causal/product-structure thread only when "
+                "it still has material product value; if the repair says the local thread "
+                "is sufficiently understood, move to a different high-value product "
+                "decision. Do not ask for an end-to-end workflow recap, exhaustive list, "
+                "implementation/UI mechanics, or another confirmation of a closed answer. "
+                "Use null for an uncertain anchor_gap and do not invent requirement IDs."
             ),
         },
     }
