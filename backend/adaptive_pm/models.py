@@ -63,6 +63,8 @@ class TurnCapture(BaseModel):
     boundary: BoundaryProposal | None = None
     confirms_previous_answer: bool = False
     correction_targets: list[str] = Field(default_factory=list)
+    accepted_recommendation_ids: list[str] = Field(default_factory=list)
+    rejected_recommendation_ids: list[str] = Field(default_factory=list)
 
 
 class GroundingVerdict(BaseModel):
