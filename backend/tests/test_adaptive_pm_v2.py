@@ -1,22 +1,20 @@
-from adaptive_pm.engine import AdaptivePMEngine
+from adaptive_pm.capture_stage import CaptureStage
+from adaptive_pm.knowledge_stage import KnowledgeStage
 from adaptive_pm.models import (
+    CandidateGenerationResult,
+    CanonicalizationResult,
     CapturedFact,
+    CompletionAssessment,
     DecisionRecord,
     InterviewState,
     KnowledgeMutation,
     KnowledgeRecord,
     KnowledgeStatus,
     Observation,
-    PlanningResult,
-    CompletionAssessment,
     QuestionCandidate,
-    ReasoningUpdate,
     TurnCapture,
 )
-
-
-def engine_without_models():
-    return AdaptivePMEngine.__new__(AdaptivePMEngine)
+from adaptive_pm.question_stage import QuestionStage
 
 
 def incomplete():
@@ -59,7 +57,7 @@ def test_source_grounding_drops_invented_evidence():
             evidence="requires approval",
         )
     ])
-    grounded = engine_without_models()._source_ground(
+    grounded = CaptureStage.source_ground(
         capture,
         "The host can create an event.",
     )
@@ -68,7 +66,7 @@ def test_source_grounding_drops_invented_evidence():
 
 def test_confirmed_knowledge_requires_grounded_observation():
     state = InterviewState()
-    update = ReasoningUpdate(knowledge_mutations=[
+    update = CanonicalizationResult(knowledge_mutations=[
         KnowledgeMutation(
             action="ADD",
             key="payments.provider",
@@ -78,7 +76,7 @@ def test_confirmed_knowledge_requires_grounded_observation():
             observation_ids=["missing"],
         )
     ])
-    AdaptivePMEngine._apply_reasoning(state, update)
+    KnowledgeStage.apply(state, update)
     assert "payments.provider" not in state.knowledge
 
 
@@ -105,7 +103,7 @@ def test_refinement_preserves_prior_evidence():
         first_seen_turn=1,
         last_updated_turn=1,
     )
-    update = ReasoningUpdate(knowledge_mutations=[
+    update = CanonicalizationResult(knowledge_mutations=[
         KnowledgeMutation(
             action="REFINE",
             key="payments.method",
@@ -114,8 +112,10 @@ def test_refinement_preserves_prior_evidence():
             observation_ids=["obs_2"],
         )
     ])
-    AdaptivePMEngine._apply_reasoning(state, update)
-    assert state.knowledge["payments.method"].evidence_observation_ids == [
+    KnowledgeStage.apply(state, update)
+    assert state.knowledge[
+        "payments.method"
+    ].evidence_observation_ids == [
         "obs_1",
         "obs_2",
     ]
@@ -129,15 +129,17 @@ def test_answered_decision_is_not_eligible_again():
         asked_turn=4,
         resolution="ANSWERED",
     )
-    plan = PlanningResult(
+    result = CandidateGenerationResult(
         completion=incomplete(),
         candidates=[
             candidate("q1", "transaction.completion"),
             candidate("q2", "settlement.destination"),
         ],
     )
-    eligible = AdaptivePMEngine._eligible_candidates(plan, state)
-    assert [item.decision_key for item in eligible] == ["settlement.destination"]
+    eligible = QuestionStage.eligible_candidates(result, state)
+    assert [
+        item.decision_key for item in eligible
+    ] == ["settlement.destination"]
 
 
 def test_decision_memory_is_not_a_short_sliding_window():
@@ -151,3 +153,32 @@ def test_decision_memory_is_not_a_short_sliding_window():
             resolution="ANSWERED",
         )
     assert len(state.compact_context()["decisions"]) == 20
+
+
+def test_uncanonicalized_grounded_evidence_remains_available():
+    state = InterviewState()
+    state.observations.append(Observation(
+        id="obs_unmapped",
+        statement="Guests can buy without an account.",
+        evidence="Guests can buy without an account",
+        source_turn=1,
+    ))
+
+    context = state.compact_context()
+    assert [
+        item["id"]
+        for item in context["unmapped_grounded_observations"]
+    ] == ["obs_unmapped"]
+
+    state.knowledge["checkout.guest_access"] = KnowledgeRecord(
+        key="checkout.guest_access",
+        statement="Guests can buy without an account.",
+        category="checkout",
+        evidence_observation_ids=["obs_unmapped"],
+        first_seen_turn=1,
+        last_updated_turn=1,
+    )
+
+    assert state.compact_context()[
+        "unmapped_grounded_observations"
+    ] == []
