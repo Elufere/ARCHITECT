@@ -92,6 +92,22 @@ class NeutralClaim(BaseModel):
     knowledge_state: KnowledgeState = KnowledgeState.CONFIRMED
     absence: Literal["none", "not_applicable"] | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_product_concept_value(cls, data):
+        """Concept claims may use their evidence as the proposition value.
+
+        Structured models occasionally populate subject/relation/object correctly
+        while omitting the generic value field. For product concepts this is
+        lossless because the exact evidence is already the asserted proposition.
+        Other claim kinds still require an explicit value.
+        """
+        if isinstance(data, dict) and data.get("kind") in {
+            "product_entity", "entity_relationship", "entity_attribute"
+        } and not data.get("value") and data.get("evidence"):
+            return {**data, "value": data["evidence"]}
+        return data
+
 
 CLAIM_CAPTURE_INSTRUCTION = """Capture the explicit propositions in the latest user answer ONCE.
 Do not search independently for every product-document field. First understand
@@ -171,7 +187,10 @@ For every claim:
   capacity labels in aliases.
 - product_entity/entity_relationship/entity_attribute claims do not use role.
   They MUST use subject; relationship/attribute claims MUST also use relation
-  and object. Capture only structure explicitly introduced by the founder.
+  and object. Use short canonical nouns for subjects/objects (for example
+  "package", not "selling packages"). value should contain the proposition;
+  if omitted defensively, the system will preserve the exact evidence as value.
+  Capture only structure explicitly introduced by the founder.
 - when one action/boundary applies to several labels that are aliases of the SAME
   canonical actor, emit one claim owned by that canonical actor. When they are
   genuinely different actors, emit separate owned claims.
