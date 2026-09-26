@@ -4,6 +4,28 @@ These templates explain the requested information; they never decide whether a
 user answer satisfies a gap or invent product actors/capabilities.
 """
 
+import re
+
+
+def final_question_text(content: str) -> str:
+    """Return the final interview question from a PM response.
+
+    Most turns contain only a question. Advice-with-continuation turns may contain
+    short PM suggestions first; short answers such as "yes" must still be resolved
+    against the actual trailing question rather than the advisory prose.
+    """
+    text = (content or "").strip()
+    if not text:
+        return ""
+    matches = list(re.finditer(r"(?:^|\n)([^\n?]*\?)\s*$", text, re.M))
+    if matches:
+        return matches[-1].group(1).strip()
+    question_positions = [match.start() for match in re.finditer(r"[^?]+\?", text)]
+    if question_positions:
+        segment = text[question_positions[-1]:].strip()
+        return segment
+    return text
+
 
 def _join(labels):
     if len(labels) < 2:
