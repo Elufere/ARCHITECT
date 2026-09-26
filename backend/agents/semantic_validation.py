@@ -41,6 +41,28 @@ def category_contradiction(
         if not explicit_start:
             return "Evidence does not explicitly establish the workflow start event"
 
+    if key == "completion_condition" and not direct_answer:
+        explicit_completion = re.search(
+            r"\b(?:complete[ds]?|completion|finished|finishes|successful(?:ly)?|"
+            r"considered\s+complete|ends?\s+when|marks?\s+(?:the\s+)?end)\b",
+            evidence,
+            re.I,
+        )
+        if not explicit_completion:
+            return "Evidence does not explicitly establish what makes the workflow complete"
+
+    if key == "downstream_dependency" and not direct_answer:
+        explicit_dependency = re.search(
+            r"\b(?:requires?|required|depends?\s+on|dependency|prerequisite|"
+            r"cannot\s+(?:proceed|continue|complete)\s+(?:until|without)|"
+            r"before\s+.+\s+(?:can|may)\s+(?:proceed|continue|complete)|"
+            r"waiting\s+for|awaiting)\b",
+            evidence,
+            re.I,
+        )
+        if not explicit_dependency:
+            return "Evidence states no prerequisite or downstream dependency"
+
     if key == "success_criteria" and not direct_answer:
         explicit_definition = re.search(
             r"\b(?:success\s+(?:means|is)|successful\s+when|considered\s+(?:successful|complete)|"
@@ -99,14 +121,17 @@ def category_contradiction(
             evidence,
             re.I,
         )
-        explicit_result = re.search(
-            r"\b(?:after|once\s+completed|ends?\s+(?:as|in)|final\s+state|"
-            r"status\s+(?:is|becomes)|is\s+marked|results?\s+in)\b",
+        explicit_terminal = re.search(
+            r"\b(?:after\s+completion|once\s+(?:completed|resolved)|completed|resolved|"
+            r"terminal|final\s+state|ends?\s+(?:as|in)|is\s+marked\s+(?:complete|"
+            r"completed|closed|archived|cancelled|canceled)|closed|archived)\b",
             evidence,
             re.I,
         )
-        if intent_only and not explicit_result:
+        if intent_only and not explicit_terminal:
             return "A desired future outcome is not an established workflow end state"
+        if not direct_answer and not explicit_terminal:
+            return "Evidence describes an intermediate state, not the workflow's terminal result"
 
     if key == "validation_rules" and not direct_answer and not re.search(
         r"\b(?:valid|invalid|validate|validation|must\s+(?:match|contain|provide)|"
