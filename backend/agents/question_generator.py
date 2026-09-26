@@ -188,6 +188,22 @@ def question_generator_node(state: AgentState) -> dict:
     requirement_guidance = ""
     model_guidance = ""
     validation_guidance = ""
+    advice_requested = state.get("conversation_intent") == "advice_request"
+    advice_guidance = """
+COLLABORATIVE PM ADVICE MODE
+The founder explicitly asked for suggestions in their latest answer.
+
+Before the final interview question, give a SHORT set of practical PM suggestions
+that are directly relevant to the decision they were discussing. Treat them as
+options, not confirmed requirements. Do not silently add them to the product
+model, and do not imply the founder already chose them.
+
+Prefer suggestions that clarify the product decision or prevent obvious ambiguity.
+Do not dump a generic feature wishlist. Avoid implementation and architecture.
+After the suggestions, continue the SAME active discovery thread with exactly ONE
+natural question that resolves the planner-selected objective. End the response
+with that question.
+""" if advice_requested else ""
     if planner_source == "requirement":
         requirement = state.get("active_requirements", {}).get(
             selected_requirement.get("requirement_key")
@@ -293,6 +309,7 @@ Planner source: {planner_source}
 {model_guidance}
 {requirement_guidance}
 {validation_guidance}
+{advice_guidance}
 Internal field definition (normalization context only; never quote this to the user):
 {FIELD_DEFINITIONS.get(current_topic, {}).get((current_gap or '').split('::')[0], '')}
 
@@ -382,7 +399,7 @@ to resolve the selected inquiry.
 OUTPUT
 ========================================
 
-Return ONLY the question. No preamble. No explanation.
+{"Because the founder asked for suggestions: give concise advisory options first, then end with exactly ONE interview question. The suggestions are not confirmed product facts." if advice_requested else "Return ONLY the question. No preamble. No explanation."}
 """
     if not current_objective or not question_hint:
         raise ValueError(
