@@ -175,6 +175,16 @@ The interview should feel like an excellent human PM conversation:
    responsibilities into one frontier. If the founder could answer one part
    without answering another, they are separate decisions. Prefer the single
    highest-value one and leave the rest for later.
+   WORKFLOW GRANULARITY IS STRICT:
+   - Never ask for "the main actions", "the steps", "the flow", or "the journey"
+     across a start-to-end range when several actions or decisions sit inside it.
+   - Never ask multiple actors to describe their parts of the same workflow in one
+     question.
+   - A valid workflow frontier should normally be one actor + one stage/transition
+     + one unresolved causal decision.
+   - If the workflow is largely unknown, begin with the smallest useful entry
+     point, such as the first action for one actor, rather than requesting the
+     whole process.
 8. Never repeat an underlying decision merely with different wording. The
    delivered-question history contains thread_id + decision_key, but wording and
    IDs are not the source of truth: use the founder's accumulated evidence too.
@@ -194,10 +204,15 @@ The interview should feel like an excellent human PM conversation:
     - rejected_inquiry means the founder rejected that inquiry as irrelevant or
       repeated. Do not retry, paraphrase, or deepen it. Move to a materially
       different product decision.
+    - question_too_broad means the founder did NOT reject the product thread;
+      they rejected the amount being asked at once. Stay on the same thread and
+      decompose the previous inquiry into one smaller decision. Do not switch
+      topics merely because the previous question was oversized.
     These are NOT product facts and must never be converted into requirements.
 12. If latest_conversation_intent is design_deferral or objection, the NEXT move
-    must demonstrate that feedback was respected. Do not remain on the rejected
-    narrow inquiry merely because details are still unknown.
+    must demonstrate that feedback was respected. If it is scope_objection, the
+    NEXT move must stay on the same product thread while shrinking the question
+    to one actor/stage/causal link.
 
 Choose a stable short thread_id and decision_key based on meaning, not wording.
 Examples of generic thread shapes are core_interaction, checkout, fulfillment,
@@ -389,7 +404,10 @@ Return:
 - too_broad=true when the frontier contains more than ONE independently
   answerable uncertainty. This includes timing + process + conditions;
   permissions + features + experience; multiple workflow stages; multiple actors'
-  journeys; or independent responsibilities/permissions/goals. If the founder
+  journeys; or independent responsibilities/permissions/goals. It ALSO includes
+  a request for "main actions", "main steps", "the process", "the flow", or a
+  start-to-end workflow when answering naturally requires a sequence of several
+  actions. A single grammatical question can still be too broad. If the founder
   could answer one requested part while leaving another unanswered, it is too
   broad. Choose one atomic fork, state, relationship, rule, or causal link.
 - should_move_on=true when the local decision is already sufficiently understood
@@ -413,8 +431,11 @@ asked "are there any others?" and the founder replies "that's all", "that will b
 all", "nothing else", or equivalent, that IS an explicit closure of that list:
 recent_answer_supports=true and do not invent a need for another confirmation.
 
-End-to-end requests such as "walk me through the main steps from X to Y" are
-too broad when X->Y spans several independent decisions. Likewise, "when and how",
+End-to-end requests such as "walk me through the main steps from X to Y" or
+"what are the main actions A and B perform from X to Y?" are too broad when X->Y
+spans several actions/decisions. The latter is too broad even though it appears
+as one sentence, because it combines multiple actors and multiple stages.
+Likewise, "when and how",
 "what changes in X, Y, and Z", or "what process applies and what conditions are
 required" are bundled inquiries unless they describe one indivisible choice.
 A valid frontier should require ONE substantive answer, not a checklist.
@@ -450,6 +471,11 @@ facts. If a proposed frontier asks for detail the founder explicitly delegated
 to a designer, or repeats/deepens an inquiry they rejected as irrelevant, set
 should_move_on=true even if that detail remains unknown. Unknown does not mean
 worth asking.
+
+A question_too_broad boundary is different: do NOT set should_move_on merely
+because the founder rejected the previous question's size. The underlying thread
+may still be important. Instead, reject any frontier that again asks for several
+steps/actors/stages and require one smaller decision from that same thread.
 """
 
 
