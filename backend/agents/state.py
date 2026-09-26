@@ -144,6 +144,7 @@ class AgentState(TypedDict):
     superseded_knowledge: List[dict]
     product_concepts: List[dict]
     model_implications: List[dict]
+    thread_planning_enabled: bool
     discovery_threads: Dict[str, dict]
     active_discovery_thread: Optional[str]
     thread_frontier: Optional[dict]
