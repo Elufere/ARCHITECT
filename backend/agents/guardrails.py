@@ -14,7 +14,6 @@ from agents.llm import get_structured_model
 from pydantic import BaseModel
 
 from agents.state import DiscoveryScope, KnowledgeState
-from agents.product_concepts import ProductConcept
 from agents.role_utils import role_identity, split_role_labels
 from agents.conversation_language import clarification_question, final_question_text
 
@@ -458,25 +457,13 @@ def evaluate_question(state: dict) -> dict:
                 requirement_context=requirement_context,
                 validation_context=validation_context,
                 agent_output=last_message.content,
-                latest_confirmed_understanding="\n".join([
-                    *[
-                        f"- {item.topic.value}.{item.key}: {item.value}"
-                        for item in state.get("discovered_knowledge", [])
-                        if item.scope == state.get("discovery_scope")
-                        and item.knowledge_state == KnowledgeState.CONFIRMED
-                        and item.source_turn == state.get("turn_count", 0)
-                    ],
-                    *[
-                        f"- {concept.kind.value}: {concept.value}"
-                        for concept in [
-                            raw if isinstance(raw, ProductConcept)
-                            else ProductConcept.model_validate(raw)
-                            for raw in state.get("product_concepts", [])
-                        ]
-                        if concept.scope == state.get("discovery_scope")
-                        and concept.source_turn == state.get("turn_count", 0)
-                    ],
-                ]) or "None",
+                latest_confirmed_understanding="\n".join(
+                    f"- {item.topic.value}.{item.key}: {item.value}"
+                    for item in state.get("discovered_knowledge", [])
+                    if item.scope == state.get("discovery_scope")
+                    and item.knowledge_state == KnowledgeState.CONFIRMED
+                    and item.source_turn == state.get("turn_count", 0)
+                ) or "None",
                 known_facts="\n".join(
                     f"- {item.key}: {item.value}"
                     for item in state.get("discovered_knowledge", [])
