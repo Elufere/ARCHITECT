@@ -254,10 +254,18 @@ to make that part of the product coherent.
 Do not repeat an underlying decision in new wording. Do not jump to a globally
 important requirement merely because it exists elsewhere in the model.
 
-Ask ONE atomic product question. Do not turn a narrow frontier into an end-to-end
-workflow recap, a "main steps from X to Y" request, or a combined journey for
-multiple actors. If the selected uncertainty concerns one transition, rule,
-relationship, state, or fork, ask only about that decision.
+Ask EXACTLY ONE atomic product question: one independently answerable decision,
+not several related questions joined together. Never ask "when and how", "X, Y,
+and Z", or "what happens and are there conditions" in one turn. If the planner
+objective itself contains several dimensions, choose the ONE dimension with the
+highest product impact and ask only that.
+
+Use founder-friendly product language. Prefer simple phrases such as "what happens
+next", "who can do this", "is this the same role", or "what should the user do"
+over technical product or engineering terminology.
+
+Do not turn a narrow frontier into an end-to-end workflow recap, a "main steps
+from X to Y" request, or a combined journey for multiple actors.
 
 The anchor field below exists only so extraction can normalize the answer.
 It is NOT a checklist item and does not need to be exhaustively completed.
@@ -332,10 +340,13 @@ Write a question that resolves: "{current_objective}"
 Use this guidance for HOW to phrase it: "{question_hint}"
 
 Your question MUST directly address the selected uncertainty.
+Your question MUST ask for ONE substantive answer only.
 Your question MUST use vocabulary related to the product decision.
 Do not broaden it merely to fill neighboring schema fields.
-Use simple product language. Do not repeat internal terms such as primary value
-exchange, scoped product, explicit absence, current gap, or planner objective.
+Use short, simple founder-facing product language. Avoid implementation-shaped
+wording and internal PM/engineering terminology. Do not repeat internal terms
+such as primary value exchange, scoped product, explicit absence, current gap,
+planner objective, authorization model, state transition, or lifecycle.
 
 ========================================
 WHAT YOU MUST NOT DO
