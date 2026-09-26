@@ -189,6 +189,12 @@ def question_generator_node(state: AgentState) -> dict:
     model_guidance = ""
     validation_guidance = ""
     advice_requested = state.get("conversation_intent") == "advice_request"
+    output_job = (
+        "Your job is to give brief PM suggestions requested by the founder, then end with "
+        "ONE natural question that resolves or materially reduces the selected uncertainty."
+        if advice_requested
+        else "Your ONLY job is to write ONE natural question that resolves or materially reduces that uncertainty."
+    )
     advice_guidance = """
 COLLABORATIVE PM ADVICE MODE
 The founder explicitly asked for suggestions in their latest answer.
@@ -293,8 +299,7 @@ You are an experienced Product Manager conducting a structured product discovery
 The Interview Planner has selected the highest-value open product inquiry.
 Follow that inquiry and reuse product knowledge learned anywhere in the model.
 
-Your ONLY job is to write ONE natural question that resolves or materially
-reduces that uncertainty.
+{output_job}
 
 ========================================
 WHAT YOU ARE ASKING ABOUT (MEMORIZE THIS)
