@@ -8,19 +8,19 @@ This package is a clean PM-discovery implementation built independently of the l
 Founder message
   -> Capture intent + atomic facts
   -> Python source/provenance validation
-  -> LLM semantic grounding (batched)
-  -> Canonical product knowledge update
-  -> Dynamic requirement activation + coverage/depth
-  -> Dependency propagation
+  -> LLM semantic grounding
+  -> Canonicalization + classification
+  -> Dynamic requirement activation
+  -> Coverage + depth + dependency reasoning
   -> Proposed implications
   -> Contradiction detection
   -> Candidate question generation
-  -> Semantic prioritization
-  -> Final question audit
+  -> Independent prioritization
+  -> Final semantic question audit
   -> Ask exactly one high-value product decision
 ```
 
-Capture, grounding, canonicalization, requirement reasoning, depth, question value, and wording are intentionally separate decisions.
+Capture, semantic grounding, canonicalization/classification, requirement reasoning, coverage/depth, implications, contradiction detection, candidate generation, prioritization, and question wording are intentionally separate decisions.
 
 ## State model
 
@@ -37,7 +37,7 @@ Durable state keeps:
 - persistent discovery boundaries/deferrals;
 - persistent semantic decision history.
 
-The planner therefore does not depend on a short sliding chat window to remember whether an old decision was already answered.
+The planner therefore does not depend on a short sliding chat window to remember whether an old decision was already answered. Grounded observations that have not yet been canonicalized are also retained as durable evidence, so a classification miss does not make the founder repeat themselves.
 
 ## Grounding split
 
@@ -51,17 +51,21 @@ The planner creates a small candidate set and scores information value against r
 
 Decision history is persistent and semantic. An answered/deferred/rejected decision key is not eligible again just because the wording changes.
 
-## Cost shape
+## Model-call shape
 
-The normal product-information turn is designed around batched calls:
+Semantic work is batched by responsibility rather than by individual fact:
 
-1. capture;
+1. fact capture;
 2. semantic grounding;
-3. product/requirement reasoning;
-4. question planning;
-5. final question audit.
+3. canonicalization/classification;
+4. dynamic requirements + coverage/depth/dependencies;
+5. implications;
+6. contradiction detection when canonical knowledge changed;
+7. candidate generation;
+8. prioritization when multiple candidates survive;
+9. final question audit.
 
-There is no per-fact LLM comparison loop.
+This intentionally uses more distinct reasoning stages than the legacy agent because the specification requires those decisions to remain independent. There is still no per-fact LLM comparison loop.
 
 ## Run
 
@@ -80,3 +84,13 @@ python test_pm_v2.py
 Environment configuration continues to use `backend/.env` and the existing `OPENAI_*` settings.
 
 Sessions are stored under `backend/adaptive_pm_sessions/` by default. Set `ADAPTIVE_PM_SESSION_DIR` to override this location.
+
+## Package layout
+
+- `capture_stage.py`: intent, fact capture, provenance and semantic grounding.
+- `knowledge_stage.py`: canonical product knowledge and concept classification.
+- `requirement_stage.py`: requirements, coverage/depth, dependencies, implications and contradictions as separate model calls.
+- `question_stage.py`: candidate generation, independent prioritization and final audit.
+- `engine.py`: orchestration and durable state transitions only.
+- `models.py`: explicit state and stage contracts.
+- `stage_prompts.py`: independent semantic contracts.
