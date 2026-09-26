@@ -437,6 +437,8 @@ def _record_requirement_question(state: dict, question: str) -> list[dict]:
         "requirement_key": candidate.get("requirement_key"),
         "requirement_id": candidate.get("requirement_id"),
         "target_facets": list(candidate.get("target_facets") or []),
+        "thread_id": candidate.get("thread_id") or state.get("active_discovery_thread"),
+        "decision_key": candidate.get("decision_key"),
         "topic": (
             state.get("current_topic").value
             if getattr(state.get("current_topic"), "value", None)
