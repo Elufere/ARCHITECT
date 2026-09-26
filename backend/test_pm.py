@@ -114,14 +114,18 @@ def run_session(state):
                          requirement_coverage={}, requirement_dependency_state={}, eligible_requirement_keys=[],
                          question_candidates=[], eligible_question_candidates=[], question_candidate_eligibility={},
                          ranked_question_candidates=[], question_candidate_priority={}, requirement_question_history=[],
-                         model_implications=[], product_concepts=[],
+                         model_implications=[],
                          discovery_threads={}, active_discovery_thread=None,
                          thread_frontier=None, thread_relevant_requirement_ids=[],
                          open_inquiries=[], selected_inquiry=None,
                          planner_source="model", selected_requirement_candidate=None, selected_requirement_priority=None,
                          validation_issues=[], validation_pair_cache={}, validation_blocking=False,
                          validation_candidate_blocking=False, selected_validation_issue=None)
-            state["product_model"] = build_product_model(state["discovered_knowledge"], DiscoveryScope.ADMIN_DASHBOARD)
+            state["product_model"] = build_product_model(
+                state["discovered_knowledge"],
+                DiscoveryScope.ADMIN_DASHBOARD,
+                state.get("product_concepts", []),
+            )
             save_checkpoint(state)
             state = run_phase(graph, state, "ADMIN_DASHBOARD DISCOVERY")
             if not state.get("pm_is_complete"):
