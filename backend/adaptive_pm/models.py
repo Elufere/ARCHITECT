@@ -325,10 +325,31 @@ class InterviewState(BaseModel):
     recent_messages: list[dict] = Field(default_factory=list)
     complete: bool = False
 
+    def unmapped_observations(self) -> list[Observation]:
+        mapped = {
+            identity
+            for item in self.knowledge.values()
+            for identity in item.evidence_observation_ids
+        }
+        mapped.update(
+            identity
+            for item in self.concepts.values()
+            for identity in item.evidence_observation_ids
+        )
+        return [
+            item
+            for item in self.observations
+            if item.id not in mapped
+        ]
+
     def compact_context(self) -> dict:
         return {
             "raw_idea": self.raw_idea,
             "knowledge": [item.model_dump(mode="json") for item in self.knowledge.values()],
+            "unmapped_grounded_observations": [
+                item.model_dump(mode="json")
+                for item in self.unmapped_observations()[-80:]
+            ],
             "concepts": [item.model_dump(mode="json") for item in self.concepts.values()],
             "requirements": [item.model_dump(mode="json") for item in self.requirements.values()],
             "implications": [item.model_dump(mode="json") for item in self.implications.values()],
