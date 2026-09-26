@@ -276,8 +276,8 @@ Rewrite the question so it ONLY asks about: {current_objective}
 Do NOT ask about any other topic or field.
 """
 
-NOT_A_QUESTION_REJECTION = """CRITICAL ERROR: Your output must be a single interview question ending with a '?'.
-Do not make statements or acknowledgments (e.g. "Got it, thanks!"). Ask a question."""
+NOT_A_QUESTION_REJECTION = """CRITICAL ERROR: Your response must end with exactly ONE interview question ending in '?'.
+A brief grounded acknowledgement may come before it, but do not return acknowledgement/explanation without the final question."""
 
 TOPIC_RELEVANCE_REJECTION = """CRITICAL ERROR: Your previous question drifted away from what you were supposed to ask.
 
