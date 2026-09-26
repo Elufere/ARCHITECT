@@ -12,7 +12,7 @@ import re
 from enum import Enum
 from typing import Dict, List, Optional
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field, model_validator
 
 from agents.discovery_coverage import fact_id
@@ -195,6 +195,16 @@ def _requirement_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]
     return result[:30]
 
 
+def _recent_conversation(state: AgentState) -> list[dict]:
+    result = []
+    for message in state.get("messages", [])[-8:]:
+        if isinstance(message, HumanMessage):
+            result.append({"speaker": "founder", "text": message.content})
+        elif isinstance(message, AIMessage):
+            result.append({"speaker": "pm", "text": message.content})
+    return result
+
+
 def _history_payload(state: AgentState) -> list[dict]:
     result = []
     for entry in state.get("requirement_question_history", [])[-12:]:
@@ -246,6 +256,7 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "scope": scope.value,
         "raw_idea": state.get("raw_idea", ""),
         "latest_user_answer": _latest_human(state),
+        "recent_conversation": _recent_conversation(state),
         "confirmed_product_facts": _fact_payload(state, scope),
         "current_threads": state.get("discovery_threads", {}),
         "active_thread_id": state.get("active_discovery_thread"),
