@@ -35,11 +35,14 @@ Rules:
 7. Evidence must be one exact contiguous case-sensitive substring of the latest
    user message.
 8. Preserve negative requirements and conditions.
-9. A product idea can directly establish actors, exchange, entities, and behavior;
+9. Set fact status=PROPOSED when the founder is explicitly tentative ("maybe",
+   "probably", "I think", "not sure but..."). Use CONFIRMED only for assertions
+   the founder presents as decided/current truth. Do not force certainty.
+10. A product idea can directly establish actors, exchange, entities, and behavior;
    do not require the founder to repeat those facts in a later role question.
-10. Founder intent such as "I want to build..." is not automatically an
+11. Founder intent such as "I want to build..." is not automatically an
     actor-owned goal.
-11. For pure control turns, normally return no product facts.
+12. For pure control turns, normally return no product facts.
 
 Do not classify into a questionnaire, assess completeness, or pick the next
 question here.
