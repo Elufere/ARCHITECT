@@ -1242,6 +1242,7 @@ def knowledge_tracker_node(state: AgentState) -> dict:
     print(f"Extracting knowledge for topic: {current_topic}, user response: {user_response}")
     closed_answer = None if recovering_prior_answer or confirmed_prior_answer else interpret_closed_answer(state)
     answer_followup = None
+    captured_concepts = []
     if closed_answer is not None:
         # The exact generated question defines the choice's meaning. No model
         # inference is involved, and no free-form answer takes this path.
@@ -1252,6 +1253,7 @@ def knowledge_tracker_node(state: AgentState) -> dict:
             answer_followup = dict(gap=current_gap, scope=current_scope, question=followup)
     else:
         extracted_items = extract_passes(user_response, state, current_scope)
+        captured_concepts = list(getattr(extracted_items, "concepts", []))
         # Never reinterpret historical denials as this turn's answer. A directly
         # admitted positive claim already resolves the active inquiry, so do not
         # spend another model call asking whether the same answer means absence.
@@ -1283,7 +1285,6 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         else:
             extracted_items = list(extracted_items)
             print(f"CLAIM ADMISSION: {len(extracted_items)} fact(s) accepted without cross-category grounding")
-    captured_concepts = list(getattr(extracted_items, "concepts", []))
     product_concepts = merge_product_concepts(
         state.get("product_concepts", []),
         captured_concepts,
