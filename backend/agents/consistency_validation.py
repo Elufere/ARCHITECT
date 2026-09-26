@@ -96,6 +96,11 @@ Return exactly one verdict for every pair_id. When uncertain, contradiction=fals
 # Cross-field pairs where mutually exclusive product decisions can be expressed
 # under different schema keys. The semantic reviewer still decides whether the
 # actual assertions conflict.
+ADDITIVE_FACT_FIELDS = {
+    (DiscoveryTopic.USER_ROLES, "responsibilities"),
+    (DiscoveryTopic.CORE_WORKFLOW, "workflow_steps"),
+}
+
 CROSS_FIELD_CONFLICT_PAIRS = {
     frozenset({
         (DiscoveryTopic.MVP_SCOPE, "must_have_features"),
@@ -135,6 +140,11 @@ def _same_semantic_bucket(first: KnowledgeItem, second: KnowledgeItem) -> bool:
         and first.key == second.key
         and first.knowledge_state == second.knowledge_state == KnowledgeState.CONFIRMED
     ):
+        return False
+    if (first.topic, first.key) in ADDITIVE_FACT_FIELDS:
+        # Independent actions/steps are cumulative. Corrections are handled
+        # during reconciliation; pairwise contradiction review here creates
+        # quadratic model calls without useful signal.
         return False
     if first.topic == DiscoveryTopic.USER_ROLES and first.key in {"primary_users", "secondary_users"}:
         # Actor declarations are field-level membership assertions. Different
