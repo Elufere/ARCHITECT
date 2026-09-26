@@ -458,6 +458,11 @@ Critical distinctions:
   Specific exclusions, mixed answers, uncertainty and denied examples are not whole-field absence.
 For absence candidates require both supported_ids and confirmed_absence_ids.
 Never infer facts from the domain, prompt examples or previous turns.
+A rhetorical/interrogative founder message or interview-feedback statement does
+not entail the affirmative proposition inside it. For example, "am I the product
+designer?" does NOT support "the product designer is a primary user", and saying
+that UI detail is "the designer's job" does not create a product actor or product
+requirement. Reject such candidates.
 Give rejection_reasons for rejected candidates. The same quote may support several
 candidates, but each candidate must satisfy its own field definition independently.
 """
