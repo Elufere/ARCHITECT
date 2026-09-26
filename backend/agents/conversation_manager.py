@@ -33,18 +33,6 @@ PATTERNS = {
         r"nothing else|no more)\s*[.!]*\s*$",
         re.I,
     ),
-    "scope_objection": re.compile(
-        r"\b(?:that(?:'s|s| is) (?:a )?(?:very )?long process|"
-        r"this is (?:a )?(?:very )?long process|"
-        r"you(?:'re| are) asking me to define (?:the )?(?:whole|entire|full)?\s*(?:process|flow|workflow)|"
-        r"too (?:broad|much|many things)|"
-        r"that(?:'s| is) too (?:broad|much)|"
-        r"this question is too (?:broad|big)|"
-        r"that question is too (?:broad|big)|"
-        r"break (?:it|this) down|"
-        r"ask (?:me )?(?:one|something) at a time)\b",
-        re.I,
-    ),
     "design_deferral": re.compile(
         r"\b(?:am i (?:the )?(?:product |ui/?ux )?designer|"
         r"(?:that|this|it)(?:'s| is) (?:the )?designer'?s? job|"
@@ -93,7 +81,7 @@ def conversation_manager_node(state: AgentState) -> dict:
             "That is fine—I’ll keep it as an open decision and continue with the parts that are known."
         ))]}
 
-    if intent in ("design_deferral", "objection", "scope_objection"):
+    if intent in ("design_deferral", "objection"):
         boundaries = list(state.get("discovery_boundaries", []))
         previous_question = next(
             (
@@ -104,11 +92,7 @@ def conversation_manager_node(state: AgentState) -> dict:
             "",
         )
         boundary = {
-            "type": (
-                "design_deferral" if intent == "design_deferral"
-                else "question_too_broad" if intent == "scope_objection"
-                else "rejected_inquiry"
-            ),
+            "type": "design_deferral" if intent == "design_deferral" else "rejected_inquiry",
             "scope": getattr(state.get("discovery_scope"), "value", state.get("discovery_scope")),
             "source_turn": state.get("turn_count", 0),
             "evidence": messages[-1].content,
@@ -122,15 +106,6 @@ def conversation_manager_node(state: AgentState) -> dict:
                 "Founder delegates UI/interface/navigation/design implementation details "
                 "to the designer. Do not ask the founder to specify those details unless "
                 "a concrete product decision cannot be made without them."
-            )
-        elif intent == "scope_objection":
-            boundary["instruction"] = (
-                "Founder says the preceding question asks for too much at once. For the immediate "
-                "replacement question, preserve the same product thread but reduce it to "
-                "ONE small, independently answerable part: one actor, one stage, one "
-                "causal link, or one governing decision. Later, this boundary only means "
-                "do not repeat the same oversized question; it does not permanently pin "
-                "the interview to this thread."
             )
         else:
             boundary["instruction"] = (
