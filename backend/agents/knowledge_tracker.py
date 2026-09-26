@@ -32,6 +32,7 @@ from agents.evidence_spans import recover_evidence_span
 from agents.knowledge_duplicates import FactComparison, compare_candidate
 from agents.knowledge_corrections import CorrectionReview, correction_targets
 from agents.role_utils import role_identity, roles_match, split_role_labels
+from agents.conversation_language import final_question_text
 from agents.extraction_passes import (
     PASSES,
     RawPass,
@@ -276,7 +277,7 @@ def semantic_decision(
 def answer_context(state):
     question = next((message.content for message in reversed(state.get("messages", [])[:-1])
                      if isinstance(message, AIMessage)), "")
-    return dict(question=question, topic=state.get("current_topic"),
+    return dict(question=final_question_text(question), topic=state.get("current_topic"),
                 gap=state.get("current_gap"), scope=state.get("discovery_scope"))
 
 
