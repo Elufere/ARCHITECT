@@ -54,7 +54,7 @@ def new_state() -> DiscoveryState | None:
     idea = read_answer()
     if idea is None:
         return None
-    return DiscoveryState(session_id=str(uuid4()), raw_idea="")
+    return DiscoveryState(session_id=str(uuid4()), raw_idea=idea)
 
 
 def run() -> None:
@@ -73,13 +73,8 @@ def run() -> None:
 
     try:
         if not state.source_turns:
-            # The newly entered idea has not been processed yet.
-            print("\nRe-enter your product idea to start discovery:")
-            first = read_answer()
-            if first is None:
-                save_state(state)
-                return
-            result = engine.process(state, first)
+            # Process the product idea captured when the new session was created.
+            result = engine.process(state, state.raw_idea)
             state = result.state
             save_state(state)
             print(f"\nPM Agent: {result.response}")
