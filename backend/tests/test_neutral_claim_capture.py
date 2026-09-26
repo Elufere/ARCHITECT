@@ -548,3 +548,64 @@ def test_knowledge_tracker_adds_product_concepts_to_product_model(monkeypatch):
     assert len(result["product_concepts"]) == 1
     assert "PRODUCT_STRUCTURE" in result["product_model"]
     assert "package -[contained_in]-> group" in result["product_model"]["PRODUCT_STRUCTURE"][0]
+
+
+def test_product_entity_without_generic_value_preserves_evidence(monkeypatch):
+    text = "My product is an ecommerce application for selling packages."
+    calls = []
+    production_models(monkeypatch, [{
+        "kind": "product_entity",
+        "evidence": "selling packages",
+        "subject": "package",
+        "confidence": 0.9,
+        "knowledge_state": "CONFIRMED",
+    }], calls)
+
+    batch = tracker.extract_passes(
+        text,
+        dict(
+            messages=[HumanMessage(content=text)],
+            discovery_scope=S.USER_APP,
+            discovered_knowledge=[],
+            current_topic=None,
+            current_gap=None,
+            turn_count=0,
+        ),
+        S.USER_APP,
+    )
+
+    assert batch == []
+    assert len(batch.concepts) == 1
+    assert batch.concepts[0].subject == "package"
+    assert batch.concepts[0].value == "selling packages"
+    assert batch.concepts[0].relation is None
+    assert batch.concepts[0].object is None
+
+
+def test_invitation_before_visibility_is_an_explicit_workflow_dependency(monkeypatch):
+    text = "Users are invited to a particular group before they can see the packages they are allowed to buy."
+    calls = []
+    production_models(monkeypatch, [
+        claim(
+            "workflow_dependency",
+            "Users must be invited to a particular group before they can see the packages they are allowed to buy.",
+            text,
+        ),
+    ], calls)
+
+    batch = tracker.extract_passes(
+        text,
+        dict(
+            messages=[HumanMessage(content=text)],
+            discovery_scope=S.USER_APP,
+            discovered_knowledge=[],
+            current_topic=T.CORE_WORKFLOW,
+            current_gap="workflow_steps",
+            planner_source="model",
+            turn_count=1,
+        ),
+        S.USER_APP,
+    )
+
+    assert len(batch) == 1
+    assert batch[0].key == "downstream_dependency"
