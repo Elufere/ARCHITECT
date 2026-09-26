@@ -40,12 +40,11 @@ def candidate(identity: str, decision_key: str) -> QuestionCandidate:
         question="What completes the transaction?",
         uncertainty="Completion rule is unknown",
         why_now="It defines the core lifecycle",
-        business_impact=1,
-        architecture_impact=1,
-        dependency_unlock=1,
-        uncertainty_reduction=1,
-        risk_reduction=1,
-        contextual_relevance=1,
+        business_impact="Defines transaction completion.",
+        architecture_impact="Controls release and state transition.",
+        downstream_unlocks=["settlement", "fulfillment"],
+        risk_if_misunderstood="Funds may release at the wrong time.",
+        contextual_relevance="Core transaction lifecycle.",
     )
 
 
