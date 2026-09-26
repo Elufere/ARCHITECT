@@ -172,6 +172,12 @@ Critical distinctions:
   also states an authorization boundary.
 - Do not manufacture actor identity from a later mention of an already-known actor.
   Use actor context only to resolve names/pronouns/capacities.
+- Resolve pronoun ownership from the latest response first, then from the last
+  question only when needed. When the last question names multiple actors, do
+  NOT automatically assign the answer to the grammatical subject of the question.
+  Attach an action/boundary to the actor that "they/them/those" actually refers to
+  in context. If that owner is still ambiguous, emit unclassified rather than
+  assigning the wrong actor.
 - A contextual capacity such as buyer/seller may be an alias of one canonical
   actor only when the user explicitly states that relationship. Never infer it
   merely from domain convention.
