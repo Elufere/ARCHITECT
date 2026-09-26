@@ -43,6 +43,11 @@ class QuestionCandidate(BaseModel):
     architecture_impact: float = Field(default=0.5, ge=0, le=1)
     business_risk: float = Field(default=0.5, ge=0, le=1)
     question_cost: float = Field(default=0.0, ge=0, le=1)
+    thread_id: Optional[str] = None
+    decision_key: Optional[str] = None
+    information_gain: float = Field(default=0.5, ge=0, le=1)
+    causal_relevance: float = Field(default=0.5, ge=0, le=1)
+    conversation_continuity: float = Field(default=0.5, ge=0, le=1)
 
 
 class CandidateBlockReason(str, Enum):
@@ -55,6 +60,7 @@ class CandidateBlockReason(str, Enum):
     COVERAGE_TERMINAL = "COVERAGE_TERMINAL"
     NO_UNRESOLVED_FACETS = "NO_UNRESOLVED_FACETS"
     RECENTLY_ASKED_SAME_TARGET = "RECENTLY_ASKED_SAME_TARGET"
+    REPEATED_THREAD_DECISION = "REPEATED_THREAD_DECISION"
 
 
 class CandidateEligibilityDecision(BaseModel):
@@ -93,6 +99,11 @@ def _candidate_from_inquiry(inquiry: ProductInquiry) -> QuestionCandidate:
         architecture_impact=inquiry.architecture_impact,
         business_risk=inquiry.business_risk,
         question_cost=inquiry.question_cost,
+        thread_id=inquiry.thread_id,
+        decision_key=inquiry.decision_key,
+        information_gain=inquiry.information_gain,
+        causal_relevance=inquiry.causal_relevance,
+        conversation_continuity=inquiry.conversation_continuity,
     )
 
 
@@ -182,6 +193,17 @@ def _candidate_signature(candidate: QuestionCandidate) -> tuple[str | None, tupl
     return identity, tuple(candidate.target_facets)
 
 
+def _thread_decision_repeat_count(state: AgentState, candidate: QuestionCandidate) -> int:
+    if not candidate.thread_id or not candidate.decision_key:
+        return 0
+    return sum(
+        1
+        for entry in state.get("requirement_question_history", [])[-12:]
+        if entry.get("thread_id") == candidate.thread_id
+        and entry.get("decision_key") == candidate.decision_key
+    )
+
+
 def _requirement_reasons(
     state: AgentState,
     candidate: QuestionCandidate,
@@ -268,6 +290,12 @@ def filter_question_candidates(
         if signature in recent_signatures:
             reasons.append(CandidateBlockReason.RECENTLY_ASKED_SAME_TARGET)
 
+        repeat_count = _thread_decision_repeat_count(state, candidate)
+        if repeat_count >= 2:
+            reasons.append(CandidateBlockReason.REPEATED_THREAD_DECISION)
+        elif repeat_count == 1 and state.get("extraction_status") != "NO_FACTS_FOUND":
+            reasons.append(CandidateBlockReason.REPEATED_THREAD_DECISION)
+
         decision = CandidateEligibilityDecision(
             candidate_id=candidate.id,
             eligible=not reasons,
@@ -277,12 +305,16 @@ def filter_question_candidates(
         if decision.eligible:
             accepted.append(candidate)
 
-    # If repetition is the only blocker, allow a rephrased follow-up rather than
-    # deadlocking the inquiry frontier.
+    # One rephrased follow-up is allowed only for legacy/non-thread candidates.
+    # Thread decisions have a hard circuit breaker so a semantic uncertainty
+    # cannot be paraphrased indefinitely.
     if not accepted:
         for candidate in candidates:
             decision = decisions[candidate.id]
-            if decision.reasons == [CandidateBlockReason.RECENTLY_ASKED_SAME_TARGET]:
+            if (
+                not candidate.thread_id
+                and decision.reasons == [CandidateBlockReason.RECENTLY_ASKED_SAME_TARGET]
+            ):
                 decisions[candidate.id] = decision.model_copy(
                     update={"eligible": True, "reasons": []}
                 )
