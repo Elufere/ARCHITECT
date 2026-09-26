@@ -949,13 +949,18 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
             rejection_reason = str(exc)
             print(f"CLAIM REJECTED: {claim.kind} | {exc} | evidence={claim.evidence!r}")
         finally:
-            observations.append(_captured_observation(
+            observation = _captured_observation(
                 claim,
                 scope,
                 state.get("turn_count", 0),
                 admission_status,
                 rejection_reason,
-            ))
+            )
+            observations.append(observation)
+            print(
+                f"OBSERVATION STORED: {observation['id']} | "
+                f"{claim.kind} | {admission_status}"
+            )
 
     # Claim semantics have already been classified once and admitted through the
     # deterministic field gates above. Do not send the same propositions through
