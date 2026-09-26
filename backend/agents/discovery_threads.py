@@ -110,6 +110,10 @@ class InquiryAssessment(BaseModel):
     too_broad: bool
     recap_of_known_information: bool = False
     should_move_on: bool = False
+    current_frontier_value: float = Field(default=0.5, ge=0, le=1)
+    best_alternative_value: float = Field(default=0.0, ge=0, le=1)
+    higher_value_elsewhere: bool = False
+    best_alternative_focus: str = ""
     depth_reason: str = ""
     reason: str
 
@@ -143,8 +147,14 @@ The interview should feel like an excellent human PM conversation:
    identifies facts and product concepts captured on the latest turn. Follow the
    product structure, relationship, state, rule, or causal process that those new
    decisions just revealed.
-2. Stay on one coherent discovery thread until the important local decisions are
-   understandable. A child concept may temporarily become a child thread.
+2. Stay on one coherent discovery thread only while its NEXT unresolved decision
+   is still among the highest-value questions available. Continuity is a
+   tie-breaker, not a reason to exhaust a thread. Once the governing structure of
+   the current thread is coherent enough for product discovery, compare its next
+   uncertainty against major unresolved decisions elsewhere and PAUSE the current
+   thread when another area has greater marginal value. Paused does not mean
+   complete; the interview may return when later knowledge makes deeper detail
+   material. A child concept may temporarily become a child thread.
 3. Prefer high-information forks that eliminate materially different product
    models. NEVER ask the founder to narrate an entire end-to-end workflow as one
    question when that workflow contains several distinct actors, stages, or
@@ -214,6 +224,17 @@ The interview should feel like an excellent human PM conversation:
     Preserve the underlying product thread and replace the oversized inquiry with
     one smaller independently answerable decision. Do not store that feedback as
     product knowledge.
+14. Before choosing the next frontier, perform BREADTH ARBITRATION:
+    - identify the best next uncertainty inside the active thread;
+    - identify the best materially unresolved decision outside that thread using
+      confirmed product structure, paused threads, and eligible requirements;
+    - compare their expected information gain, business/architecture/risk impact,
+      dependency unlock value, and question cost;
+    - continue the active thread only when its next question is at least as useful
+      as the best alternative. When the alternative is more valuable, switch.
+    Do not ask "what else is unknown here?" as the stopping test; there will
+    almost always be more detail available. Ask "is this still the best question
+    for understanding the product now?"
 
 Choose a stable short thread_id and decision_key based on meaning, not wording.
 Examples of generic thread shapes are core_interaction, checkout, fulfillment,
@@ -353,6 +374,34 @@ def _history_payload(state: AgentState) -> list[dict]:
     return result
 
 
+def _thread_activity_payload(state: AgentState) -> dict:
+    """Expose conversation depth as evidence, never as a hard stopping rule."""
+    history = state.get("requirement_question_history", [])
+    active = state.get("active_discovery_thread")
+    counts: dict[str, int] = {}
+    for entry in history:
+        thread_id = entry.get("thread_id")
+        if thread_id:
+            counts[thread_id] = counts.get(thread_id, 0) + 1
+
+    streak = 0
+    if active:
+        for entry in reversed(history):
+            if entry.get("thread_id") != active:
+                break
+            streak += 1
+
+    return {
+        "active_thread_id": active,
+        "questions_by_thread": counts,
+        "consecutive_questions_on_active_thread": streak,
+        "note": (
+            "Counts are context only. Do not move on because a numeric limit was reached; "
+            "use them to notice sustained drilling and compare marginal value."
+        ),
+    }
+
+
 def _normalize_plan(
     plan: DiscoveryThreadPlan,
     state: AgentState,
@@ -411,12 +460,20 @@ Return:
   actions. A single grammatical question can still be too broad. If the founder
   could answer one requested part while leaving another unanswered, it is too
   broad. Choose one atomic fork, state, relationship, rule, or causal link.
-- should_move_on=true when the local decision is already sufficiently understood
-  for product discovery and the proposed follow-up has low marginal value: e.g.
-  it asks for UI/mechanism/implementation detail, repeatedly seeks an exhaustive
-  list after the governing rule is clear, re-confirms an answer already closed
-  by the founder, or continues drilling the same local subject while higher-level
-  product structure remains unexplored. Set depth_reason to explain why.
+- current_frontier_value: assess the marginal value of asking THIS frontier now,
+  considering information gain, product/business/architecture/risk impact,
+  dependency unlock value, and question cost.
+- best_alternative_value: assess the strongest materially unresolved question
+  available OUTSIDE the proposed thread using the supplied eligible requirement
+  backlog, paused/current threads, and confirmed product model. Use 0 only when
+  there is no grounded alternative.
+- higher_value_elsewhere=true when a specific grounded alternative would improve
+  product understanding more than this frontier now. Name that area/decision in
+  best_alternative_focus. Do not invent an alternative merely to create variety.
+- should_move_on=true when the local thread is coherent enough for the current
+  discovery stage and another question here has low marginal value, OR when a
+  clearly higher-value grounded decision exists elsewhere. The current thread
+  does not need to be fully specified. Set depth_reason to explain the tradeoff.
 
 CRITICAL COVERAGE RULE:
 Related context is NOT an answer. Knowing WHO the actors are does not answer WHAT
@@ -448,14 +505,29 @@ different. If that distinction is genuinely uncertain, ask only whether they
 become the same role or a distinct/limited version of it.
 
 DEPTH / MARGINAL VALUE:
-Product discovery is not an exhaustive interrogation. Once the governing product
-rule is clear, do not keep drilling merely because more implementation detail,
-examples, UI mechanics, exhaustive enumeration, or edge specificity could exist.
-If two or more recent questions have stayed on the same narrow decision and the
-next answer would not materially change the product model, PRD decision, business
-rule, architecture boundary, money movement, authorization model, or lifecycle,
-set should_move_on=true. A founder request to avoid technical depth is also strong
-evidence that implementation-level follow-ups should stop.
+Product discovery is not an exhaustive interrogation. "Something is still
+unknown" is NOT enough reason to keep asking inside the same thread.
+
+A thread is coherent enough to pause when its governing product shape can be
+represented without guessing: the important actors/entities, the core relation
+or rule, and the material state/decision currently being discussed are clear
+enough that remaining questions mostly refine rather than reshape it. This is a
+semantic judgment, not a required-field checklist.
+
+Then compare the proposed next question against the best grounded unresolved
+decision elsewhere. A current-thread question may still be useful and should
+still be deferred when another question has greater expected product value.
+Conversation continuity breaks ties; it must not dominate information value.
+
+Do not use a fixed question-count cutoff. Thread/question counts are evidence of
+possible drilling, not a stopping rule. Once the governing product rule is clear,
+do not keep drilling merely because more implementation detail, examples, UI
+mechanics, exhaustive enumeration, or edge specificity could exist. If recent
+questions have stayed on the same narrow area and the next answer would not
+materially change the product model, PRD decision, business rule, architecture
+boundary, money movement, authorization model, lifecycle, or major dependency,
+prefer a higher-value unresolved area. A founder request to avoid technical depth
+is also strong evidence that implementation-level follow-ups should stop.
 
 Only founder statements count as evidence. PM questions do not. Captured observations remain useful when canonical STRUCTURAL admission
 failed, because their exact founder evidence still exists. However, an observation
@@ -503,6 +575,9 @@ def _semantic_frontier_problem(
         "confirmed_product_concepts": _concept_payload(state, scope),
         "recent_conversation": _recent_conversation(state),
         "delivered_question_history": _history_payload(state),
+        "thread_activity": _thread_activity_payload(state),
+        "eligible_requirement_backlog": _requirement_payload(state, scope),
+        "current_threads": state.get("discovery_threads", {}),
     }
     try:
         result = inquiry_assessment_model().invoke([
@@ -531,6 +606,9 @@ def _semantic_frontier_problem(
         f"INQUIRY ASSESSMENT: {plan.thread_id}/{frontier.decision_key} | "
         f"covered={covered} | too_broad={assessment.too_broad} | "
         f"recap={recap} | move_on={assessment.should_move_on} | "
+        f"current_value={assessment.current_frontier_value:.2f} | "
+        f"alternative_value={assessment.best_alternative_value:.2f} | "
+        f"higher_elsewhere={assessment.higher_value_elsewhere} | "
         f"missing={assessment.missing_information} | {assessment.reason}"
     )
 
@@ -543,10 +621,15 @@ def _semantic_frontier_problem(
             "The proposed information need is already substantially answered or "
             f"is a recap of known information ({support}): {assessment.reason}"
         )
-    if assessment.should_move_on:
+    if assessment.should_move_on or assessment.higher_value_elsewhere:
+        alternative = (
+            f" Higher-value alternative: {assessment.best_alternative_focus}."
+            if assessment.best_alternative_focus else ""
+        )
         return (
-            "This local thread is sufficiently understood and the proposed follow-up "
-            f"has low marginal discovery value: {assessment.depth_reason or assessment.reason}"
+            "Do not keep drilling the current thread. Its proposed next question is "
+            "lower marginal value than continuing breadth-first product discovery. "
+            f"{assessment.depth_reason or assessment.reason}{alternative}"
         )
     if assessment.too_broad:
         return (
@@ -625,6 +708,7 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "current_threads": state.get("discovery_threads", {}),
         "active_thread_id": state.get("active_discovery_thread"),
         "delivered_question_history": _history_payload(state),
+        "thread_activity": _thread_activity_payload(state),
         "eligible_requirement_backlog": backlog,
     }
     messages = [
@@ -651,10 +735,12 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
                 "Return one valid structured next move. Choose EXACTLY ONE independently "
                 "answerable product decision. Do not combine timing, process, conditions, "
                 "permissions, features, or experience into one frontier. Stay on the "
-                "current causal/product-structure thread only when "
-                "it still has material product value; if the repair says the local thread "
-                "is sufficiently understood, move to a different high-value product "
-                "decision. Do not ask for an end-to-end workflow recap, exhaustive list, "
+                "current causal/product-structure thread only when its NEXT question is at least "
+                "as valuable as the best unresolved alternative. If the repair says the "
+                "local thread is sufficiently understood OR identifies a higher-value "
+                "alternative elsewhere, PAUSE the current thread and choose a different "
+                "thread/high-value product decision rather than selecting another narrower "
+                "detail from the same thread. Do not ask for an end-to-end workflow recap, exhaustive list, "
                 "implementation/UI mechanics, or another confirmation of a closed answer. "
                 "Use null for an uncertain anchor_gap and do not invent requirement IDs."
             ),
