@@ -466,7 +466,11 @@ def identify_open_inquiries(state: AgentState) -> list[ProductInquiry]:
         return [pending]
 
     thread_inquiry = _thread_frontier_inquiry(state)
-    model_inquiries = [thread_inquiry] if thread_inquiry is not None else _model_inquiries(state)
+    if "thread_frontier" in state:
+        model_inquiries = [thread_inquiry] if thread_inquiry is not None else []
+    else:
+        # Compatibility for focused callers/checkpoints that predate thread planning.
+        model_inquiries = _model_inquiries(state)
     inquiries = [
         *model_inquiries,
         *_requirement_inquiries(state),
