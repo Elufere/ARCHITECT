@@ -184,10 +184,17 @@ architecture, or a generic feature wishlist.
 Reject if the question:
 - changes to another topic
 - drifts to a different product decision that does not help resolve the Current objective
-- asks multiple unrelated objectives; closely related target facets of one selected requirement are allowed
+- asks more than ONE independently answerable product question when Planner source
+  is "model". Related does not mean atomic: timing + process, process + conditions,
+  permissions + features, or several requested changes are still multiple questions.
+  If the founder could answer one part without answering another, reject it.
+- closely related target facets of one selected requirement may be combined only
+  when Planner source is "requirement" and they form one natural decision
 - when Planner source is "model", broadens one frontier decision into an end-to-end
   workflow recap, asks for "main steps from X to Y", or combines multiple actors'
   journeys/stages instead of resolving the selected uncertainty
+- uses technical or implementation-shaped wording when the same product decision
+  can be asked in simple founder-facing language
 - asks implementation
 - asks architecture
 - asks roadmap planning unrelated to the selected gap (MVP_SCOPE questions about
@@ -207,8 +214,12 @@ the Current gap specifically.
 
 If the question directly discovers the current objective, it should pass ONLY
 when it stays at the objective's intended granularity. A question can mention the
-objective and still be invalid if it expands into a multi-stage recap or bundled
-multi-actor workflow.
+objective and still be invalid if it expands into a multi-stage recap, bundles
+several dimensions, or asks for a checklist-like answer.
+
+For model-driven discovery, prefer ONE short founder-facing question. Examples of
+invalid shapes include "when and how...", "what changes in A, B, and C?", and
+"...what happens, and are there any conditions?".
 
 Return the schema.
 """
