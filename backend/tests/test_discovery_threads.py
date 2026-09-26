@@ -12,6 +12,8 @@ from agents.question_candidates import (
     filter_question_candidates,
 )
 from agents.state import DiscoveryScope as S, DiscoveryTopic as T, KnowledgeItem
+from agents.requirements import ActiveRequirement, RequirementFacet, requirement_store_key
+from agents.requirement_coverage import RequirementCoverageRecord, RequirementCoverageStatus
 
 
 def fact(topic, key, value, *, turn=1):
@@ -234,3 +236,126 @@ def test_one_rephrase_is_allowed_only_when_previous_answer_produced_no_facts():
     eligible, _ = filter_question_candidates(state, [candidate])
 
     assert eligible == [candidate]
+
+
+def test_unrelated_active_requirement_is_deferred_while_thread_frontier_exists():
+    requirement = ActiveRequirement(
+        id="dispute.evidence_collection",
+        scope=S.USER_APP,
+        topic=T.EXCEPTIONS,
+        parent_gap="invalid_actions",
+        label="Dispute evidence collection",
+        facets=[
+            RequirementFacet(
+                id="evidence_submission",
+                label="Evidence submission",
+                description="How dispute evidence is submitted.",
+            ),
+        ],
+    )
+    key = requirement_store_key(S.USER_APP, requirement.id)
+    coverage = RequirementCoverageRecord(
+        requirement_id=requirement.id,
+        scope=S.USER_APP,
+        status=RequirementCoverageStatus.UNSEEN,
+        facets={},
+    )
+    state = {
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [],
+        "validation_issues": [],
+        "validation_candidate_blocking": False,
+        "answer_followup": None,
+        "active_requirements": {key: requirement},
+        "requirement_coverage": {key: coverage.model_dump(mode="json")},
+        "eligible_requirement_keys": [key],
+        "active_discovery_thread": "core_transaction",
+        "thread_relevant_requirement_ids": [],
+        "thread_frontier": {
+            "thread_id": "core_transaction",
+            "thread_label": "Core transaction",
+            "thread_objective": "Understand the normal transaction path.",
+            "decision_key": "transaction_initiation",
+            "topic": T.CORE_WORKFLOW.value,
+            "anchor_gap": "workflow_steps",
+            "objective": "Understand how one customer starts a transaction with another.",
+            "question_hint": "Ask who creates the deal and how the other party joins.",
+            "reason": "The normal path is not yet coherent.",
+            "related_fact_ids": [],
+            "information_gain": 1,
+            "causal_relevance": 1,
+            "conversation_continuity": 1,
+            "architecture_impact": 0.8,
+            "business_risk": 0.5,
+            "question_cost": 0,
+        },
+    }
+
+    inquiries = identify_open_inquiries(state)
+
+    assert len(inquiries) == 1
+    assert inquiries[0].thread_id == "core_transaction"
+    assert inquiries[0].decision_key == "transaction_initiation"
+    assert all(inquiry.requirement_id != requirement.id for inquiry in inquiries)
+
+
+def test_only_requirements_marked_relevant_by_thread_are_askable():
+    relevant = ActiveRequirement(
+        id="transaction.term_agreement",
+        scope=S.USER_APP,
+        topic=T.BUSINESS_RULES,
+        parent_gap="approval_rules",
+        label="Term agreement",
+        facets=[
+            RequirementFacet(
+                id="agreement_condition",
+                label="Agreement condition",
+                description="What must be agreed before the transaction proceeds.",
+            ),
+        ],
+    )
+    deferred = ActiveRequirement(
+        id="dispute.evidence_collection",
+        scope=S.USER_APP,
+        topic=T.EXCEPTIONS,
+        parent_gap="invalid_actions",
+        label="Dispute evidence collection",
+        facets=[
+            RequirementFacet(
+                id="evidence_submission",
+                label="Evidence submission",
+                description="How dispute evidence is submitted.",
+            ),
+        ],
+    )
+    relevant_key = requirement_store_key(S.USER_APP, relevant.id)
+    deferred_key = requirement_store_key(S.USER_APP, deferred.id)
+    coverage = lambda req: RequirementCoverageRecord(
+        requirement_id=req.id,
+        scope=S.USER_APP,
+        status=RequirementCoverageStatus.UNSEEN,
+        facets={},
+    ).model_dump(mode="json")
+    state = {
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [],
+        "validation_issues": [],
+        "validation_candidate_blocking": False,
+        "answer_followup": None,
+        "active_requirements": {
+            relevant_key: relevant,
+            deferred_key: deferred,
+        },
+        "requirement_coverage": {
+            relevant_key: coverage(relevant),
+            deferred_key: coverage(deferred),
+        },
+        "eligible_requirement_keys": [relevant_key, deferred_key],
+        "active_discovery_thread": "core_transaction",
+        "thread_relevant_requirement_ids": [relevant.id],
+        "thread_frontier": None,
+    }
+
+    inquiries = identify_open_inquiries(state)
+
+    assert [inquiry.requirement_id for inquiry in inquiries] == [relevant.id]
