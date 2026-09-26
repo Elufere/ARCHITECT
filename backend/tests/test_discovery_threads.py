@@ -1,5 +1,6 @@
 """Discovery-thread planning keeps the interview causal and prevents semantic loops."""
 
+import json
 from types import SimpleNamespace
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -14,6 +15,7 @@ from agents.question_candidates import (
 from agents.state import DiscoveryScope as S, DiscoveryTopic as T, KnowledgeItem
 from agents.requirements import ActiveRequirement, RequirementFacet, requirement_store_key
 from agents.requirement_coverage import RequirementCoverageRecord, RequirementCoverageStatus
+from agents.product_concepts import ProductConcept, ProductConceptKind
 
 
 def fact(topic, key, value, *, turn=1):
@@ -359,3 +361,97 @@ def test_only_requirements_marked_relevant_by_thread_are_askable():
     inquiries = identify_open_inquiries(state)
 
     assert [inquiry.requirement_id for inquiry in inquiries] == [relevant.id]
+
+
+def test_thread_planner_receives_latest_model_delta(monkeypatch):
+    captured = {}
+    response = {
+        "thread_id": "event_structure",
+        "thread_label": "Event structure",
+        "thread_objective": "Understand how an event organizes what guests can buy.",
+        "parent_thread_id": None,
+        "frontier": {
+            "decision_key": "group_meaning",
+            "topic": "CORE_WORKFLOW",
+            "anchor_gap": "workflow_steps",
+            "objective": "Understand what groups represent inside an event.",
+            "question_hint": "Ask what the groups represent.",
+            "reason": "The founder just introduced groups as a new structural concept.",
+            "related_fact_ids": [],
+            "information_gain": 1,
+            "causal_relevance": 1,
+            "conversation_continuity": 1,
+            "architecture_impact": 0.8,
+            "business_risk": 0.4,
+            "question_cost": 0,
+        },
+        "relevant_requirement_ids": [],
+        "rationale": "Follow the newly introduced group structure.",
+    }
+
+    class Planner:
+        def invoke(self, messages):
+            captured["payload"] = json.loads(messages[-1].content)
+            return response
+
+    monkeypatch.setattr(
+        threads,
+        "thread_planner_model",
+        lambda: Planner(),
+    )
+    workflow = fact(
+        T.CORE_WORKFLOW,
+        "workflow_steps",
+        "Guests enter an event and see groups.",
+        turn=4,
+    )
+    old_fact = fact(T.CORE_WORKFLOW, "workflow_steps", "Guests are invited.", turn=3)
+    group = ProductConcept(
+        kind=ProductConceptKind.ENTITY,
+        scope=S.USER_APP,
+        subject="group",
+        value="There are groups.",
+        evidence="There are groups.",
+        confidence=1,
+        source_turn=4,
+    )
+    event = ProductConcept(
+        kind=ProductConceptKind.ENTITY,
+        scope=S.USER_APP,
+        subject="event",
+        value="Purchasing is tied to an event.",
+        evidence="Purchasing is tied to an event.",
+        confidence=1,
+        source_turn=2,
+    )
+    state = {
+        "messages": [
+            AIMessage(content="Does an event contain another level of organization?"),
+            HumanMessage(content="There are groups."),
+        ],
+        "raw_idea": "An event commerce app.",
+        "discovery_scope": S.USER_APP,
+        "thread_planning_enabled": True,
+        "discovered_knowledge": [old_fact, workflow],
+        "product_concepts": [
+            event.model_dump(mode="json"),
+            group.model_dump(mode="json"),
+        ],
+        "active_requirements": {},
+        "requirement_coverage": {},
+        "eligible_requirement_keys": [],
+        "requirement_question_history": [],
+        "discovery_threads": {},
+        "active_discovery_thread": "event_structure",
+        "turn_count": 4,
+        "extraction_status": "SUCCESS",
+    }
+
+    threads.discovery_thread_node(state)
+
+    assert [item["value"] for item in captured["payload"]["new_confirmed_facts_this_turn"]] == [
+        "Guests enter an event and see groups."
+    ]
+    assert [item["subject"] for item in captured["payload"]["new_product_concepts_this_turn"]] == [
+        "group"
+    ]
