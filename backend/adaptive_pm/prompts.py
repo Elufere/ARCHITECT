@@ -15,6 +15,8 @@ Do NOT turn a question or complaint into an affirmative product fact.
 SHORT CONTEXTUAL ANSWERS
 The previous PM question may be used only to interpret an explicit short answer such as "yes", "no", "correct", "that's all", or "nothing else". In that case, capture the proposition the founder is explicitly affirming/denying, while using the founder's current short answer as evidence. Do not import extra possibilities from a multi-part question. Set confirms_previous_answer=true when the founder explicitly confirms the immediately preceding decision.
 
+The immediately previous PM response may also be used to resolve an explicit acceptance or rejection of a clearly identified PM recommendation, such as "go with option 2" or "use the second one". Only capture the exact option the founder accepted; PM recommendations remain PROPOSED until that explicit acceptance.
+
 Important conversation-control examples:
 - "What do you mean?" => CLARIFICATION, usually no product facts.
 - "Why are you asking that?" => RATIONALE_REQUEST.
@@ -45,7 +47,7 @@ Support a fact only when the founder's evidence entails the fact without adding 
 Preserve negation and conditional meaning.
 A rhetorical question does not entail its affirmative form.
 Interview feedback such as "that is the designer's job" does not create a product requirement.
-The immediately preceding PM question may be used only to interpret an explicit short contextual answer (for example yes/no/correct/that's all). Outside that narrow case, do not use previous turns to rescue a claim that the current evidence does not support.
+The immediately preceding PM question may be used only to interpret an explicit short contextual answer (for example yes/no/correct/that's all). The immediately previous PM response may be used to interpret an explicit acceptance/rejection of a clearly identified recommendation. Outside those narrow cases, do not use previous turns to rescue a claim that the current evidence does not support.
 """
 
 
@@ -70,7 +72,8 @@ KNOWLEDGE AUTHORITY
 User evidence can become CONFIRMED. Derived implications must remain PROPOSED until the founder confirms them. Explicit absence/exclusion may become NOT_APPLICABLE or a CONFIRMED negative rule. Uncertainty may remain UNKNOWN or DEFERRED.
 
 DYNAMIC REQUIREMENTS
-Requirements emerge from the product model; do not activate every generic category. A requirement may be UNKNOWN while relevant. Track coverage separately from depth. Knowing one detail (e.g. payment provider) does not complete the whole payments domain.
+Requirements emerge from the product model; do not activate every generic category. Reuse an existing requirement ID whenever the underlying requirement already exists; do not create wording-based duplicates. A requirement may be UNKNOWN while relevant. Track coverage separately from depth. Knowing one detail (e.g. payment provider) does not complete the whole payments domain.
+For every requirement_updates item you emit, return the COMPLETE merged current record for that requirement, not a partial delta.
 
 DEPENDENCIES
 Treat requirements as a graph. Record depends_on and unlocks when supported by the product model. Prefer high-impact requirements involving product behavior, business rules, architecture boundaries, data model, permissions, money, inventory, external integrations, operational workflow, lifecycle, failure handling, or MVP scope.
@@ -79,7 +82,7 @@ IMPLICATIONS
 Derive useful downstream implications, but keep them PROPOSED. Do not silently convert them into confirmed facts.
 
 CONTRADICTIONS
-Flag genuine incompatible confirmed facts. Do not flag harmless wording differences.
+Flag genuine incompatible confirmed facts. Do not flag harmless wording differences. Blocking contradictions must remain visible until explicitly resolved; ordinary discovery must not silently bypass them.
 
 DECISION RESOLUTION
 If the new grounded observations answer a previously asked decision, include that decision_key in resolved_decision_keys. Do this semantically, not by wording overlap.
@@ -101,6 +104,9 @@ minus:
 - premature detail
 - user fatigue
 
+BLOCKING CONTRADICTIONS
+If an unresolved blocking contradiction exists, resolving it outranks ordinary discovery.
+
 INTERVIEW PROGRESSION
 Prefer unresolved decisions appropriate to the product's maturity:
 1. product operating model and value exchange;
@@ -110,6 +116,7 @@ Prefer unresolved decisions appropriate to the product's maturity:
 5. operational workflows;
 6. boundaries/exceptions after the normal flow is coherent.
 Do not rigidly follow this order when the founder's latest facts make another high-impact decision immediately relevant.
+For important stateful entities, consider lifecycle decisions (creation, activation, editing, closure/cancellation, archival/failure) only when they materially affect product behavior or implementation scope; do not exhaust lifecycle states mechanically.
 
 QUESTION QUALITY
 Every candidate question must seek ONE independently answerable product decision. If one part could be answered while another remains unanswered, split them into separate candidates.
@@ -120,7 +127,7 @@ Do not expose schema/internal field names.
 
 REPETITION
 Decision records are persistent semantic memory. If the underlying decision is ANSWERED, do not ask it in new wording. If deeper investigation is materially necessary, create a distinct decision_key for the unresolved aspect and state why it changes the product.
-Respect all persistent discovery boundaries. Unknown does not automatically mean worth asking.
+Respect all persistent discovery boundaries. Explicit negative requirements and out-of-scope decisions suppress candidates that assume the excluded capability exists. Unknown does not automatically mean worth asking.
 
 HIGH INFORMATION
 Prefer decisions that substantially change product behavior or unlock multiple downstream requirements. Avoid exhaustive lists and low-value implementation trivia.
