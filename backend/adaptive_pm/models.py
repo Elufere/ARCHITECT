@@ -187,15 +187,6 @@ class RequirementMutation(BaseModel):
     defer_reason: str | None = None
 
 
-class ReasoningUpdate(BaseModel):
-    knowledge_mutations: list[KnowledgeMutation] = Field(default_factory=list)
-    concepts: list[ProductConcept] = Field(default_factory=list)
-    requirement_updates: list[RequirementMutation] = Field(default_factory=list)
-    implications: list[ImplicationRecord] = Field(default_factory=list)
-    contradictions: list[ContradictionRecord] = Field(default_factory=list)
-    resolved_decision_keys: list[str] = Field(default_factory=list)
-
-
 class CanonicalizationResult(BaseModel):
     knowledge_mutations: list[KnowledgeMutation] = Field(default_factory=list)
     concepts: list[ProductConcept] = Field(default_factory=list)
@@ -237,29 +228,16 @@ class QuestionCandidate(BaseModel):
     requirement_ids: list[str] = Field(default_factory=list)
     uncertainty: str
     why_now: str
-    business_impact: float = Field(ge=0, le=1)
-    architecture_impact: float = Field(ge=0, le=1)
-    dependency_unlock: float = Field(ge=0, le=1)
-    uncertainty_reduction: float = Field(ge=0, le=1)
-    risk_reduction: float = Field(ge=0, le=1)
-    contextual_relevance: float = Field(ge=0, le=1)
-    repetition_penalty: float = Field(default=0.0, ge=0, le=1)
-    premature_detail_penalty: float = Field(default=0.0, ge=0, le=1)
-    fatigue_penalty: float = Field(default=0.0, ge=0, le=1)
+    business_impact: str = ""
+    architecture_impact: str = ""
+    downstream_unlocks: list[str] = Field(default_factory=list)
+    risk_if_misunderstood: str = ""
+    contextual_relevance: str = ""
+    repetition_risk: str = ""
+    premature_detail_risk: str = ""
+    fatigue_cost: str = ""
     eligible: bool = True
     ineligibility_reason: str | None = None
-
-    def score(self) -> float:
-        positive = (
-            self.business_impact
-            + self.architecture_impact
-            + self.dependency_unlock
-            + self.uncertainty_reduction
-            + self.risk_reduction
-            + self.contextual_relevance
-        )
-        penalties = self.repetition_penalty + self.premature_detail_penalty + self.fatigue_penalty
-        return positive - penalties
 
 
 class CompletionAssessment(BaseModel):
@@ -276,16 +254,10 @@ class CompletionAssessment(BaseModel):
     reason: str
 
 
-class PlanningResult(BaseModel):
-    candidates: list[QuestionCandidate] = Field(default_factory=list)
-    completion: CompletionAssessment
-    advice_options: list[str] = Field(default_factory=list)
-
-
 class CandidateGenerationResult(BaseModel):
-    candidates: list[QuestionCandidate] = Field(default_factory=list)
+    candidates: list[QuestionCandidate] = Field(default_factory=list, max_length=5)
     completion: CompletionAssessment
-    advice_options: list[AdviceOption] = Field(default_factory=list)
+    advice_options: list[AdviceOption] = Field(default_factory=list, max_length=3)
 
 
 class PriorityResult(BaseModel):
