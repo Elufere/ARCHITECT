@@ -16,3 +16,6 @@ frontend/.next/
 # OS
 .DS_Store
 Thumbs.db
+# PM v2 runtime artifacts
+backend/sessions_v2/
+backend/output_v2/
