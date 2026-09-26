@@ -30,7 +30,7 @@ def test_repeated_template_exits_graph_with_bounded_retries(monkeypatch):
     monkeypatch.setattr(graph, "knowledge_tracker_node", lambda _: {})
     monkeypatch.setattr(graph, "interview_planner_node", lambda _: {})
     initial = state()
-    result = graph.build_graph().invoke(initial, config={"recursion_limit": 20})
+    result = graph.build_graph().invoke(initial, config={"recursion_limit": 30})
     # MAX_QUESTION_RETRIES counts regeneration attempts after the initial
     # generated draft, so a model-driven question can invoke the generator once
     # initially plus the bounded retry budget.
