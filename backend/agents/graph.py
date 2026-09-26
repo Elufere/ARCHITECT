@@ -160,4 +160,5 @@ def build_graph() -> StateGraph:
     return workflow.compile().with_config(
         callbacks=[usage_tracker],
         metadata={"openai_usage_session": str(uuid4())},
+        recursion_limit=30,
     )
