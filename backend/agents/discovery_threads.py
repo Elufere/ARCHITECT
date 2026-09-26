@@ -660,8 +660,31 @@ def _semantic_frontier_problem(
         )
     except Exception as exc:
         raise_if_llm_failure(exc)
-        print(f"INQUIRY ASSESSMENT SKIPPED: {exc}")
-        return None
+        print(f"INQUIRY ASSESSMENT REPAIR: inconsistent structured verdict | {exc}")
+        try:
+            repaired_result = inquiry_assessment_model().invoke([
+                SystemMessage(content=INQUIRY_ASSESSMENT_INSTRUCTION + """
+The previous assessment was structurally inconsistent. Return one corrected
+assessment. If ANY material information is still unknown, set
+information_need_resolved=false and list every such item in missing_information.
+If the need is fully resolved, missing_information must be empty. Supporting
+observation IDs must be UNIQUE and limited to the supplied IDs. Do not repeat an
+ID. Do not change the proposed frontier."""),
+                HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+            ])
+            assessment = (
+                repaired_result
+                if isinstance(repaired_result, InquiryAssessment)
+                else InquiryAssessment.model_validate(repaired_result)
+            )
+        except Exception as repair_exc:
+            raise_if_llm_failure(repair_exc)
+            print(f"INQUIRY ASSESSMENT INVALID AFTER REPAIR: {repair_exc}")
+            return (
+                "The semantic inquiry assessment could not produce a coherent "
+                "coverage verdict. Do not ask this frontier; choose a different "
+                "grounded product decision."
+            )
 
     valid_observation_ids = {
         item.get("id")
@@ -819,54 +842,82 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
     ]
 
-    problem = None
-    try:
-        plan = _normalize_plan(_invoke_thread_plan(messages), state, scope)
-        problem = _plan_problem(plan, state, backlog)
-        if problem is None:
-            return plan
-    except Exception as first_exc:
-        raise_if_llm_failure(first_exc)
-        problem = f"Invalid structured thread plan: {first_exc}"
+    rejected_frontiers: list[dict] = []
+    last_problem = None
 
-    print(f"DISCOVERY THREAD REPAIR: {problem}")
-    repair_payload = {
-        **payload,
-        "repair": {
-            "problem": problem,
-            "instruction": (
-                "Return one valid structured next move. Choose EXACTLY ONE independently "
-                "answerable product decision. Do not combine timing, process, conditions, "
-                "permissions, features, or experience into one frontier. Stay on the "
-                "current causal/product-structure thread only when its NEXT question is at least "
-                "as valuable as the best unresolved alternative. If the repair says the "
-                "local thread is sufficiently understood OR identifies a higher-value "
-                "alternative elsewhere, PAUSE the current thread and choose a different "
-                "thread/high-value product decision rather than selecting another narrower "
-                "detail from the same thread. Do not ask for an end-to-end workflow recap, exhaustive list, "
-                "implementation/UI mechanics, or another confirmation of a closed answer. "
-                "Use null for an uncertain anchor_gap and do not invent requirement IDs."
-            ),
-        },
-    }
-    try:
-        repaired = _normalize_plan(
-            _invoke_thread_plan([
-                SystemMessage(content=THREAD_PLANNER_INSTRUCTION + "\n"
-                    "The previous plan was invalid or violated the conversation-control "
-                    "protocol. Repair the plan only; do not add product facts."),
-                HumanMessage(content=json.dumps(repair_payload, ensure_ascii=False)),
-            ]),
-            state,
-            scope,
+    for attempt in range(3):
+        attempt_payload = payload
+        system_instruction = THREAD_PLANNER_INSTRUCTION
+        if attempt:
+            attempt_payload = {
+                **payload,
+                "rejected_frontiers": rejected_frontiers,
+                "repair": {
+                    "problem": last_problem,
+                    "attempt": attempt,
+                    "instruction": (
+                        "Choose a materially different valid next move. Every item in "
+                        "rejected_frontiers is semantically forbidden for this planning "
+                        "cycle: do not repeat it with a new decision_key, narrower wording, "
+                        "or a paraphrase. Choose EXACTLY ONE independently answerable "
+                        "product decision. Stay on the current thread only when its NEXT "
+                        "question is at least as valuable as the best unresolved alternative. "
+                        "If the rejected frontier was already covered or low-value, pause "
+                        "that thread and choose another grounded decision or relevant "
+                        "requirement. Do not ask implementation/UI mechanics, an end-to-end "
+                        "workflow recap, or another confirmation of a closed answer. Use "
+                        "null for an uncertain anchor_gap and never invent requirement IDs."
+                    ),
+                },
+            }
+            system_instruction += (
+                "\nThis is a bounded repair attempt. Respect rejected_frontiers as "
+                "semantic exclusions, not merely rejected wording."
+            )
+
+        proposed = None
+        try:
+            proposed = _normalize_plan(
+                _invoke_thread_plan([
+                    SystemMessage(content=system_instruction),
+                    HumanMessage(content=json.dumps(attempt_payload, ensure_ascii=False)),
+                ]),
+                state,
+                scope,
+            )
+            problem = _plan_problem(
+                proposed,
+                state,
+                backlog,
+                rejected_frontiers=rejected_frontiers,
+            )
+            if problem is None:
+                return proposed
+            last_problem = problem
+        except Exception as exc:
+            raise_if_llm_failure(exc)
+            last_problem = f"Invalid structured thread plan: {exc}"
+
+        print(
+            f"DISCOVERY THREAD {'REPAIR' if attempt else 'REJECT'} "
+            f"{attempt + 1}/3: {last_problem}"
         )
-        second_problem = _plan_problem(repaired, state, backlog)
-        if second_problem is not None:
-            raise ValueError(second_problem)
-        return repaired
-    except Exception as second_exc:
-        raise_if_llm_failure(second_exc)
-        raise ExtractionFailed("Discovery-thread planning failed after one repair attempt") from second_exc
+
+        if proposed is not None and proposed.frontier is not None:
+            rejected = {
+                "thread_id": proposed.thread_id,
+                "decision_key": proposed.frontier.decision_key,
+                "objective": proposed.frontier.objective,
+                "question_hint": proposed.frontier.question_hint,
+                "reason_rejected": last_problem,
+            }
+            if rejected not in rejected_frontiers:
+                rejected_frontiers.append(rejected)
+
+    raise ExtractionFailed(
+        "Discovery-thread planning failed after bounded semantic repair attempts; "
+        "all proposed frontiers were invalid or repeated rejected decisions"
+    )
 
 
 def discovery_thread_node(state: AgentState) -> dict:
@@ -917,9 +968,48 @@ def discovery_thread_node(state: AgentState) -> dict:
             "thread_objective": plan.thread_objective,
         }
 
+    boundaries = list(state.get("discovery_boundaries", []))
+    if plan.feedback is not None:
+        latest_answer = _latest_human(state)
+        if plan.feedback.evidence and plan.feedback.evidence in latest_answer:
+            boundary_type = {
+                ThreadFeedbackKind.QUESTION_TOO_BROAD: "question_too_broad",
+                ThreadFeedbackKind.IMPLEMENTATION_DEFERRED: "implementation_deferred",
+            }[plan.feedback.kind]
+            boundary = {
+                "type": boundary_type,
+                "scope": scope.value,
+                "source_turn": state.get("turn_count", 0),
+                "evidence": plan.feedback.evidence,
+                "question": next(
+                    (
+                        message.content
+                        for message in reversed(state.get("messages", [])[:-1])
+                        if isinstance(message, AIMessage)
+                    ),
+                    "",
+                ),
+                "thread_id": previous or plan.thread_id,
+                "decision_key": (state.get("selected_inquiry") or {}).get("decision_key"),
+                "objective": state.get("current_objective"),
+                "instruction": plan.feedback.instruction,
+            }
+            signature = (
+                boundary["type"],
+                boundary["source_turn"],
+                boundary["evidence"],
+            )
+            existing_signatures = {
+                (item.get("type"), item.get("source_turn"), item.get("evidence"))
+                for item in boundaries
+            }
+            if signature not in existing_signatures:
+                boundaries.append(boundary)
+
     return {
         "discovery_threads": threads,
         "active_discovery_thread": plan.thread_id,
         "thread_frontier": frontier,
         "thread_relevant_requirement_ids": list(plan.relevant_requirement_ids),
+        "discovery_boundaries": boundaries[-50:],
     }
