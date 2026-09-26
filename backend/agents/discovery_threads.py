@@ -205,9 +205,10 @@ The interview should feel like an excellent human PM conversation:
       repeated. Do not retry, paraphrase, or deepen it. Move to a materially
       different product decision.
     - question_too_broad means the founder did NOT reject the product thread;
-      they rejected the amount being asked at once. Stay on the same thread and
-      decompose the previous inquiry into one smaller decision. Do not switch
-      topics merely because the previous question was oversized.
+      they rejected the amount being asked at once. When latest_conversation_intent
+      is scope_objection, stay on the same thread and decompose the previous inquiry
+      into one smaller decision. On later turns, this boundary only prevents
+      repeating the same oversized inquiry; it does not permanently pin the thread.
     These are NOT product facts and must never be converted into requirements.
 12. If latest_conversation_intent is design_deferral or objection, the NEXT move
     must demonstrate that feedback was respected. If it is scope_objection, the
@@ -473,9 +474,11 @@ should_move_on=true even if that detail remains unknown. Unknown does not mean
 worth asking.
 
 A question_too_broad boundary is different: do NOT set should_move_on merely
-because the founder rejected the previous question's size. The underlying thread
-may still be important. Instead, reject any frontier that again asks for several
-steps/actors/stages and require one smaller decision from that same thread.
+because the founder rejected the previous question's size. When the latest
+conversation intent is scope_objection, the underlying thread remains active:
+reject any frontier that again asks for several steps/actors/stages and require
+one smaller decision from that same thread. On later turns, use the boundary only
+to prevent recurrence of the oversized form.
 """
 
 
