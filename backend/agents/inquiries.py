@@ -60,6 +60,11 @@ class ProductInquiry(BaseModel):
     architecture_impact: float = Field(default=0.5, ge=0, le=1)
     business_risk: float = Field(default=0.5, ge=0, le=1)
     question_cost: float = Field(default=0.0, ge=0, le=1)
+    thread_id: Optional[str] = None
+    decision_key: Optional[str] = None
+    information_gain: float = Field(default=0.5, ge=0, le=1)
+    causal_relevance: float = Field(default=0.5, ge=0, le=1)
+    conversation_continuity: float = Field(default=0.5, ge=0, le=1)
 
 
 def _confirmed(state: AgentState, *, topic=None, key=None, role=None) -> list[KnowledgeItem]:
@@ -273,11 +278,47 @@ def _model_inquiries(state: AgentState) -> list[ProductInquiry]:
     return []
 
 
+def _thread_frontier_inquiry(state: AgentState) -> Optional[ProductInquiry]:
+    frontier = state.get("thread_frontier") or {}
+    if not frontier:
+        return None
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    thread_id = frontier.get("thread_id") or state.get("active_discovery_thread")
+    decision_key = frontier.get("decision_key")
+    if not thread_id or not decision_key:
+        return None
+    known_ids = list(frontier.get("related_fact_ids") or [])
+    return ProductInquiry(
+        id=f"{scope.value}|thread|{thread_id}|{decision_key}",
+        source=InquirySource.MODEL,
+        scope=scope,
+        topic=DiscoveryTopic(frontier["topic"]),
+        anchor_gap=frontier.get("anchor_gap"),
+        objective=frontier["objective"],
+        question_hint=frontier["question_hint"],
+        reason=frontier["reason"],
+        known_fact_ids=known_ids,
+        uncertainty=1.0,
+        architecture_impact=frontier.get("architecture_impact", 0.6),
+        business_risk=frontier.get("business_risk", 0.5),
+        question_cost=frontier.get("question_cost", 0.0),
+        thread_id=thread_id,
+        decision_key=decision_key,
+        information_gain=frontier.get("information_gain", 0.8),
+        causal_relevance=frontier.get("causal_relevance", 1.0),
+        conversation_continuity=frontier.get("conversation_continuity", 1.0),
+    )
+
+
 def _requirement_inquiries(state: AgentState) -> list[ProductInquiry]:
     if state.get("validation_candidate_blocking", False):
         return []
 
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    thread_filter = state.get("thread_relevant_requirement_ids")
+    allowed_requirement_ids = (
+        set(thread_filter) if thread_filter is not None else None
+    )
     store = state.get("active_requirements", {})
     coverage_state = state.get("requirement_coverage", {})
     result: list[ProductInquiry] = []
@@ -288,6 +329,8 @@ def _requirement_inquiries(state: AgentState) -> list[ProductInquiry]:
         if requirement is None or payload is None:
             continue
         if requirement.scope != scope or requirement.status != RequirementStatus.ACTIVE:
+            continue
+        if allowed_requirement_ids is not None and requirement.id not in allowed_requirement_ids:
             continue
 
         coverage = RequirementCoverageRecord.model_validate(payload)
@@ -422,8 +465,10 @@ def identify_open_inquiries(state: AgentState) -> list[ProductInquiry]:
     if pending is not None:
         return [pending]
 
+    thread_inquiry = _thread_frontier_inquiry(state)
+    model_inquiries = [thread_inquiry] if thread_inquiry is not None else _model_inquiries(state)
     inquiries = [
-        *_model_inquiries(state),
+        *model_inquiries,
         *_requirement_inquiries(state),
     ]
     seen = set()
