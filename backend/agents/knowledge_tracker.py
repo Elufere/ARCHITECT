@@ -1100,9 +1100,15 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         # admitted positive claim already resolves the active inquiry, so do not
         # spend another model call asking whether the same answer means absence.
         absence = None
+        policy_gap = (
+            current_topic == DiscoveryTopic.USER_ROLES
+            and (current_gap or "").split("::", 1)[0]
+            in ("multiple_roles", "role_transitions")
+        )
         direct_claim_answer = bool(
             current_topic
             and current_gap
+            and not policy_gap
             and any(
                 item.topic == current_topic and item_directly_answers_gap(item, current_gap)
                 for item in extracted_items
