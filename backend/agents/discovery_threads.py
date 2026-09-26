@@ -854,6 +854,7 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
 
     rejected_frontiers: list[dict] = []
     last_problem = None
+    captured_feedback = None
 
     for attempt in range(3):
         attempt_payload = payload
@@ -895,6 +896,8 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
                 state,
                 scope,
             )
+            if proposed.feedback is not None and captured_feedback is None:
+                captured_feedback = proposed.feedback
             problem = _plan_problem(
                 proposed,
                 state,
@@ -902,6 +905,8 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
                 rejected_frontiers=rejected_frontiers,
             )
             if problem is None:
+                if proposed.feedback is None and captured_feedback is not None:
+                    proposed = proposed.model_copy(update={"feedback": captured_feedback})
                 return proposed
             last_problem = problem
         except Exception as exc:
