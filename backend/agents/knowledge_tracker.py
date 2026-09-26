@@ -1,5 +1,6 @@
 import re
 import json
+import hashlib
 from typing import Tuple, get_args
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -522,12 +523,58 @@ def ground_batch(items, user_response, state, active_gap_review=None):
 
 
 class ExtractedBatch(list):
-    """Extracted schema facts plus parallel first-class product concepts."""
+    """Extracted schema facts plus parallel concepts and durable observations."""
 
-    def __init__(self, items=(), *, grounding_required=True, concepts=None):
+    def __init__(self, items=(), *, grounding_required=True, concepts=None, observations=None):
         super().__init__(items)
         self.grounding_required = grounding_required
         self.concepts = list(concepts or [])
+        self.observations = list(observations or [])
+
+
+def _captured_observation(
+    claim: NeutralClaim,
+    scope: DiscoveryScope,
+    turn: int,
+    admission_status: str,
+    rejection_reason: str | None = None,
+) -> dict:
+    """Preserve what the founder explicitly said even when normalization rejects it."""
+    identity = "|".join([
+        scope.value,
+        str(turn),
+        claim.kind,
+        claim.role or "",
+        claim.value,
+        claim.evidence,
+    ])
+    return {
+        "id": "obs_" + hashlib.sha1(identity.encode("utf-8")).hexdigest()[:16],
+        "scope": scope.value,
+        "source_turn": turn,
+        "kind": claim.kind,
+        "value": claim.value,
+        "evidence": claim.evidence,
+        "role": claim.role,
+        "aliases": list(claim.aliases),
+        "subject": claim.subject,
+        "relation": claim.relation,
+        "object": claim.object,
+        "confidence": claim.confidence,
+        "knowledge_state": claim.knowledge_state.value,
+        "admission_status": admission_status,
+        "rejection_reason": rejection_reason,
+    }
+
+
+def merge_captured_observations(existing: list[dict], incoming: list[dict]) -> list[dict]:
+    """Idempotently persist observations; later re-processing may improve their status."""
+    merged = {item.get("id"): dict(item) for item in existing if item.get("id")}
+    for item in incoming:
+        identity = item.get("id")
+        if identity:
+            merged[identity] = dict(item)
+    return list(merged.values())[-250:]
 
 
 def _claim_prompt(state: AgentState, scope: DiscoveryScope) -> str:
@@ -765,34 +812,11 @@ def _admit_claim_item(
         if _explicit_other_surface(claim.evidence, scope):
             raise ValueError("Explicit other-surface participant cannot become a current-scope actor")
 
-        existing_primary, existing_secondary = _existing_actor_sets(state, scope)
-        existing_roles = existing_primary | existing_secondary
-        role = canonical_role(claim.role or "")
-        direct_actor_answer = (
-            state.get("current_topic") == DiscoveryTopic.USER_ROLES
-            and (state.get("current_gap") or "").split("::", 1)[0]
-            in ("primary_users", "secondary_users")
-        )
-        is_new_role = bool(role and role not in existing_roles)
-        # Initial primary participants may be established by explicit core-value
-        # participation. Later additions, and secondary actors at any time, need
-        # explicit current-surface membership unless the PM asked for actors.
-        requires_membership = (
-            is_new_role
-            and (
-                bool(existing_roles)
-                or claim.kind == "secondary_actor"
-                or state.get("turn_count", 0) > 0
-            )
-        )
-        if (
-            requires_membership
-            and not direct_actor_answer
-            and not _explicit_current_surface_membership(claim.evidence, scope)
-        ):
-            raise ValueError(
-                "New actor requires explicit current-scope membership; process participation alone is insufficient"
-            )
+        # Current-scope actor membership is a semantic decision made by the
+        # neutral claim extractor. Do not require brittle lexical phrases such
+        # as "uses the app" after the model has already classified an explicit
+        # participant as a current-scope actor. The hard invariant remains that
+        # explicitly external/other-surface participants cannot be admitted.
 
     converted = claim_to_fact(
         claim,
@@ -871,6 +895,7 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
     primary_roles, secondary_roles = _existing_actor_sets(state, scope)
     accepted: list[KnowledgeItem] = []
     concepts: list[ProductConcept] = []
+    observations: list[dict] = []
 
     # Identity claims establish same-turn owners before owned propositions are admitted.
     ordered = sorted(
@@ -878,6 +903,8 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
         key=lambda pair: (0 if pair[1].kind in ("primary_actor", "secondary_actor") else 1, pair[0]),
     )
     for _, claim in ordered:
+        admission_status = "REJECTED"
+        rejection_reason = None
         try:
             if claim.kind in ("product_entity", "entity_relationship", "entity_attribute"):
                 concept = _concept_from_claim(
@@ -899,6 +926,7 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
                 if not valid_evidence:
                     raise ValueError(reason)
                 concepts.append(concept)
+                admission_status = "CONCEPT"
                 continue
             item = _admit_claim_item(
                 claim,
@@ -908,6 +936,7 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
                 secondary_roles,
             )
             if item is None:
+                admission_status = "UNCLASSIFIED"
                 continue
             if item.key == "primary_users" and not item.absence:
                 primary_roles.update(canonical_role(role) for role in item.roles or [])
@@ -915,8 +944,23 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
                 secondary_roles.update(canonical_role(role) for role in item.roles or [])
             if item not in accepted:
                 accepted.append(item)
+            admission_status = "ADMITTED"
         except (ValidationError, ValueError) as exc:
+            rejection_reason = str(exc)
             print(f"CLAIM REJECTED: {claim.kind} | {exc} | evidence={claim.evidence!r}")
+        finally:
+            observation = _captured_observation(
+                claim,
+                scope,
+                state.get("turn_count", 0),
+                admission_status,
+                rejection_reason,
+            )
+            observations.append(observation)
+            print(
+                f"OBSERVATION STORED: {observation['id']} | "
+                f"{claim.kind} | {admission_status}"
+            )
 
     # Claim semantics have already been classified once and admitted through the
     # deterministic field gates above. Do not send the same propositions through
@@ -925,6 +969,7 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
         accepted,
         grounding_required=False,
         concepts=concepts,
+        observations=observations,
     )
 
 
@@ -1227,23 +1272,17 @@ def knowledge_tracker_node(state: AgentState) -> dict:
                 "extraction_status": "CONFIRMED_EXISTING",
             }
 
-    # When the user says a question was already answered, recover the answer
-    # from earlier human turns rather than pretending the gap is still blank.
-    # We only ask the extractor to recover the current gap, and retain the
-    # original quoted text as evidence for the normal validation pipeline.
+    # An objection such as "I told you already" must not concatenate the
+    # conversation into one synthetic answer. That destroys source provenance
+    # and makes repeated evidence fail the unique-span validator. Durable
+    # captured_observations preserve prior answers for the planner instead.
     recovering_prior_answer = state.get("conversation_intent") == "objection"
-    if recovering_prior_answer:
-        earlier_answers = [
-            message.content for message in messages[:-1]
-            if isinstance(message, HumanMessage)
-        ]
-        if earlier_answers:
-            user_response = "\n".join(earlier_answers)
 
     print(f"Extracting knowledge for topic: {current_topic}, user response: {user_response}")
     closed_answer = None if recovering_prior_answer or confirmed_prior_answer else interpret_closed_answer(state)
     answer_followup = None
     captured_concepts = []
+    captured_observations = list(state.get("captured_observations", []))
     if closed_answer is not None:
         # The exact generated question defines the choice's meaning. No model
         # inference is involved, and no free-form answer takes this path.
@@ -1255,6 +1294,10 @@ def knowledge_tracker_node(state: AgentState) -> dict:
     else:
         extracted_items = extract_passes(user_response, state, current_scope)
         captured_concepts = list(getattr(extracted_items, "concepts", []))
+        captured_observations = merge_captured_observations(
+            captured_observations,
+            list(getattr(extracted_items, "observations", [])),
+        )
         # Never reinterpret historical denials as this turn's answer. A directly
         # admitted positive claim already resolves the active inquiry, so do not
         # spend another model call asking whether the same answer means absence.
@@ -1378,6 +1421,7 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         "superseded_knowledge": superseded_knowledge,
         "answer_followup": answer_followup,
         "product_concepts": product_concepts,
+        "captured_observations": captured_observations,
         "product_model": build_product_model(
             discovered_knowledge,
             current_scope,
