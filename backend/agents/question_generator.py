@@ -217,11 +217,21 @@ one natural question when that is clearer for the user.
 MODEL-DRIVEN DISCOVERY
 Why this inquiry exists: {selected_inquiry.get('reason', 'The current product model has a material uncertainty.')}
 Inquiry objective: {current_objective}
+Active discovery thread: {selected_inquiry.get('thread_id') or state.get('active_discovery_thread') or 'none'}
+Thread decision key: {selected_inquiry.get('decision_key') or 'none'}
+
+Stay inside the active thread. The question should feel like the natural next
+decision created by what the founder has already told you, not like another
+field from a checklist. When the latest answer introduced an entity, process,
+state, relationship, or business-model fork, ask the next causal question needed
+to make that part of the product coherent.
+
+Do not repeat an underlying decision in new wording. Do not jump to a globally
+important requirement merely because it exists elsewhere in the model.
 
 The anchor field below exists only so extraction can normalize the answer.
 It is NOT a checklist item and does not need to be exhaustively completed.
-Ask only what materially resolves the selected product uncertainty. Build on
-confirmed facts instead of re-running a generic schema question.
+Ask only what materially resolves the selected product uncertainty.
 """
 
     # When in ADMIN_DASHBOARD phase, surface what was learned about the
