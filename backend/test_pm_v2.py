@@ -4,9 +4,10 @@ from __future__ import annotations
 from uuid import uuid4
 
 from agents.llm_errors import ExtractionFailed, LLMCallFailed
+from pm_v2.compiler import compile_prd, save_prd
 from pm_v2.engine import PMDiscoveryEngine
 from pm_v2.models import DiscoveryState
-from pm_v2.store import load_state, save_state, unfinished_states
+from pm_v2.store import save_state, unfinished_states
 
 
 def read_answer() -> str | None:
@@ -94,6 +95,19 @@ def run() -> None:
         print("\nDiscovery complete.")
         print(state.completion_reason)
         save_state(state)
+
+        try:
+            prd = compile_prd(state)
+            output = save_prd(
+                prd,
+                f"output_v2/{state.session_id}.json",
+            )
+            print(f"Implementation-ready PRD saved to {output}.")
+        except Exception as exc:
+            print(
+                "Discovery state is safe, but PRD compilation did not complete: "
+                f"{type(exc).__name__}: {exc}"
+            )
 
     except (LLMCallFailed, ExtractionFailed) as exc:
         save_state(state)
