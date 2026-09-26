@@ -20,7 +20,7 @@ from agents.state import DiscoveryScope, DiscoveryTopic, KnowledgeItem
 
 CURSORS = {"conversation_manager", "extract", "resolve_validation_answer", "infer_implications",
            "activate_requirements", "cover_requirements", "resolve_requirements",
-           "validate_consistency", "identify_inquiries", "build_candidates",
+           "validate_consistency", "plan_threads", "identify_inquiries", "build_candidates",
            "filter_candidates", "prioritize_candidates", "plan", "generate",
            "guardrail", "compile_prd", "waiting", "phase_complete", "completed"}
 
@@ -95,6 +95,10 @@ def load_checkpoint(session_id):
         for key, item in state.get("active_requirements", {}).items()
     }
     state.setdefault("model_implications", [])
+    state.setdefault("discovery_threads", {})
+    state.setdefault("active_discovery_thread", None)
+    state.setdefault("thread_frontier", None)
+    state.setdefault("thread_relevant_requirement_ids", [])
     state.setdefault("requirement_coverage", {})
     state.setdefault("requirement_dependency_state", {})
     state.setdefault("eligible_requirement_keys", [])
@@ -179,6 +183,7 @@ def durable_node(name, node, next_node):
                   "cover_requirements": "ASSESSING_REQUIREMENT_COVERAGE",
                   "resolve_requirements": "RESOLVING_REQUIREMENTS",
                   "validate_consistency": "VALIDATING_DISCOVERY_STATE",
+                  "plan_threads": "PLANNING_DISCOVERY_THREAD",
                   "identify_inquiries": "IDENTIFYING_PRODUCT_INQUIRIES",
                   "build_candidates": "BUILDING_QUESTION_CANDIDATES",
                   "filter_candidates": "FILTERING_QUESTION_CANDIDATES",
