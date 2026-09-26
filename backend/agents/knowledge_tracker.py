@@ -1216,7 +1216,11 @@ def knowledge_tracker_node(state: AgentState) -> dict:
             return {
                 "discovered_knowledge": promoted,
                 "superseded_knowledge": superseded_knowledge,
-                "product_model": build_product_model(promoted, current_scope),
+                "product_model": build_product_model(
+                    promoted,
+                    current_scope,
+                    state.get("product_concepts", []),
+                ),
                 "active_answer_result": answer_receipt(state, committed_promotions, promoted, confirmed_existing=True),
                 "fact_acquisition": acquisition_records(state, promoted, committed_promotions),
                 "extraction_status": "CONFIRMED_EXISTING",
@@ -1279,6 +1283,11 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         else:
             extracted_items = list(extracted_items)
             print(f"CLAIM ADMISSION: {len(extracted_items)} fact(s) accepted without cross-category grounding")
+    captured_concepts = list(getattr(extracted_items, "concepts", []))
+    product_concepts = merge_product_concepts(
+        state.get("product_concepts", []),
+        captured_concepts,
+    )
     discovered_knowledge = list(state.get("discovered_knowledge", []))
     if current_gap:
         print(f"ACTIVE ANSWER: gap={current_gap} accepted_facts="
@@ -1366,7 +1375,12 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         "discovered_knowledge": discovered_knowledge,
         "superseded_knowledge": superseded_knowledge,
         "answer_followup": answer_followup,
-        "product_model": build_product_model(discovered_knowledge, current_scope),
+        "product_concepts": product_concepts,
+        "product_model": build_product_model(
+            discovered_knowledge,
+            current_scope,
+            product_concepts,
+        ),
         "active_answer_result": answer_receipt(state, direct_answer_items, discovered_knowledge,
                                                confirmed_existing=confirmed_prior_answer),
         "fact_acquisition": acquisition_records(state, discovered_knowledge, direct_answer_items),
