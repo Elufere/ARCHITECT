@@ -194,6 +194,40 @@ class ReasoningUpdate(BaseModel):
     resolved_decision_keys: list[str] = Field(default_factory=list)
 
 
+class CanonicalizationResult(BaseModel):
+    knowledge_mutations: list[KnowledgeMutation] = Field(default_factory=list)
+    concepts: list[ProductConcept] = Field(default_factory=list)
+    resolved_decision_keys: list[str] = Field(default_factory=list)
+
+
+class RequirementReasoningResult(BaseModel):
+    requirement_updates: list[RequirementMutation] = Field(default_factory=list)
+    deactivate_requirement_ids: list[str] = Field(default_factory=list)
+
+
+class ImplicationResult(BaseModel):
+    implications: list[ImplicationRecord] = Field(default_factory=list)
+
+
+class ContradictionResult(BaseModel):
+    contradictions: list[ContradictionRecord] = Field(default_factory=list)
+    resolved_contradiction_ids: list[str] = Field(default_factory=list)
+
+
+class AdviceOption(BaseModel):
+    id: str
+    statement: str
+    requirement_ids: list[str] = Field(default_factory=list)
+
+
+class RecommendationRecord(BaseModel):
+    id: str
+    statement: str
+    requirement_ids: list[str] = Field(default_factory=list)
+    status: KnowledgeStatus = KnowledgeStatus.PROPOSED
+    source_turn: int
+
+
 class QuestionCandidate(BaseModel):
     id: str
     decision_key: str
@@ -246,6 +280,17 @@ class PlanningResult(BaseModel):
     advice_options: list[str] = Field(default_factory=list)
 
 
+class CandidateGenerationResult(BaseModel):
+    candidates: list[QuestionCandidate] = Field(default_factory=list)
+    completion: CompletionAssessment
+    advice_options: list[AdviceOption] = Field(default_factory=list)
+
+
+class PriorityResult(BaseModel):
+    ordered_candidate_ids: list[str] = Field(default_factory=list)
+    reason: str = ""
+
+
 class QuestionAudit(BaseModel):
     passed: bool
     atomic: bool
@@ -271,6 +316,7 @@ class InterviewState(BaseModel):
     concepts: dict[str, ProductConcept] = Field(default_factory=dict)
     requirements: dict[str, RequirementRecord] = Field(default_factory=dict)
     implications: dict[str, ImplicationRecord] = Field(default_factory=dict)
+    recommendations: dict[str, RecommendationRecord] = Field(default_factory=dict)
     contradictions: dict[str, ContradictionRecord] = Field(default_factory=dict)
     boundaries: list[DiscoveryBoundary] = Field(default_factory=list)
     decisions: dict[str, DecisionRecord] = Field(default_factory=dict)
@@ -284,6 +330,7 @@ class InterviewState(BaseModel):
             "concepts": [item.model_dump(mode="json") for item in self.concepts.values()],
             "requirements": [item.model_dump(mode="json") for item in self.requirements.values()],
             "implications": [item.model_dump(mode="json") for item in self.implications.values()],
+            "recommendations": [item.model_dump(mode="json") for item in self.recommendations.values()],
             "contradictions": [item.model_dump(mode="json") for item in self.contradictions.values() if not item.resolved],
             "boundaries": [item.model_dump(mode="json") for item in self.boundaries],
             "decisions": [item.model_dump(mode="json") for item in self.decisions.values()],
