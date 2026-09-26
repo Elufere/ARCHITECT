@@ -261,8 +261,50 @@ def _normalize_plan(
     })
 
 
+def _plan_problem(
+    plan: DiscoveryThreadPlan,
+    state: AgentState,
+    backlog: list[dict],
+) -> str | None:
+    frontier = plan.frontier
+    if frontier is not None:
+        deliveries = sum(
+            1
+            for entry in state.get("requirement_question_history", [])[-12:]
+            if entry.get("thread_id") == plan.thread_id
+            and entry.get("decision_key") == frontier.decision_key
+        )
+        if deliveries >= 2:
+            return (
+                f"Decision '{frontier.decision_key}' in thread '{plan.thread_id}' "
+                "has already been delivered twice."
+            )
+        if deliveries == 1 and state.get("extraction_status") != "NO_FACTS_FOUND":
+            return (
+                f"Decision '{frontier.decision_key}' already received a usable answer; "
+                "advance to the next causal decision."
+            )
+    if frontier is None and backlog and not plan.relevant_requirement_ids:
+        return (
+            "The plan has no model frontier and no relevant requirement, but eligible "
+            "requirements still exist. Choose the next coherent thread/decision or mark "
+            "at least one supplied requirement as relevant now."
+        )
+    return None
+
+
+def _invoke_thread_plan(messages) -> DiscoveryThreadPlan:
+    result = thread_planner_model().invoke(messages)
+    return (
+        result
+        if isinstance(result, DiscoveryThreadPlan)
+        else DiscoveryThreadPlan.model_validate(result)
+    )
+
+
 def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    backlog = _requirement_payload(state, scope)
     payload = {
         "scope": scope.value,
         "raw_idea": state.get("raw_idea", ""),
@@ -273,19 +315,42 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "current_threads": state.get("discovery_threads", {}),
         "active_thread_id": state.get("active_discovery_thread"),
         "delivered_question_history": _history_payload(state),
-        "eligible_requirement_backlog": _requirement_payload(state, scope),
+        "eligible_requirement_backlog": backlog,
     }
+    messages = [
+        SystemMessage(content=THREAD_PLANNER_INSTRUCTION),
+        HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+    ]
     try:
-        result = thread_planner_model().invoke([
-            SystemMessage(content=THREAD_PLANNER_INSTRUCTION),
-            HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
-        ])
-        plan = (
-            result
-            if isinstance(result, DiscoveryThreadPlan)
-            else DiscoveryThreadPlan.model_validate(result)
+        plan = _normalize_plan(_invoke_thread_plan(messages), state, scope)
+        problem = _plan_problem(plan, state, backlog)
+        if problem is None:
+            return plan
+
+        repair_payload = {
+            **payload,
+            "repair": {
+                "problem": problem,
+                "instruction": (
+                    "Return a different valid next move. Do not repeat the blocked "
+                    "thread decision and do not invent requirement IDs."
+                ),
+            },
+        }
+        repaired = _normalize_plan(
+            _invoke_thread_plan([
+                SystemMessage(content=THREAD_PLANNER_INSTRUCTION + "\n"
+                    "The previous plan violated the conversation-control protocol. "
+                    "Repair the plan only; do not add product facts."),
+                HumanMessage(content=json.dumps(repair_payload, ensure_ascii=False)),
+            ]),
+            state,
+            scope,
         )
-        return _normalize_plan(plan, state, scope)
+        second_problem = _plan_problem(repaired, state, backlog)
+        if second_problem is not None:
+            raise ValueError(second_problem)
+        return repaired
     except Exception as exc:
         raise_if_llm_failure(exc)
         raise ExtractionFailed("Discovery-thread planning failed") from exc
