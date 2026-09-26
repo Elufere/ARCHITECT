@@ -357,6 +357,9 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
 
 
 def discovery_thread_node(state: AgentState) -> dict:
+    if not state.get("thread_planning_enabled", False):
+        return {}
+
     # Contradictions and explicit pending followups must be resolved before
     # ordinary conversational trajectory is reconsidered.
     if state.get("validation_candidate_blocking") or state.get("answer_followup"):
