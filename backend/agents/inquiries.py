@@ -378,6 +378,14 @@ def _requirement_inquiries(state: AgentState) -> list[ProductInquiry]:
             architecture_impact=requirement.priority_hints.architecture_impact,
             business_risk=requirement.priority_hints.business_risk,
             question_cost=min(0.15, max(0, len(target_facets) - 1) * 0.05),
+            thread_id=state.get("active_discovery_thread"),
+            decision_key=(
+                f"requirement.{requirement.id}."
+                + (".".join(target_facets) if target_facets else "decision")
+            ),
+            information_gain=0.7,
+            causal_relevance=0.8 if state.get("active_discovery_thread") else 0.5,
+            conversation_continuity=0.8 if state.get("active_discovery_thread") else 0.5,
         ))
 
     return result
