@@ -566,7 +566,10 @@ def _model_plan(state: AgentState, candidate: QuestionCandidate) -> dict:
         "inferred_gap_evidence": [],
         "known_gap_evidence": [],
         "relevant_context": _candidate_context(state, candidate),
-        "next_discovery_move": "resolve_model_uncertainty",
+        "next_discovery_move": (
+            "advance_discovery_thread" if candidate.thread_id
+            else "resolve_model_uncertainty"
+        ),
         "awaiting_confirmation": False,
     }
 
@@ -735,6 +738,9 @@ def interview_planner_node(state: AgentState) -> dict:
         selected = ranked[0]
         print("Selected inquiry:", selected.inquiry_id or selected.id)
         print("Source:", getattr(selected.source, "value", selected.source))
+        if selected.thread_id:
+            print("Thread:", selected.thread_id)
+            print("Decision:", selected.decision_key)
         if selected.requirement_id:
             print("Requirement:", selected.requirement_id)
             print("Target facets:", selected.target_facets)
