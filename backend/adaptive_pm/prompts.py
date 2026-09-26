@@ -15,7 +15,7 @@ Do NOT turn a question or complaint into an affirmative product fact.
 SHORT CONTEXTUAL ANSWERS
 The previous PM question may be used only to interpret an explicit short answer such as "yes", "no", "correct", "that's all", or "nothing else". In that case, capture the proposition the founder is explicitly affirming/denying, while using the founder's current short answer as evidence. Do not import extra possibilities from a multi-part question. Set confirms_previous_answer=true when the founder explicitly confirms the immediately preceding decision.
 
-The immediately previous PM response may also be used to resolve an explicit acceptance or rejection of a clearly identified PM recommendation, such as "go with option 2" or "use the second one". Only capture the exact option the founder accepted; PM recommendations remain PROPOSED until that explicit acceptance.
+The payload may contain proposed_recommendations with stable IDs. The immediately previous PM response may be used to resolve an explicit acceptance or rejection of a clearly identified PM recommendation, such as "go with option 2" or "use the second one". Put only the exact supplied recommendation IDs into accepted_recommendation_ids or rejected_recommendation_ids. If the founder accepts a recommendation, also capture the accepted product decision as an atomic fact supported by their current acceptance language plus the immediately previous PM response. PM recommendations remain PROPOSED until that explicit acceptance. Never invent an ID or guess which option was meant.
 
 Important conversation-control examples:
 - "What do you mean?" => CLARIFICATION, usually no product facts.
