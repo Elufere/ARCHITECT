@@ -23,6 +23,9 @@ class CandidatePriorityComponents(BaseModel):
     repetition_penalty: float = Field(default=0, ge=0, le=1)
     fatigue_penalty: float = Field(default=0, ge=0, le=1)
     premature_depth_penalty: float = Field(default=0, ge=0, le=1)
+    information_gain: float = Field(default=0.5, ge=0, le=1)
+    causal_relevance: float = Field(default=0.5, ge=0, le=1)
+    conversation_continuity: float = Field(default=0.5, ge=0, le=1)
 
 
 class CandidatePriorityScore(BaseModel):
@@ -33,13 +36,16 @@ class CandidatePriorityScore(BaseModel):
 
 
 POSITIVE_WEIGHTS = {
-    "contradiction_pressure": 0.20,
-    "decision_impact": 0.20,
-    "dependency_unlock_value": 0.15,
-    "uncertainty": 0.20,
-    "architecture_impact": 0.10,
-    "business_risk": 0.10,
+    "contradiction_pressure": 0.18,
+    "decision_impact": 0.14,
+    "dependency_unlock_value": 0.10,
+    "uncertainty": 0.12,
+    "architecture_impact": 0.08,
+    "business_risk": 0.07,
     "context_relevance": 0.05,
+    "information_gain": 0.09,
+    "causal_relevance": 0.10,
+    "conversation_continuity": 0.07,
 }
 
 
@@ -142,6 +148,9 @@ def _business_risk(
 
 
 def _context_relevance(state: AgentState, candidate: QuestionCandidate) -> float:
+    active_thread = state.get("active_discovery_thread")
+    if candidate.thread_id and active_thread:
+        return 1.0 if candidate.thread_id == active_thread else 0.25
     current_topic = state.get("current_topic")
     if current_topic is None:
         return 0.6
@@ -212,6 +221,9 @@ def score_question_candidate(
         repetition_penalty=_repetition_penalty(state, candidate),
         fatigue_penalty=_fatigue_penalty(state, candidate),
         premature_depth_penalty=_premature_depth_penalty(state, candidate),
+        information_gain=candidate.information_gain,
+        causal_relevance=candidate.causal_relevance,
+        conversation_continuity=candidate.conversation_continuity,
     )
 
     positive = sum(
@@ -233,6 +245,9 @@ def score_question_candidate(
         f"dependency_unlock_value={components.dependency_unlock_value:.2f}",
         f"architecture_impact={components.architecture_impact:.2f}",
         f"business_risk={components.business_risk:.2f}",
+        f"information_gain={components.information_gain:.2f}",
+        f"causal_relevance={components.causal_relevance:.2f}",
+        f"conversation_continuity={components.conversation_continuity:.2f}",
     ]
     if components.contradiction_pressure:
         rationale.append("contradiction_pressure=1.00")
