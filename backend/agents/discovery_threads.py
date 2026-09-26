@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -74,6 +74,17 @@ class ThreadFrontierInquiry(BaseModel):
         return self
 
 
+class ThreadFeedbackKind(str, Enum):
+    QUESTION_TOO_BROAD = "QUESTION_TOO_BROAD"
+    IMPLEMENTATION_DEFERRED = "IMPLEMENTATION_DEFERRED"
+
+
+class ThreadFeedback(BaseModel):
+    kind: ThreadFeedbackKind
+    evidence: str
+    instruction: str
+
+
 class DiscoveryThreadPlan(BaseModel):
     thread_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_.-]{1,79}$")
     thread_label: str
@@ -81,6 +92,7 @@ class DiscoveryThreadPlan(BaseModel):
     parent_thread_id: Optional[str] = None
     frontier: Optional[ThreadFrontierInquiry] = None
     relevant_requirement_ids: List[str] = Field(default_factory=list)
+    feedback: Optional[ThreadFeedback] = None
     rationale: str = ""
 
     @field_validator("thread_id", "parent_thread_id", mode="before")
@@ -104,18 +116,45 @@ class InquiryAssessment(BaseModel):
     "the requested information is already known".
     """
 
-    supporting_observation_ids: List[str] = Field(default_factory=list)
+    supporting_observation_ids: List[str] = Field(default_factory=list, max_length=12)
     recent_answer_supports: bool = False
-    missing_information: List[str] = Field(default_factory=list)
+    information_need_resolved: bool
+    missing_information: List[str] = Field(default_factory=list, max_length=8)
     too_broad: bool
     recap_of_known_information: bool = False
     should_move_on: bool = False
+    repeats_rejected_frontier: bool = False
     current_frontier_value: float = Field(default=0.5, ge=0, le=1)
     best_alternative_value: float = Field(default=0.0, ge=0, le=1)
     higher_value_elsewhere: bool = False
     best_alternative_focus: str = ""
     depth_reason: str = ""
     reason: str
+
+    @field_validator("supporting_observation_ids", "missing_information")
+    @classmethod
+    def unique_list_values(cls, values):
+        return list(dict.fromkeys(values))
+
+    @model_validator(mode="after")
+    def coherent_coverage_verdict(self):
+        if self.information_need_resolved and self.missing_information:
+            raise ValueError(
+                "A resolved information need cannot also contain missing_information"
+            )
+        if not self.information_need_resolved and not self.missing_information:
+            raise ValueError(
+                "An unresolved information need must name the material missing information"
+            )
+        if self.recap_of_known_information and not self.information_need_resolved:
+            raise ValueError(
+                "A recap of known information must have information_need_resolved=true"
+            )
+        if self.higher_value_elsewhere and not self.best_alternative_focus.strip():
+            raise ValueError(
+                "higher_value_elsewhere requires a specific grounded alternative"
+            )
+        return self
 
 
 def inquiry_assessment_model():
@@ -225,7 +264,19 @@ The interview should feel like an excellent human PM conversation:
     Preserve the underlying product thread and replace the oversized inquiry with
     one smaller independently answerable decision. Do not store that feedback as
     product knowledge.
-14. Before choosing the next frontier, perform BREADTH ARBITRATION:
+14. Detect interview-control feedback semantically from the latest founder answer.
+    This must not depend on a fixed phrase.
+    - If the founder says the previous question asks for too much at once, set
+      feedback.kind=QUESTION_TOO_BROAD, preserve the same underlying product
+      thread, and choose one smaller independently answerable decision.
+    - If the founder delegates a technical/implementation/design mechanism to the
+      implementation team or another specialist instead of specifying product
+      behavior, set feedback.kind=IMPLEMENTATION_DEFERRED and move away from that
+      implementation detail. A specialist mentioned only as the person who will
+      decide/implement a technical detail is not thereby a user of the product.
+    feedback.evidence must quote the latest founder answer and feedback.instruction
+    must describe the conversational boundary without inventing a product fact.
+15. Before choosing the next frontier, perform BREADTH ARBITRATION:
     - identify the best next uncertainty inside the active thread;
     - identify the best materially unresolved decision outside that thread using
       confirmed product structure, paused threads, and eligible requirements;
@@ -453,8 +504,13 @@ Return:
 - recent_answer_supports=true when the immediately preceding founder answer
   directly resolves the proposed information need through conversational context,
   even if that short answer is not a stored observation.
-- missing_information: each material part of the proposed information need that
-  is NOT directly answered by existing founder evidence.
+- information_need_resolved=true ONLY when the ENTIRE proposed information need
+  is directly answered by founder evidence. If any material part remains unknown,
+  it MUST be false.
+- missing_information: every material part of the proposed information need that
+  is NOT directly answered by existing founder evidence. If your reason says
+  something is unknown, unspecified, not explained, or still needed, that item
+  MUST appear here. Never return an empty list while describing missing detail.
 - recap_of_known_information=true ONLY when the proposed frontier asks the
   founder to restate/summarize information that is already directly present and
   there is no material new information to obtain.
@@ -481,6 +537,10 @@ Return:
   discovery stage and another question here has low marginal value, OR when a
   clearly higher-value grounded decision exists elsewhere. The current thread
   does not need to be fully specified. Set depth_reason to explain the tradeoff.
+- repeats_rejected_frontier=true when the proposed frontier is semantically the
+  same underlying decision as any item in rejected_frontiers, even if its
+  decision_key or wording changed. A rejected/covered frontier is closed for this
+  repair attempt and must not be selected again.
 
 CRITICAL COVERAGE RULE:
 Related context is NOT an answer. Knowing WHO the actors are does not answer WHAT
@@ -559,6 +619,7 @@ def _semantic_frontier_problem(
     plan: DiscoveryThreadPlan,
     state: AgentState,
     scope: DiscoveryScope,
+    rejected_frontiers: list[dict] | None = None,
 ) -> str | None:
     frontier = plan.frontier
     if frontier is None:
@@ -585,6 +646,7 @@ def _semantic_frontier_problem(
         "thread_activity": _thread_activity_payload(state),
         "eligible_requirement_backlog": _requirement_payload(state, scope),
         "current_threads": state.get("discovery_threads", {}),
+        "rejected_frontiers": rejected_frontiers or [],
     }
     try:
         result = inquiry_assessment_model().invoke([
@@ -601,13 +663,24 @@ def _semantic_frontier_problem(
         print(f"INQUIRY ASSESSMENT SKIPPED: {exc}")
         return None
 
+    valid_observation_ids = {
+        item.get("id")
+        for item in payload["captured_founder_observations"]
+        if item.get("id")
+    }
+    assessment.supporting_observation_ids = [
+        identity
+        for identity in dict.fromkeys(assessment.supporting_observation_ids)
+        if identity in valid_observation_ids
+    ][:12]
     has_missing_information = bool(assessment.missing_information)
     has_direct_support = bool(assessment.supporting_observation_ids) or assessment.recent_answer_supports
-    covered = has_direct_support and not has_missing_information
-    recap = (
-        assessment.recap_of_known_information
-        and covered
+    covered = (
+        assessment.information_need_resolved
+        and has_direct_support
+        and not has_missing_information
     )
+    recap = assessment.recap_of_known_information and covered
 
     print(
         f"INQUIRY ASSESSMENT: {plan.thread_id}/{frontier.decision_key} | "
@@ -616,9 +689,16 @@ def _semantic_frontier_problem(
         f"current_value={assessment.current_frontier_value:.2f} | "
         f"alternative_value={assessment.best_alternative_value:.2f} | "
         f"higher_elsewhere={assessment.higher_value_elsewhere} | "
+        f"repeats_rejected={assessment.repeats_rejected_frontier} | "
         f"missing={assessment.missing_information} | {assessment.reason}"
     )
 
+    if assessment.repeats_rejected_frontier:
+        return (
+            "The proposed frontier repeats an underlying decision that was already "
+            "rejected during this planning cycle. Choose a materially different "
+            "decision or thread."
+        )
     if covered or recap:
         support = (
             ", ".join(assessment.supporting_observation_ids)
@@ -655,9 +735,19 @@ def _plan_problem(
     plan: DiscoveryThreadPlan,
     state: AgentState,
     backlog: list[dict],
+    rejected_frontiers: list[dict] | None = None,
 ) -> str | None:
     frontier = plan.frontier
     if frontier is not None:
+        for rejected in rejected_frontiers or []:
+            if (
+                rejected.get("thread_id") == plan.thread_id
+                and rejected.get("decision_key") == frontier.decision_key
+            ):
+                return (
+                    "The proposed frontier exactly repeats a decision already rejected "
+                    "during this planning cycle."
+                )
         deliveries = sum(
             1
             for entry in state.get("requirement_question_history", [])[-12:]
@@ -678,6 +768,7 @@ def _plan_problem(
             plan,
             state,
             state.get("discovery_scope", DiscoveryScope.USER_APP),
+            rejected_frontiers=rejected_frontiers,
         )
         if semantic_problem is not None:
             return semantic_problem
