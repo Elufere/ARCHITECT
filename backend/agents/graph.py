@@ -44,9 +44,13 @@ def route_after_plan(state: AgentState) -> str:
 def route_after_conversation_manager(state: AgentState) -> str:
     """Only knowledge and corrections should flow into the extraction pipeline."""
     if state.get("conversation_intent") in {
-        "product_information", "correction", "objection", "advice_request"
+        "product_information", "correction", "advice_request"
     }:
         return "extract"
+    if state.get("conversation_intent") in {"objection", "design_deferral"}:
+        # Interview feedback is control state, not product knowledge. Re-plan
+        # from the persistent discovery boundary without extracting a fake fact.
+        return "plan_threads"
     # A short confirmation can itself answer a discovery question. Never drop
     # it just because the intent classifier recognized the word "yes".
     if (
@@ -116,7 +120,7 @@ def build_graph() -> StateGraph:
     workflow.add_conditional_edges(
         "conversation_manager",
         route_after_conversation_manager,
-        {"extract": "extract", "plan": "plan", END: END},
+        {"extract": "extract", "plan_threads": "plan_threads", "plan": "plan", END: END},
     )
 
     # 3. Evidence -> model implications -> requirements -> inquiries -> candidate ranking -> plan
