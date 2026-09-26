@@ -409,52 +409,76 @@ def actor_identity_candidate_allowed(fact: ActorFact, state: AgentState, scope: 
 
 
 def ground_items(items, user_response, state, active_gap_review=None):
-    """Audit the asked-for answer independently of incidental extracted claims.
+    """Semantically ground structurally valid candidates with the LLM.
 
-    A malformed/omitted verdict in a large cross-topic batch must not erase a
-    valid answer to the current question. Both batches still need grounding.
+    Python owns provenance/schema. The model owns whether the quoted founder
+    evidence actually supports the candidate's meaning, category, polarity,
+    scope and actor.
+
+    Actor declarations are grounded first so same-turn owned facts can use only
+    actor identities that survived semantic grounding.
     """
-    focused = [item for item in items if item.topic == state.get("current_topic")
-               and item_directly_answers_gap(item, state.get("current_gap"))]
-    remaining = [item for item in items if item not in focused]
+    actor_items = [
+        item for item in items
+        if item.topic == DiscoveryTopic.USER_ROLES
+        and item.key in ("primary_users", "secondary_users")
+    ]
+    other_items = [item for item in items if item not in actor_items]
+
+    accepted_actors = []
+    context_state = state
+    if actor_items:
+        accepted_actors = ground_batch(
+            actor_items, user_response, state, active_gap_review
+        )
+        context_state = {
+            **state,
+            "discovered_knowledge": [
+                *state.get("discovered_knowledge", []),
+                *accepted_actors,
+            ],
+        }
+
+    if not other_items:
+        return accepted_actors
+
+    focused = [
+        item for item in other_items
+        if item.topic == context_state.get("current_topic")
+        and item_directly_answers_gap(item, context_state.get("current_gap"))
+    ]
+    remaining = [item for item in other_items if item not in focused]
+
     if not focused or not remaining:
-        return ground_batch(items, user_response, state, active_gap_review)
-    print(f"GROUNDING BATCHES: active_gap={state.get('current_gap')} "
-          f"direct_candidates={len(focused)} incidental_candidates={len(remaining)}")
-    accepted = ground_batch(focused, user_response, state, active_gap_review)
-    # Only grounded actor declarations may provide new identity context to the
-    # remaining batch. A rejected actor proposal is not an established owner.
-    context_state = {**state, "discovered_knowledge": [
-        *state.get("discovered_knowledge", []),
-        *(item for item in accepted if item.topic == DiscoveryTopic.USER_ROLES
-          and item.key in ("primary_users", "secondary_users"))]}
+        accepted_other = ground_batch(
+            other_items, user_response, context_state, active_gap_review
+        )
+        return accepted_actors + accepted_other
+
+    print(
+        f"GROUNDING BATCHES: active_gap={context_state.get('current_gap')} "
+        f"direct_candidates={len(focused)} incidental_candidates={len(remaining)}"
+    )
+    accepted_other = ground_batch(
+        focused, user_response, context_state, active_gap_review
+    )
     try:
-        accepted += ground_batch(remaining, user_response, context_state)
+        accepted_other += ground_batch(
+            remaining, user_response, context_state
+        )
     except ExtractionFailed as exc:
         # The active answer was already grounded independently. Fail closed on
         # unrelated incidental candidates without discarding the valid answer.
         print(f"INCIDENTAL GROUNDING FAILED: {exc}")
-    return [item for item in items if item in accepted]
+
+    return accepted_actors + [
+        item for item in other_items if item in accepted_other
+    ]
 
 
 def ground_batch(items, user_response, state, active_gap_review=None):
-    eligible = []
-    for item in items:
-        reason = None if (item.absence or absence_label(item.value)) else category_contradiction(
-            item.key,
-            item.evidence,
-            item.value,
-            direct_answer=(
-                state.get("planner_source") != "requirement"
-                and item.topic == state.get("current_topic")
-                and item_directly_answers_gap(item, state.get("current_gap"))
-            ),
-        )
-        if reason:
-            print(f"CATEGORY REJECTED: {item.topic.value}.{item.key} owner={item.role} | {reason}")
-        else:
-            eligible.append(item)
-    items = eligible
+    # Semantic support belongs to the grounding model. Python has already
+    # verified source provenance/schema; do not pre-judge meaning with regexes.
     if not items:
         return []
     # Intern repeated quotes instead of serializing the entire source sentence
@@ -525,11 +549,20 @@ def ground_batch(items, user_response, state, active_gap_review=None):
 class ExtractedBatch(list):
     """Extracted schema facts plus parallel concepts and durable observations."""
 
-    def __init__(self, items=(), *, grounding_required=True, concepts=None, observations=None):
+    def __init__(
+        self,
+        items=(),
+        *,
+        grounding_required=True,
+        concepts=None,
+        observations=None,
+        observation_candidates=None,
+    ):
         super().__init__(items)
         self.grounding_required = grounding_required
         self.concepts = list(concepts or [])
         self.observations = list(observations or [])
+        self.observation_candidates = dict(observation_candidates or {})
 
 
 def _captured_observation(
@@ -801,23 +834,6 @@ def _admit_claim_item(
         resolved_role = _role_from_actor_evidence(state, scope, claim.evidence)
     claim = claim.model_copy(update={"role": resolved_role, "aliases": aliases})
 
-    if claim.absence and not _explicit_whole_field_absence(claim.evidence):
-        raise ValueError("Whole-field absence requires explicit negative evidence")
-
-    if (
-        claim.kind in ("primary_actor", "secondary_actor")
-        and claim.knowledge_state == KnowledgeState.CONFIRMED
-        and not claim.absence
-    ):
-        if _explicit_other_surface(claim.evidence, scope):
-            raise ValueError("Explicit other-surface participant cannot become a current-scope actor")
-
-        # Current-scope actor membership is a semantic decision made by the
-        # neutral claim extractor. Do not require brittle lexical phrases such
-        # as "uses the app" after the model has already classified an explicit
-        # participant as a current-scope actor. The hard invariant remains that
-        # explicitly external/other-surface participants cannot be admitted.
-
     converted = claim_to_fact(
         claim,
         primary_roles=primary_roles,
@@ -840,22 +856,6 @@ def _admit_claim_item(
         # Dedicated GAP_ANSWER semantics own active negative answers so a single
         # capture classification cannot silently close the current inquiry.
         raise ValueError("Active-gap absence must be resolved by the dedicated absence interpreter")
-
-    semantic_reason = category_contradiction(
-        item.key,
-        item.evidence,
-        item.value,
-        direct_answer=(
-            state.get("planner_source") != "requirement"
-            and item.topic == state.get("current_topic")
-            and item_directly_answers_gap(item, state.get("current_gap"))
-        ),
-    )
-    if semantic_reason:
-        raise ValueError(semantic_reason)
-
-    if isinstance(fact, ActorFact) and not actor_identity_candidate_allowed(fact, state, scope):
-        raise ValueError("Existing actor cannot be redeclared from non-identity evidence")
 
     if isinstance(fact, (OwnedFact, GoalFact)) and item.role:
         allowed = primary_roles | secondary_roles
@@ -896,6 +896,7 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
     accepted: list[KnowledgeItem] = []
     concepts: list[ProductConcept] = []
     observations: list[dict] = []
+    observation_candidates: dict[str, KnowledgeItem] = {}
 
     # Identity claims establish same-turn owners before owned propositions are admitted.
     ordered = sorted(
@@ -905,6 +906,7 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
     for _, claim in ordered:
         admission_status = "REJECTED"
         rejection_reason = None
+        item = None
         try:
             if claim.kind in ("product_entity", "entity_relationship", "entity_attribute"):
                 concept = _concept_from_claim(
@@ -969,19 +971,21 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
                     rejection_reason,
                 )
                 observations.append(observation)
+                if admission_status == "ADMITTED" and 'item' in locals() and item is not None:
+                    observation_candidates[observation["id"]] = item
                 print(
                     f"OBSERVATION STORED: {observation['id']} | "
                     f"{claim.kind} | {admission_status}"
                 )
 
-    # Claim semantics have already been classified once and admitted through the
-    # deterministic field gates above. Do not send the same propositions through
-    # a second cross-category LLM audit; ambiguity was required to stay unclassified.
+    # Python has validated provenance/schema only. Semantic support is still
+    # untrusted until the grounding model audits each canonical candidate.
     return ExtractedBatch(
         accepted,
-        grounding_required=False,
+        grounding_required=True,
         concepts=concepts,
         observations=observations,
+        observation_candidates=observation_candidates,
     )
 
 
