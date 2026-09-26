@@ -1317,36 +1317,21 @@ def knowledge_tracker_node(state: AgentState) -> dict:
             captured_observations,
             list(getattr(extracted_items, "observations", [])),
         )
-        # Never reinterpret historical denials as this turn's answer. A directly
-        # admitted positive claim already resolves the active inquiry, so do not
-        # spend another model call asking whether the same answer means absence.
-        absence = None
-        policy_gap = (
-            current_topic == DiscoveryTopic.USER_ROLES
-            and (current_gap or "").split("::", 1)[0]
-            in ("multiple_roles", "role_transitions")
-        )
-        direct_claim_answer = bool(
-            current_topic
-            and current_gap
-            and not policy_gap
-            and any(
-                item.topic == current_topic and item_directly_answers_gap(item, current_gap)
-                for item in extracted_items
-            )
-        )
-        if not recovering_prior_answer and not confirmed_prior_answer and not direct_claim_answer:
-            absence = extract_gap_absence(user_response, state, current_scope)
-            if absence:
-                extracted_items.append(absence)
-        if getattr(extracted_items, "grounding_required", True):
+        # Semantic grounding happens BEFORE deciding whether the active inquiry
+        # has been answered. A structurally valid but semantically unsupported
+        # candidate must not suppress the short-answer/absence interpreter.
+        grounding_required = getattr(extracted_items, "grounding_required", True)
+        if grounding_required:
             before_grounding = list(extracted_items)
-            extracted_items = ground_items(extracted_items, user_response, state, absence)
+            extracted_items = ground_items(
+                extracted_items, user_response, state, None
+            )
 
-            grounded_candidates = set()
-            for observation_id, candidate in observation_candidates.items():
-                if candidate in extracted_items:
-                    grounded_candidates.add(observation_id)
+            grounded_candidates = {
+                observation_id
+                for observation_id, candidate in observation_candidates.items()
+                if candidate in extracted_items
+            }
 
             if observation_candidates:
                 updated_observations = []
@@ -1371,10 +1356,54 @@ def knowledge_tracker_node(state: AgentState) -> dict:
 
             for rejected in before_grounding:
                 if rejected not in extracted_items:
-                    print("CANDIDATE FINAL REJECT (grounding):", rejected.model_dump(mode="json"))
+                    print(
+                        "CANDIDATE FINAL REJECT (grounding):",
+                        rejected.model_dump(mode="json"),
+                    )
         else:
             extracted_items = list(extracted_items)
-            print(f"CLAIM ADMISSION: {len(extracted_items)} fact(s) accepted without semantic grounding")
+            print(
+                f"CLAIM ADMISSION: {len(extracted_items)} fact(s) accepted "
+                "without semantic grounding"
+            )
+
+        # Never reinterpret historical denials as this turn's answer. Only a
+        # SEMANTICALLY GROUNDED direct claim can make the dedicated gap-answer
+        # interpreter unnecessary.
+        policy_gap = (
+            current_topic == DiscoveryTopic.USER_ROLES
+            and (current_gap or "").split("::", 1)[0]
+            in ("multiple_roles", "role_transitions")
+        )
+        direct_claim_answer = bool(
+            current_topic
+            and current_gap
+            and not policy_gap
+            and any(
+                item.topic == current_topic
+                and item_directly_answers_gap(item, current_gap)
+                for item in extracted_items
+            )
+        )
+        if (
+            not recovering_prior_answer
+            and not confirmed_prior_answer
+            and not direct_claim_answer
+        ):
+            absence = extract_gap_absence(user_response, state, current_scope)
+            if absence:
+                if grounding_required:
+                    grounded_absence = ground_items(
+                        [absence], user_response, state, absence
+                    )
+                    extracted_items.extend(grounded_absence)
+                    if not grounded_absence:
+                        print(
+                            "CANDIDATE FINAL REJECT (grounding):",
+                            absence.model_dump(mode="json"),
+                        )
+                else:
+                    extracted_items.append(absence)
     product_concepts = merge_product_concepts(
         state.get("product_concepts", []),
         captured_concepts,
