@@ -15,4 +15,4 @@ frontend/.next/
 
 # OS
 .DS_Store
-Thumbs.db
+Thumbs.db\n# Adaptive PM v2 durable sessions\nbackend/adaptive_pm_sessions/\n
