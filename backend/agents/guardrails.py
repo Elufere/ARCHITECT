@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from agents.state import DiscoveryScope
 from agents.role_utils import role_identity, split_role_labels
-from agents.conversation_language import clarification_question
+from agents.conversation_language import clarification_question, final_question_text
 
 logger = logging.getLogger(__name__)
 
@@ -104,15 +104,15 @@ def questions_are_semantic_duplicates(first: str, second: str) -> bool:
 
 
 def delivered_prior_questions(messages: list) -> list[str]:
-    """Return only questions that reached the user, excluding rejected drafts."""
+    """Return only delivered interview questions, excluding advisory prose/drafts."""
     questions = []
     for index, message in enumerate(messages[:-1]):
         if not isinstance(message, AIMessage):
             continue
         # A guardrail rejection follows a draft with a SystemMessage. A human
-        # answer means the question was actually presented to the user.
+        # answer means the turn was actually presented to the user.
         if isinstance(messages[index + 1], HumanMessage):
-            questions.append(message.content.strip())
+            questions.append(final_question_text(message.content))
     return questions
 
 
@@ -137,7 +137,10 @@ Selected requirement context:
 Validation context:
 {validation_context}
 
-Question:
+Conversation intent:
+{conversation_intent}
+
+Question/response:
 {agent_output}
 
 The planner has already determined that this is the next missing piece of
@@ -170,6 +173,13 @@ When Planner source is "validation", the question must neutrally resolve the
 supplied contradiction. It may quote or summarize the two incompatible confirmed
 statements and ask which CURRENT rule/decision applies. It must not choose a side,
 silently merge them, or drift into unrelated discovery.
+
+When Conversation intent is "advice_request", the PM may give a brief set of
+non-authoritative suggestions before the final interview question. Those suggestions
+must be clearly framed as options, must stay within the active product decision,
+and must not be treated as confirmed founder choices. Evaluate the FINAL question
+against the Current objective. Reject advice that drifts into implementation,
+architecture, or a generic feature wishlist.
 
 Reject if the question:
 - changes to another topic
@@ -380,6 +390,7 @@ def evaluate_question(state: dict) -> dict:
         result = evaluator_llm.invoke(
             EVALUATOR_PROMPT.format(
                 current_topic=state["current_topic"].value,
+                conversation_intent=state.get("conversation_intent") or "product_information",
                 planner_source=planner_source,
                 current_gap=current_gap,
                 current_objective=current_objective,
@@ -444,7 +455,7 @@ def _record_requirement_question(state: dict, question: str) -> list[dict]:
             if getattr(state.get("current_topic"), "value", None)
             else state.get("current_topic")
         ),
-        "question": question,
+        "question": final_question_text(question),
         "turn": state.get("turn_count", 0),
     }
     signature = (
