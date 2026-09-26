@@ -39,6 +39,11 @@ class KnowledgeStage:
                 item.model_dump(mode="json")
                 for item in observations
             ],
+            "previously_unmapped_grounded_observations": [
+                item.model_dump(mode="json")
+                for item in state.unmapped_observations()[-50:]
+                if item.id not in {current.id for current in observations}
+            ],
             "existing_knowledge": [
                 item.model_dump(mode="json")
                 for item in state.knowledge.values()
