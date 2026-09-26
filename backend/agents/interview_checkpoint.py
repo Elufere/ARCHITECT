@@ -79,6 +79,7 @@ def load_checkpoint(session_id):
     if document.get("version") != 1 or document.get("session_id") != str(UUID(session_id)):
         raise ValueError("Unsupported or mismatched interview checkpoint")
     state = document["state"]
+    had_thread_state = "discovery_threads" in state
     if state.get("checkpoint_cursor") not in CURSORS:
         raise ValueError("Invalid checkpoint processing cursor")
     state["messages"] = messages_from_dict(state.get("messages", []))
@@ -99,6 +100,13 @@ def load_checkpoint(session_id):
     state.setdefault("active_discovery_thread", None)
     state.setdefault("thread_frontier", None)
     state.setdefault("thread_relevant_requirement_ids", [])
+    if not had_thread_state and state.get("checkpoint_cursor") in {
+        "identify_inquiries", "build_candidates", "filter_candidates",
+        "prioritize_candidates", "plan", "generate", "guardrail",
+    }:
+        # Resume pre-thread checkpoints through the new conversation planner
+        # instead of silently restoring the legacy model frontier.
+        state["checkpoint_cursor"] = "plan_threads"
     state.setdefault("requirement_coverage", {})
     state.setdefault("requirement_dependency_state", {})
     state.setdefault("eligible_requirement_keys", [])
