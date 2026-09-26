@@ -19,6 +19,7 @@ from agents.discovery_coverage import fact_id
 from agents.llm import get_structured_model
 from agents.llm_errors import ExtractionFailed, raise_if_llm_failure
 from agents.state import AgentState, DiscoveryScope, DiscoveryTopic, KnowledgeState, TOPIC_KEY_MAP
+from agents.product_concepts import ProductConcept
 
 
 class ThreadStatus(str, Enum):
@@ -169,6 +170,16 @@ def _fact_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]:
     return result[-40:]
 
 
+def _concept_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]:
+    result = []
+    for raw in state.get("product_concepts", []):
+        concept = raw if isinstance(raw, ProductConcept) else ProductConcept.model_validate(raw)
+        if concept.scope != scope:
+            continue
+        result.append(concept.model_dump(mode="json"))
+    return result[-40:]
+
+
 def _requirement_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]:
     eligible = set(state.get("eligible_requirement_keys", []))
     result = []
@@ -258,6 +269,7 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "latest_user_answer": _latest_human(state),
         "recent_conversation": _recent_conversation(state),
         "confirmed_product_facts": _fact_payload(state, scope),
+        "confirmed_product_concepts": _concept_payload(state, scope),
         "current_threads": state.get("discovery_threads", {}),
         "active_thread_id": state.get("active_discovery_thread"),
         "delivered_question_history": _history_payload(state),
