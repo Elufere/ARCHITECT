@@ -93,6 +93,7 @@ def conversation_manager_node(state: AgentState) -> dict:
         )
         boundary = {
             "type": "design_deferral" if intent == "design_deferral" else "rejected_inquiry",
+            "scope": getattr(state.get("discovery_scope"), "value", state.get("discovery_scope")),
             "source_turn": state.get("turn_count", 0),
             "evidence": messages[-1].content,
             "question": previous_question,
