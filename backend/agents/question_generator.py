@@ -189,7 +189,10 @@ def question_generator_node(state: AgentState) -> dict:
     model_guidance = ""
     validation_guidance = ""
     advice_requested = state.get("conversation_intent") == "advice_request"
-    discovery_boundaries = state.get("discovery_boundaries", [])[-50:]
+    discovery_boundaries = [
+        item for item in state.get("discovery_boundaries", [])[-50:]
+        if not item.get("scope") or item.get("scope") == discovery_scope.value
+    ]
     boundary_guidance = ""
     if discovery_boundaries:
         boundary_guidance = """
