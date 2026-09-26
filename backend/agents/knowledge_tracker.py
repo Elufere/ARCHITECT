@@ -489,9 +489,18 @@ def ground_batch(items, user_response, state, active_gap_review=None):
     quotes = sorted({item.evidence for item in items}, key=lambda quote: (user_response.find(quote), len(quote), quote))
     candidates = []
     for index, item in enumerate(items):
-        candidate = dict(id=index, topic=item.topic.value, key=item.key,
-                         value=item.value, scope=item.scope.value,
-                         evidence_id=quotes.index(item.evidence))
+        candidate = dict(
+            id=index,
+            topic=item.topic.value,
+            key=item.key,
+            value=item.value,
+            scope=item.scope.value,
+            evidence_id=quotes.index(item.evidence),
+            directly_answers_active_gap=(
+                item.topic == state.get("current_topic")
+                and item_directly_answers_gap(item, state.get("current_gap"))
+            ),
+        )
         if item.key in ("primary_users", "secondary_users"):
             candidate.update(kind="actor_declaration", roles=item.roles or [])
             if item.aliases:
@@ -518,6 +527,11 @@ def ground_batch(items, user_response, state, active_gap_review=None):
                    **({"active_gap_review": active_gap_review.model_dump(mode="json")} if active_gap_review else {}),
                    actor_classification=actor_context,
                    confirmed_actor_context=confirmed_actor_context(state, scope),
+                   grounding_policy={
+                       "active_question_is_reference_context_only": True,
+                       "incidental_supported_facts_must_be_preserved": True,
+                       "candidate_relevance_to_active_gap_is_not_a_support_requirement": True,
+                   },
                    candidates=candidates, evidence_quotes={str(i): quote for i, quote in enumerate(quotes)}))
         supported = set(decision.supported_ids)
         confirmed_absences = set(decision.confirmed_absence_ids)
