@@ -55,7 +55,8 @@ def category_contradiction(
         explicit_dependency = re.search(
             r"\b(?:requires?|required|depends?\s+on|dependency|prerequisite|"
             r"cannot\s+(?:proceed|continue|complete)\s+(?:until|without)|"
-            r"before\s+.+\s+(?:can|may)\s+(?:proceed|continue|complete)|"
+            r"must\b[^.]{0,120}\bbefore\b|"
+            r"before\b[^.]{0,120}\b(?:can|may|is\s+allowed\s+to|are\s+allowed\s+to)\b|"
             r"waiting\s+for|awaiting|(?:remain|remains|stays?|is)\s+pending\s+until|"
             r"pending\s+until|only\s+after)\b",
             evidence,
