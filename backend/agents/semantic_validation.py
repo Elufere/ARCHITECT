@@ -93,8 +93,9 @@ def category_contradiction(
             r"\b(?:only|cannot|can't|must\s+not|forbidden|restricted|restriction|"
             r"authorized|authorization|exclusive|exclusively|unless|except|"
             r"not\s+allowed|allowed\s+only|allowed\s+to|permitted\s+to|"
-            r"permission|required\s+permission|access\s+(?:only|limited|restricted|to)|"
-            r"may\s+not)\b",
+            r"permissions?|required\s+permissions?|fixed\s+permissions?|immutable|"
+            r"cannot\s+(?:modify|change)|can't\s+(?:modify|change)|"
+            r"access\s+(?:only|limited|restricted|to)|may\s+not)\b",
             evidence,
             re.I,
         )
