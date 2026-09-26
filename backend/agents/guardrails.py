@@ -140,6 +140,9 @@ Validation context:
 Conversation intent:
 {conversation_intent}
 
+Persistent discovery boundaries:
+{discovery_boundaries}
+
 Question/response:
 {agent_output}
 
@@ -182,6 +185,8 @@ against the Current objective. Reject advice that drifts into implementation,
 architecture, or a generic feature wishlist.
 
 Reject if the question:
+- violates a persistent discovery boundary by retrying, paraphrasing, or deepening
+  a line of questioning the founder explicitly delegated or rejected
 - changes to another topic
 - drifts to a different product decision that does not help resolve the Current objective
 - asks more than ONE independently answerable product question when Planner source
@@ -416,6 +421,12 @@ def evaluate_question(state: dict) -> dict:
             EVALUATOR_PROMPT.format(
                 current_topic=state["current_topic"].value,
                 conversation_intent=state.get("conversation_intent") or "product_information",
+                discovery_boundaries="\n".join(
+                    f"- {item.get('instruction')} | source={item.get('evidence')}"
+                    for item in state.get("discovery_boundaries", [])[-50:]
+                    if not item.get("scope")
+                    or item.get("scope") == getattr(state.get("discovery_scope"), "value", state.get("discovery_scope"))
+                ) or "None",
                 planner_source=planner_source,
                 current_gap=current_gap,
                 current_objective=current_objective,
