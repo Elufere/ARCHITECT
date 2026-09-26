@@ -628,10 +628,15 @@ def _semantic_frontier_problem(
             "The proposed information need is already substantially answered or "
             f"is a recap of known information ({support}): {assessment.reason}"
         )
-    if assessment.should_move_on or assessment.higher_value_elsewhere:
+    grounded_alternative = bool(assessment.best_alternative_focus.strip())
+    comparative_move_on = grounded_alternative and (
+        assessment.higher_value_elsewhere
+        or assessment.best_alternative_value > assessment.current_frontier_value
+    )
+    if assessment.should_move_on or comparative_move_on:
         alternative = (
             f" Higher-value alternative: {assessment.best_alternative_focus}."
-            if assessment.best_alternative_focus else ""
+            if grounded_alternative else ""
         )
         return (
             "Do not keep drilling the current thread. Its proposed next question is "
