@@ -95,6 +95,7 @@ def load_checkpoint(session_id):
         key: ActiveRequirement.model_validate(item)
         for key, item in state.get("active_requirements", {}).items()
     }
+    state.setdefault("product_concepts", [])
     state.setdefault("model_implications", [])
     state.setdefault("discovery_threads", {})
     state.setdefault("active_discovery_thread", None)
