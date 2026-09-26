@@ -23,6 +23,22 @@ def active_fact_payload(state: DiscoveryState) -> list[dict]:
     ]
 
 
+def tentative_fact_payload(state: DiscoveryState) -> list[dict]:
+    return [
+        {
+            "id": item.id,
+            "canonical_key": item.canonical_key,
+            "statement": item.statement,
+            "domains": item.domains,
+            "entities": item.entities,
+            "negative": item.negative,
+            "status": item.status.value,
+        }
+        for item in state.facts
+        if item.active and item.status == KnowledgeStatus.PROPOSED
+    ]
+
+
 def requirement_payload(state: DiscoveryState) -> list[dict]:
     return [
         {
@@ -112,6 +128,7 @@ def product_context(state: DiscoveryState) -> dict:
     return {
         "raw_idea": state.raw_idea,
         "confirmed_facts": active_fact_payload(state),
+        "tentative_facts": tentative_fact_payload(state),
         "requirements": requirement_payload(state),
         "proposed_implications": implication_payload(state),
         "open_contradictions": contradiction_payload(state),
