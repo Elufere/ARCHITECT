@@ -142,6 +142,7 @@ class AgentState(TypedDict):
 
     discovered_knowledge: List[KnowledgeItem]
     superseded_knowledge: List[dict]
+    product_concepts: List[dict]
     model_implications: List[dict]
     discovery_threads: Dict[str, dict]
     active_discovery_thread: Optional[str]
