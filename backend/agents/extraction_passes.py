@@ -69,6 +69,9 @@ ClaimKind = Literal[
     "boundary_condition",
     "simultaneous_action",
     "rare_scenario",
+    "product_entity",
+    "entity_relationship",
+    "entity_attribute",
     "unclassified",
 ]
 
@@ -82,6 +85,9 @@ class NeutralClaim(BaseModel):
     evidence: str = Field(min_length=1)
     role: str | None = None
     aliases: list[str] = Field(default_factory=list)
+    subject: str | None = None
+    relation: str | None = None
+    object: str | None = None
     confidence: float = Field(ge=0, le=1)
     knowledge_state: KnowledgeState = KnowledgeState.CONFIRMED
     absence: Literal["none", "not_applicable"] | None = None
@@ -124,6 +130,16 @@ Kinds:
 - user_cancellation / timeout_behavior / invalid_action / recovery: explicit exception handling.
 - duplicate_action / boundary_condition / simultaneous_action / rare_scenario:
   explicit unusual-case handling.
+- product_entity: an explicitly introduced domain object/resource/container that
+  matters to how the product is structured, such as an event, group, package,
+  variant, deal, cart, shipment, pickup location, workspace, project, queue, etc.
+  Do not use this for human actors.
+- entity_relationship: an explicit structural relationship between product
+  entities, such as "packages are inside groups" or "groups belong to an event".
+  Put canonical short labels in subject/relation/object.
+- entity_attribute: an explicit property or dimension of a product entity, such
+  as "a group has a currency" or "a package can have size/colour variants".
+  Put the entity in subject, property in relation, and stated value(s) in object.
 - unclassified: use when the clause is meaningful but none of the supported kinds
   is explicitly established. Unclassified claims are not persisted.
 
@@ -153,6 +169,9 @@ For every claim:
   explicitly says one actor can act as named capacities (for example customer
   acting as buyer or seller), keep the canonical actor in role and put those
   capacity labels in aliases.
+- product_entity/entity_relationship/entity_attribute claims do not use role.
+  They MUST use subject; relationship/attribute claims MUST also use relation
+  and object. Capture only structure explicitly introduced by the founder.
 - when one action/boundary applies to several labels that are aliases of the SAME
   canonical actor, emit one claim owned by that canonical actor. When they are
   genuinely different actors, emit separate owned claims.
@@ -250,6 +269,9 @@ def claim_to_fact(
     if claim.kind in ("success_condition", "motivation"):
         key = "success_criteria" if claim.kind == "success_condition" else "motivations"
         return GoalFact(key=key, role=claim.role, **common), DiscoveryTopic.USER_GOALS
+
+    if claim.kind in ("product_entity", "entity_relationship", "entity_attribute"):
+        return None
 
     if claim.kind == "unclassified":
         return None
