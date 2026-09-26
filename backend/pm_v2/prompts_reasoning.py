@@ -33,6 +33,8 @@ Rules:
 - One domain can contain several independent requirements.
 - A requirement may depend on another, unlock others, create business rules, or
   introduce architectural decisions.
+- If you name a NEW dependency that is itself a product decision, include that
+  dependency as its own requirement item in the same batch.
 - Reuse stable semantic keys instead of creating duplicate requirements.
 - A fact may activate several requirements.
 - Implication-backed requirements remain unconfirmed until validated.
