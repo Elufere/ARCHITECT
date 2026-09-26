@@ -254,6 +254,12 @@ The interview should feel like an excellent human PM conversation:
     - rejected_inquiry means the founder rejected that inquiry as irrelevant or
       repeated. Do not retry, paraphrase, or deepen it. Move to a materially
       different product decision.
+    - implementation_deferred means the founder delegated a technical/design/
+      implementation mechanism rather than choosing product behavior. Do not
+      keep asking for that mechanism or turn the specialist into a product actor.
+    - question_too_broad means the underlying product area may still matter, but
+      the prior question demanded too much at once. Do not repeat the broad form;
+      decompose it into one smaller decision when that thread is still valuable.
     These are NOT product facts and must never be converted into requirements.
 12. If latest_conversation_intent is design_deferral or objection, the NEXT move
     must demonstrate that feedback was respected.
@@ -608,9 +614,11 @@ label as founder-provided facts.
 
 Discovery boundaries are conversation-control constraints, not missing product
 facts. If a proposed frontier asks for detail the founder explicitly delegated
-to a designer, or repeats/deepens an inquiry they rejected as irrelevant, set
-should_move_on=true even if that detail remains unknown. Unknown does not mean
-worth asking.
+to a designer/implementation specialist, or repeats/deepens an inquiry they
+rejected as irrelevant, set should_move_on=true even if that detail remains
+unknown. A question_too_broad boundary does not close the underlying product
+area; it only forbids asking for the same oversized bundle again. Unknown does
+not mean worth asking.
 
 """
 
