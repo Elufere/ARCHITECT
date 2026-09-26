@@ -438,7 +438,8 @@ def ground_batch(items, user_response, state, active_gap_review=None):
             item.evidence,
             item.value,
             direct_answer=(
-                item.topic == state.get("current_topic")
+                state.get("planner_source") != "requirement"
+                and item.topic == state.get("current_topic")
                 and item_directly_answers_gap(item, state.get("current_gap"))
             ),
         )
@@ -787,7 +788,8 @@ def _admit_claim_item(
         item.evidence,
         item.value,
         direct_answer=(
-            item.topic == state.get("current_topic")
+            state.get("planner_source") != "requirement"
+            and item.topic == state.get("current_topic")
             and item_directly_answers_gap(item, state.get("current_gap"))
         ),
     )
