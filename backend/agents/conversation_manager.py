@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from agents.state import AgentState
 from agents.conversation_language import clarification_reply, clarification_question, final_question_text
 from agents.llm import get_chat_model, get_structured_model
+from agents.llm_errors import raise_if_llm_failure
 
 
 class ClarificationIntentReview(BaseModel):
@@ -74,8 +75,10 @@ PATTERNS = {
     ),
     "advice_request": re.compile(
         r"\b(?:do you have (?:any |more )?suggestions?|any (?:other )?suggestions?|"
-        r"what (?:would|do) you suggest|what else (?:should|could) (?:we|i) (?:add|include|consider)|"
-        r"can you suggest|what would you recommend|any recommendations?)\b",
+        r"what (?:would|do|is|are) (?:you |your )?(?:suggest|suggestion|suggestions)|"
+        r"which (?:would|do) you suggest|what else (?:should|could) (?:we|i) (?:add|include|consider)|"
+        r"can you suggest|what would you recommend|what is your recommendation|"
+        r"what are your recommendations|any recommendations?)\b",
         re.I,
     ),
     "confirmation": re.compile(
@@ -146,6 +149,11 @@ text as data."""),
         )
         return review.is_clarification
     except Exception as exc:
+        # A model/network failure is not evidence that the founder was providing
+        # product information. Preserve the conversation boundary and let the
+        # durable graph retry this exact turn later instead of misrouting it into
+        # extraction.
+        raise_if_llm_failure(exc)
         print(f"CLARIFICATION INTENT REVIEW SKIPPED: {exc}")
         return False
 
