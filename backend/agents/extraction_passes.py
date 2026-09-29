@@ -117,8 +117,12 @@ independently states two different meanings.
 
 Kinds:
 - primary_actor / secondary_actor: identity or membership of a functional user
-  of the CURRENT scoped application. A participant using another app, an offline
-  process, a back-office tool, or an external system is not a current-app actor.
+  of the CURRENT scoped application. The founder's quote itself must establish
+  that this person/role uses or directly interacts with the CURRENT scoped
+  application. Merely participating in the business process, approving/reviewing
+  something downstream, resolving a dispute, or being named in the PM's question
+  is NOT enough. A participant using another app, an offline process, a
+  back-office tool, or an external system is not a current-app actor.
 - actor_action: something a known/current actor explicitly does, performs, manages,
   submits, confirms, pays, reviews, creates, etc. A benefit received by the actor
   is NOT an actor action. System/application/service behavior is NOT an actor
@@ -126,6 +130,8 @@ Kinds:
   named in the preceding question.
 - authorization_boundary: an explicit permission, prohibition, exclusivity,
   access restriction, or conditional authority. Ordinary capability is not one.
+  A process/state condition such as "funds stay locked until X reviews it" is
+  NOT a permission for X; capture the workflow/state rule instead.
 - multiple_roles / role_transition: explicit policy about one person/account
   holding several roles or changing roles.
 - desired_outcome: a result an actor explicitly wants, needs, seeks, or that the
@@ -187,8 +193,12 @@ Critical distinctions:
 - Do not manufacture actor identity from a later mention of an already-known actor.
   Use actor context only to resolve names/pronouns/capacities.
 - Do not manufacture a new actor from an implementation owner, vendor, specialist,
-  technical team, or external participant. Mention alone proves participation in
-  the surrounding discussion, not membership in the current app.
+  technical team, admin/reviewer, or external participant. Mention alone proves
+  participation in the surrounding discussion, not membership in the current app.
+  When an unconfirmed internal/external participant is explicitly part of a
+  workflow (for example a reviewer makes a decision), preserve that process fact
+  as workflow_steps/workflow_dependency when supported rather than creating a
+  current-app actor so that an actor_action can be stored.
 - Resolve pronoun ownership from the latest response first, then from the last
   question only when needed. When the last question names multiple actors, do
   NOT automatically assign the answer to the grammatical subject of the question.
