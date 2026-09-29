@@ -771,6 +771,13 @@ def _semantic_frontier_problem(
         "current_threads": state.get("discovery_threads", {}),
         "rejected_frontiers": rejected_frontiers or [],
     }
+    print("\n===== DISCOVERY ABSTRACTION DEBUG | STAGE 1: PLANNER FRONTIER =====")
+    print(json.dumps(payload["proposed_frontier"], ensure_ascii=False, indent=2, default=str))
+    print("===== END STAGE 1 =====\n")
+    print("===== DISCOVERY ABSTRACTION DEBUG | STAGE 2: ASSESSOR INPUT =====")
+    print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+    print("===== END STAGE 2 =====\n")
+
     try:
         result = inquiry_assessment_model().invoke([
             SystemMessage(content=INQUIRY_ASSESSMENT_INSTRUCTION),
@@ -781,6 +788,9 @@ def _semantic_frontier_problem(
             if isinstance(result, InquiryAssessment)
             else InquiryAssessment.model_validate(result)
         )
+        print("===== DISCOVERY ABSTRACTION DEBUG | STAGE 3: ASSESSOR OUTPUT =====")
+        print(json.dumps(assessment.model_dump(mode="json"), ensure_ascii=False, indent=2, default=str))
+        print("===== END STAGE 3 =====\n")
     except Exception as exc:
         raise_if_llm_failure(exc)
         print(f"INQUIRY ASSESSMENT REPAIR: inconsistent structured verdict | {exc}")
@@ -802,6 +812,9 @@ Do not change the proposed frontier."""),
                 if isinstance(repaired_result, InquiryAssessment)
                 else InquiryAssessment.model_validate(repaired_result)
             )
+            print("===== DISCOVERY ABSTRACTION DEBUG | STAGE 3R: REPAIRED ASSESSOR OUTPUT =====")
+            print(json.dumps(assessment.model_dump(mode="json"), ensure_ascii=False, indent=2, default=str))
+            print("===== END STAGE 3R =====\n")
         except Exception as repair_exc:
             raise_if_llm_failure(repair_exc)
             print(f"INQUIRY ASSESSMENT INVALID AFTER REPAIR: {repair_exc}")
@@ -843,6 +856,27 @@ Do not change the proposed frontier."""),
         f"material={assessment.material_product_consequence} | "
         f"missing={assessment.missing_information} | {assessment.reason}"
     )
+
+    abstraction_reject = (
+        assessment.abstraction_level in {"INTERACTION_DESIGN", "IMPLEMENTATION"}
+        and not assessment.material_product_consequence
+    )
+    print("===== DISCOVERY ABSTRACTION DEBUG | STAGE 4: PYTHON CLASSIFICATION GATE =====")
+    print(json.dumps({
+        "abstraction_level": assessment.abstraction_level,
+        "material_product_consequence": assessment.material_product_consequence,
+        "should_move_on": assessment.should_move_on,
+        "too_broad": assessment.too_broad,
+        "covered": covered,
+        "recap": recap,
+        "higher_value_elsewhere": assessment.higher_value_elsewhere,
+        "abstraction_rule_result": "REJECT" if abstraction_reject else "PASS",
+        "abstraction_rule": (
+            "Reject only when abstraction_level is INTERACTION_DESIGN or IMPLEMENTATION "
+            "and material_product_consequence is false."
+        ),
+    }, ensure_ascii=False, indent=2, default=str))
+    print("===== END STAGE 4 =====\n")
 
     if assessment.repeats_rejected_frontier:
         return (
@@ -1060,6 +1094,18 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
                 backlog,
                 rejected_frontiers=rejected_frontiers,
             )
+            print("===== DISCOVERY ABSTRACTION DEBUG | STAGE 5: PLANNER VALIDATION RESULT =====")
+            print(json.dumps({
+                "attempt": attempt + 1,
+                "thread_id": proposed.thread_id,
+                "frontier": (
+                    proposed.frontier.model_dump(mode="json")
+                    if proposed.frontier is not None else None
+                ),
+                "validation_result": "ACCEPT" if problem is None else "REJECT_OR_REPLAN",
+                "problem": problem,
+            }, ensure_ascii=False, indent=2, default=str))
+            print("===== END STAGE 5 =====\n")
             if problem is None:
                 if proposed.feedback is None and captured_feedback is not None:
                     proposed = proposed.model_copy(update={"feedback": captured_feedback})
