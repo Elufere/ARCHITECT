@@ -103,8 +103,15 @@ def build_graph() -> StateGraph:
     workflow.add_node("prioritize_candidates", durable_node("prioritize_candidates", question_candidate_priority_node, lambda _: "plan"))
     workflow.add_node("plan", durable_node("plan", interview_planner_node, route_after_plan))
     workflow.add_node("generate", durable_node("generate", question_generator_node, lambda _: "guardrail"))
-    workflow.add_node("guardrail", durable_node("guardrail", guardrail_node,
-        lambda state: "waiting" if route_after_guardrail(state) == END else "generate"))
+    workflow.add_node("guardrail", durable_node(
+        "guardrail",
+        guardrail_node,
+        lambda state: (
+            "waiting"
+            if route_after_guardrail(state) == END
+            else route_after_guardrail(state)
+        ),
+    ))
     def compile_when_covered(state):
         if not all_discovery_resolved(state):
             raise RuntimeError("PRD compilation blocked: material product inquiries or active requirements remain unresolved")
