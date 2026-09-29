@@ -143,6 +143,9 @@ Conversation intent:
 Persistent discovery boundaries:
 {discovery_boundaries}
 
+Raw product idea:
+{raw_idea}
+
 Question/response:
 {agent_output}
 
@@ -211,6 +214,12 @@ against the Current objective. Reject advice that drifts into implementation,
 architecture, or a generic feature wishlist.
 
 Reject if the response:
+- phrases the discovery question as though the product behavior is already
+  implemented/currently operating when the supplied founder evidence does not
+  explicitly establish an existing/live implementation. Product discovery should
+  ask about intended behavior ("should", "would", "will", "do you want", "what
+  should happen") by default. A founder describing requirements in present tense
+  does not by itself prove the feature already exists.
 - presents unsupported or inferred information in the acknowledgement as though
   the founder confirmed it
 - violates a persistent discovery boundary by retrying, paraphrasing, or deepening
@@ -459,6 +468,7 @@ def evaluate_question(state: dict) -> dict:
                     if not item.get("scope")
                     or item.get("scope") == getattr(state.get("discovery_scope"), "value", state.get("discovery_scope"))
                 ) or "None",
+                raw_idea=state.get("raw_idea") or "",
                 planner_source=planner_source,
                 current_gap=current_gap,
                 current_objective=current_objective,
