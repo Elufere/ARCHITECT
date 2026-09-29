@@ -130,6 +130,25 @@ A UI-adjacent question may remain PRODUCT_DISCOVERY only when the detail itself
 materially changes authorization/security/compliance, money/data movement,
 lifecycle/state, a major dependency, or another substantive PRD decision.
 
+FOUNDER-FACING ABSTRACTION:
+A product uncertainty can be legitimate while its wording is still wrong.
+The founder should be asked to choose or clarify DESIRED PRODUCT BEHAVIOR, not to
+describe internal system representation. Reject wording that asks how/when the
+system stores, persists, records, finalizes, derives, or internally manages a
+decision when the same uncertainty can be expressed as an observable product rule
+such as when something should take effect, whether confirmation is required, who
+should be allowed to act, or what should happen next.
+
+This is a semantic rule, not a banned-word list. Terms such as "record" or
+"store" are acceptable when they are genuinely the founder's product decision
+(for example a requirement to retain a legally required record). Reject them only
+when they unnecessarily turn a founder-owned product decision into an explanation
+of internal mechanics.
+
+Future tense does not automatically make system-shaped wording acceptable:
+"How should the system store this?" can still be the wrong abstraction if the
+actual founder decision is "When should this become effective?"
+
 Current discovery topic:
 {current_topic}
 
@@ -262,6 +281,11 @@ Reject if the response:
   answer requires several sequential actions, it is too broad
 - uses technical or implementation-shaped wording when the same product decision
   can be asked in simple founder-facing language
+- asks the founder to explain internal representation/mechanics (for example how
+  a product decision is stored, recorded, persisted, finalized, derived, or
+  internally managed) when the SAME uncertainty can be asked as intended,
+  observable product behavior. Preserve the decision; reject only the abstraction
+  of the wording
 - treats "make the question smaller" as permission to make it more screen-specific.
   Atomicity should stop at one material PRODUCT decision/behavior, not one UI click
 - asks implementation
