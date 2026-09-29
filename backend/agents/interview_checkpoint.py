@@ -132,6 +132,9 @@ def load_checkpoint(session_id):
     state.setdefault("validation_blocking", False)
     state.setdefault("validation_candidate_blocking", False)
     state.setdefault("selected_validation_issue", None)
+    state.setdefault("question_retry_count", 0)
+    state.setdefault("question_retry_exhausted", False)
+    state.setdefault("answer_followup", None)
     if state.get("prd_contract"):
         state["prd_contract"] = PRDContract.model_validate(state["prd_contract"])
     if (state.get("answer_followup") or {}).get("scope"):
