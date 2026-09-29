@@ -238,12 +238,14 @@ def _model_inquiries(state: AgentState) -> list[ProductInquiry]:
             topic=DiscoveryTopic.CORE_WORKFLOW,
             anchor_gap="workflow_steps",
             objective=(
-                f"Understand the first meaningful action the {entry_actor} takes "
-                "to begin the product's core interaction."
+                f"Understand the first meaningful product event or decision the {entry_actor} "
+                "initiates to begin the core interaction."
             ),
             question_hint=(
-                f"Ask only where the normal interaction begins for the {entry_actor}. "
-                "Do not ask for the full workflow, later stages, or another actor's journey."
+                f"Ask what meaningful product action, request, creation, commitment, or state "
+                f"change the {entry_actor} initiates first. Do not ask which button/screen they "
+                "use, do not ask for click-by-click interaction, and do not ask for the full "
+                "workflow, later stages, or another actor's journey."
             ),
             reason=(
                 "Actors and outcomes are known, but the product model does not yet "
