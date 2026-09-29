@@ -91,7 +91,8 @@ def new_session():
         checkpoint_cursor="conversation_manager", interview_status="PROCESSING_ANSWER", extraction_status="PENDING",
         current_topic=None, current_gap=None, current_objective=None, question_hint=None,
         known_keys=[], missing_keys=[], inferred_gap_evidence=[], known_gap_evidence=[], relevant_context=[],
-        next_discovery_move=None, conversation_intent=None, is_correction=False, current_role=None)
+        next_discovery_move=None, conversation_intent=None, is_correction=False, current_role=None,
+        question_retry_count=0, question_retry_exhausted=False, answer_followup=None)
     save_checkpoint(state)
     return state
 
@@ -120,7 +121,8 @@ def run_session(state):
                          open_inquiries=[], selected_inquiry=None,
                          planner_source="model", selected_requirement_candidate=None, selected_requirement_priority=None,
                          validation_issues=[], validation_pair_cache={}, validation_blocking=False,
-                         validation_candidate_blocking=False, selected_validation_issue=None)
+                         validation_candidate_blocking=False, selected_validation_issue=None,
+                         question_retry_count=0, question_retry_exhausted=False)
             state["product_model"] = build_product_model(
                 state["discovered_knowledge"],
                 DiscoveryScope.ADMIN_DASHBOARD,
