@@ -119,6 +119,17 @@ def delivered_prior_questions(messages: list) -> list[str]:
 EVALUATOR_PROMPT = """
 You are validating a Product Manager's interview question.
 
+STAGE BOUNDARY:
+PRODUCT_DISCOVERY asks what the product must accomplish, what actors/rules/states/
+outcomes/constraints matter, and which material decisions belong in a PRD.
+SOLUTION_DESIGN includes screen flows, control/button sequence, layout/placement,
+visual formatting, component choice, microcopy, clickable-vs-plain presentation,
+and similar UX interaction mechanics when they do not materially alter a product
+rule. Classify/reject those as solution design rather than product discovery.
+A UI-adjacent question may remain PRODUCT_DISCOVERY only when the detail itself
+materially changes authorization/security/compliance, money/data movement,
+lifecycle/state, a major dependency, or another substantive PRD decision.
+
 Current discovery topic:
 {current_topic}
 
