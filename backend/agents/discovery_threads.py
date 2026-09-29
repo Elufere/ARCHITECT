@@ -109,12 +109,26 @@ _thread_planner = None
 _inquiry_assessment_model = None
 
 
+class FrontierDecisionUnit(BaseModel):
+    """One independently answerable information unit requested by the ORIGINAL frontier."""
+
+    description: str = Field(min_length=1)
+    abstraction_level: Literal[
+        "PRODUCT_DECISION",
+        "PRODUCT_BEHAVIOR",
+        "INTERACTION_DESIGN",
+        "IMPLEMENTATION",
+    ]
+    material_product_consequence: bool
+    founder_owned: bool
+    resolved_by_founder_evidence: bool
+
+
 class InquiryAssessment(BaseModel):
     """Semantic evidence audit for one proposed discovery frontier.
 
-    The model reports evidence and missing information separately. Coverage is
-    derived in code so "related context exists" cannot be mistaken for
-    "the requested information is already known".
+    The LLM reports semantic evidence. Python derives atomicity, abstraction
+    mixing, and whether a valid unresolved discovery target exists.
     """
 
     supporting_observation_ids: List[str] = Field(default_factory=list, max_length=12)
@@ -127,55 +141,12 @@ class InquiryAssessment(BaseModel):
     repeats_rejected_frontier: bool = False
     repeats_prior_decision: bool
     matching_prior_question: str = ""
-    abstraction_level: Literal[
-        "PRODUCT_DECISION",
-        "PRODUCT_BEHAVIOR",
-        "INTERACTION_DESIGN",
-        "IMPLEMENTATION",
-    ]
-    material_product_consequence: bool
-    target_product_decision: Optional[str] = Field(
-        default=None,
-        description=(
-            "The single unresolved founder-owned PRD-level decision already contained "
-            "in this frontier. Return null when no such single decision can be isolated "
-            "without inventing or repairing the frontier."
-        ),
-    )
-    frontier_is_atomic: bool = Field(
-        description=(
-            "True only when the frontier asks for one independently answerable material "
-            "product decision, not a process, walkthrough, checklist, or bundle."
-        )
-    )
-    frontier_has_mixed_abstraction: bool = Field(
-        description=(
-            "True when the frontier mixes a product-level decision with interaction-design "
-            "or implementation detail, even if all parts concern the same product area."
-        )
-    )
-    frontier_decision_units: List[str] = Field(
+    frontier_decision_units: List[FrontierDecisionUnit] = Field(
         min_length=1,
         max_length=6,
         description=(
-            "The independently answerable semantic units requested by the ORIGINAL "
-            "frontier. Do not merge separate units under an umbrella phrase."
-        ),
-    )
-    expected_answer_abstraction_levels: List[
-        Literal[
-            "PRODUCT_DECISION",
-            "PRODUCT_BEHAVIOR",
-            "INTERACTION_DESIGN",
-            "IMPLEMENTATION",
-        ]
-    ] = Field(
-        min_length=1,
-        max_length=4,
-        description=(
-            "Every abstraction level the ORIGINAL frontier naturally requires for a "
-            "complete answer. Include lower levels only when the frontier actually asks "
-            "for or naturally requires them, not merely because implementation eventually exists."
+            "Every independently answerable semantic unit requested by the ORIGINAL "
+            "frontier, each classified at its own abstraction/materiality/ownership level."
         ),
     )
     current_frontier_value: float = Field(default=0.5, ge=0, le=1)
@@ -185,12 +156,7 @@ class InquiryAssessment(BaseModel):
     depth_reason: str = ""
     reason: str
 
-    @field_validator(
-        "supporting_observation_ids",
-        "missing_information",
-        "frontier_decision_units",
-        "expected_answer_abstraction_levels",
-    )
+    @field_validator("supporting_observation_ids", "missing_information")
     @classmethod
     def unique_list_values(cls, values):
         return list(dict.fromkeys(values))
@@ -216,35 +182,6 @@ class InquiryAssessment(BaseModel):
         if self.repeats_prior_decision and not self.matching_prior_question.strip():
             raise ValueError(
                 "repeats_prior_decision requires the matching prior delivered question"
-            )
-
-        derived_atomic = len(self.frontier_decision_units) == 1
-        if self.frontier_is_atomic != derived_atomic:
-            raise ValueError(
-                "frontier_is_atomic must match the number of independently answerable "
-                "units in frontier_decision_units"
-            )
-
-        answer_levels = set(self.expected_answer_abstraction_levels)
-        product_levels = {"PRODUCT_DECISION", "PRODUCT_BEHAVIOR"}
-        lower_levels = {"INTERACTION_DESIGN", "IMPLEMENTATION"}
-        derived_mixed_abstraction = bool(
-            answer_levels & product_levels and answer_levels & lower_levels
-        )
-        if self.frontier_has_mixed_abstraction != derived_mixed_abstraction:
-            raise ValueError(
-                "frontier_has_mixed_abstraction must match the abstraction levels "
-                "required by the natural complete answer"
-            )
-
-        if (
-            self.abstraction_level in {"INTERACTION_DESIGN", "IMPLEMENTATION"}
-            and not self.material_product_consequence
-            and not self.should_move_on
-        ):
-            raise ValueError(
-                "Low-level interaction/implementation detail without a material "
-                "product consequence must set should_move_on=true"
             )
         return self
 
@@ -724,45 +661,33 @@ Return:
   about meaning, not string similarity. Set matching_prior_question to the most
   relevant delivered question. Do NOT mark a genuine next causal decision as a
   repeat merely because it occurs in the same workflow.
-- abstraction_level:
-  PRODUCT_DECISION = product-shape choice/rule/actor/goal/constraint;
-  PRODUCT_BEHAVIOR = material state/outcome/validation/authorization/dependency;
-  INTERACTION_DESIGN = screen flow, button/control sequence, layout, placement,
-  presentation, microcopy, clickable-vs-text, modal/toast/component choice;
-  IMPLEMENTATION = technical mechanism/architecture/code/service internals.
-- material_product_consequence=true only when answering the SPECIFIC TARGET
-  UNCERTAINTY would materially change the PRD's product rule,
-  authorization/security/compliance boundary, money/data movement,
-  lifecycle/state transition, major dependency, or similarly consequential
-  behavior. Judge the requested detail itself, NOT the importance of the broader
-  feature/domain it belongs to. A business-critical product area may still contain
-  interaction or implementation details that are non-material at discovery depth.
 - frontier_decision_units: decompose the ORIGINAL proposed frontier into every
-  independently answerable semantic unit it requests. Preserve the frontier's
-  actual information demands; do not summarize several units into one umbrella
-  phrase. If the founder could answer one requested part completely while leaving
-  another requested part unanswered, they are separate units even when they share
-  one actor, feature, workflow, or sentence.
-- expected_answer_abstraction_levels: list EVERY abstraction level that a natural
-  complete answer to the ORIGINAL frontier would need to contain. Do not return
-  only the highest-level or most important category. Include INTERACTION_DESIGN or
-  IMPLEMENTATION only when the frontier actually asks for or naturally requires
-  those details; do not include them merely because every product eventually has
-  design/implementation.
-- target_product_decision: identify the ONE unresolved founder-owned PRD-level
-  decision already contained in the proposed frontier. This is an AUDIT, not a
-  rewrite. Do not invent a better decision, introduce a new fork, combine multiple
-  decision units, or restate the broad topic in product-sounding language. Return
-  null when the frontier does not already isolate one such decision.
-- frontier_is_atomic=true ONLY when frontier_decision_units contains exactly ONE
-  independently answerable semantic unit.
-- frontier_has_mixed_abstraction=true ONLY when the natural complete answer
-  requires at least one product-level category (PRODUCT_DECISION or
-  PRODUCT_BEHAVIOR) AND at least one lower-level category (INTERACTION_DESIGN or
-  IMPLEMENTATION).
-- If abstraction_level is INTERACTION_DESIGN or IMPLEMENTATION and there is no
-  material product consequence, set should_move_on=true even when the detail is
-  unknown.
+  independently answerable semantic unit it requests. Return one object per unit:
+  * description: the specific information the original frontier asks for. Preserve
+    the actual demand; do not rewrite several units into one umbrella phrase.
+  * abstraction_level:
+      PRODUCT_DECISION = product-shape choice/rule/actor/goal/constraint;
+      PRODUCT_BEHAVIOR = material state/outcome/validation/authorization/dependency;
+      INTERACTION_DESIGN = interaction flow, controls, presentation, or UX mechanics;
+      IMPLEMENTATION = technical mechanism/architecture/code/service internals.
+  * material_product_consequence=true only when answering THIS UNIT itself could
+    materially change a PRD rule, authorization/security/compliance boundary,
+    money/data movement, lifecycle/state transition, major dependency,
+    irreversible outcome, or similarly consequential behavior. Judge the unit,
+    not the importance of its surrounding feature/domain.
+  * founder_owned=true only when this is a product decision the founder can
+    meaningfully choose/clarify. UX/engineering execution choices are false unless
+    that exact detail is itself a material product requirement.
+  * resolved_by_founder_evidence=true only when supplied founder evidence already
+    directly answers this exact unit.
+
+Do NOT return overall atomicity, mixed-abstraction, overall abstraction, overall
+materiality, or a rewritten target decision. Python derives those consequences
+from the unit objects. Your job is only to report the semantic units faithfully.
+
+If a business-critical area contains low-level mechanics, those mechanics remain
+their own INTERACTION_DESIGN/IMPLEMENTATION units rather than inheriting the
+importance of the broader area.
 
 ORIGINAL-FRONTIER ATOMICITY TEST:
 Evaluate the frontier exactly as proposed BEFORE considering how it could be
@@ -772,44 +697,25 @@ For each requested information unit ask:
 "Could the founder answer this unit fully while leaving another requested unit
 unanswered?"
 
-If YES, those are separate frontier_decision_units and frontier_is_atomic MUST be
-false. Do not merge them because they occur sequentially, concern the same actor,
-belong to the same workflow, or can be described under one broad label.
+If YES, return those as separate frontier_decision_units. Do not merge them
+because they occur sequentially, concern the same actor, belong to the same
+workflow, or can be described under one broad label.
 
 A procedural sequence is not automatically one decision. Conversely, one genuine
 state/rule/relationship decision remains one unit even if explaining the rationale
 takes several sentences.
 
 EXPECTED-ANSWER TEST:
-Imagine the shortest natural answer that would FULLY satisfy the ORIGINAL
-frontier, not a narrower question you wish had been asked.
+For EACH decision unit, imagine the shortest natural answer that would fully
+satisfy that unit, not a narrower or improved question you wish had been asked.
+Classify that unit's answer at the appropriate abstraction level and judge its
+material consequence and founder ownership independently.
 
-Then classify the information that answer must contain:
-- product choice/rule/constraint -> PRODUCT_DECISION
-- material state/outcome/validation/authorization/dependency -> PRODUCT_BEHAVIOR
-- interaction flow/control/presentation mechanics -> INTERACTION_DESIGN
-- technical mechanism/service/internal representation -> IMPLEMENTATION
-
-If the complete answer must cross product-level and lower-level information,
-frontier_has_mixed_abstraction MUST be true. Do not classify the whole frontier by
-the importance of its subject matter.
-
-TARGET-UNCERTAINTY RULE:
-First identify WHAT INFORMATION the original frontier actually asks the founder to
-supply. Do not infer materiality from the importance of the surrounding product
-area. Ask: "What would change in the PRD if this exact requested information were
-answered?"
-
-A valid target_product_decision must:
-1. already exist as ONE of frontier_decision_units;
-2. still be unresolved by founder evidence;
-3. be founder-owned rather than an engineering/UX implementation choice;
-4. be one independently answerable decision; and
-5. materially affect the product model/PRD.
-
-Do not use target_product_decision to repair a bad frontier. If the original
-frontier has multiple units or mixed abstraction, report that faithfully and let
-the planner replan around one existing material decision or move elsewhere.
+Do not repair the original frontier inside the assessment. If it contains several
+possible product decisions, several decision-unit objects must remain in the
+output. If it mixes product decisions with UX/implementation detail, represent
+those lower-level parts as their own units. Python will decide whether the
+frontier is valid.
 
 CRITICAL COVERAGE RULE:
 Related context is NOT an answer. Knowing WHO the actors are does not answer WHAT
@@ -957,13 +863,10 @@ assessment. If ANY material information is still unknown, set
 information_need_resolved=false and list every such item in missing_information.
 If the need is fully resolved, missing_information must be empty. Supporting
 observation IDs must be UNIQUE and limited to the supplied IDs. Do not repeat an
-ID. You MUST also return repeats_prior_decision, abstraction_level,
-material_product_consequence, target_product_decision, frontier_is_atomic,
-frontier_has_mixed_abstraction, frontier_decision_units, and
-expected_answer_abstraction_levels using the definitions in the main instruction.
-The decision units and expected answer levels are semantic evidence for the
-booleans; they must agree. Do not repair, rewrite, or improve the proposed
-frontier while assessing it.
+ID. Return frontier_decision_units exactly as defined in the main instruction.
+Do not merge, rewrite, or improve semantic units merely to make the assessment
+look internally consistent. Preserve the ORIGINAL frontier's independently
+answerable demands and classify each unit separately.
 Do not change the proposed frontier."""),
                 HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
             ])
@@ -1003,6 +906,38 @@ Do not change the proposed frontier."""),
     )
     recap = assessment.recap_of_known_information and covered
 
+    decision_units = assessment.frontier_decision_units
+    unit_levels = {unit.abstraction_level for unit in decision_units}
+    derived_atomic = len(decision_units) == 1
+    derived_mixed_abstraction = bool(
+        unit_levels & {"PRODUCT_DECISION", "PRODUCT_BEHAVIOR"}
+        and unit_levels & {"INTERACTION_DESIGN", "IMPLEMENTATION"}
+    )
+    valid_unresolved_targets = [
+        unit
+        for unit in decision_units
+        if unit.founder_owned
+        and unit.material_product_consequence
+        and not unit.resolved_by_founder_evidence
+    ]
+    single_unit = decision_units[0] if derived_atomic else None
+    atomic_unit_is_valid_target = bool(
+        single_unit
+        and single_unit.founder_owned
+        and single_unit.material_product_consequence
+        and not single_unit.resolved_by_founder_evidence
+    )
+    abstraction_reject = bool(
+        single_unit
+        and single_unit.abstraction_level in {"INTERACTION_DESIGN", "IMPLEMENTATION"}
+        and not single_unit.material_product_consequence
+    )
+    frontier_shape_reject = (
+        not derived_atomic
+        or derived_mixed_abstraction
+        or (not covered and not recap and not atomic_unit_is_valid_target)
+    )
+
     print(
         f"INQUIRY ASSESSMENT: {plan.thread_id}/{frontier.decision_key} | "
         f"covered={covered} | too_broad={assessment.too_broad} | "
@@ -1012,45 +947,23 @@ Do not change the proposed frontier."""),
         f"higher_elsewhere={assessment.higher_value_elsewhere} | "
         f"repeats_rejected={assessment.repeats_rejected_frontier} | "
         f"repeats_prior={assessment.repeats_prior_decision} | "
-        f"level={assessment.abstraction_level} | "
-        f"material={assessment.material_product_consequence} | "
-        f"target={assessment.target_product_decision!r} | "
-        f"atomic={assessment.frontier_is_atomic} | "
-        f"mixed={assessment.frontier_has_mixed_abstraction} | "
+        f"units={len(decision_units)} | atomic={derived_atomic} | "
+        f"mixed={derived_mixed_abstraction} | valid_targets={len(valid_unresolved_targets)} | "
         f"missing={assessment.missing_information} | {assessment.reason}"
     )
 
-    target_decision_missing = not (
-        assessment.target_product_decision
-        and assessment.target_product_decision.strip()
-    )
-    decision_units = list(dict.fromkeys(assessment.frontier_decision_units))
-    expected_answer_levels = set(assessment.expected_answer_abstraction_levels)
-    derived_atomic = len(decision_units) == 1
-    derived_mixed_abstraction = bool(
-        expected_answer_levels & {"PRODUCT_DECISION", "PRODUCT_BEHAVIOR"}
-        and expected_answer_levels & {"INTERACTION_DESIGN", "IMPLEMENTATION"}
-    )
-    frontier_shape_reject = (
-        target_decision_missing
-        or not derived_atomic
-        or derived_mixed_abstraction
-    )
-    abstraction_reject = (
-        assessment.abstraction_level in {"INTERACTION_DESIGN", "IMPLEMENTATION"}
-        and not assessment.material_product_consequence
-    )
     print("===== DISCOVERY ABSTRACTION DEBUG | STAGE 4: PYTHON CLASSIFICATION GATE =====")
     print(json.dumps({
-        "abstraction_level": assessment.abstraction_level,
-        "material_product_consequence": assessment.material_product_consequence,
-        "target_product_decision": assessment.target_product_decision,
-        "frontier_decision_units": decision_units,
-        "expected_answer_abstraction_levels": sorted(expected_answer_levels),
-        "frontier_is_atomic_reported": assessment.frontier_is_atomic,
+        "frontier_decision_units": [
+            unit.model_dump(mode="json") for unit in decision_units
+        ],
+        "derived_abstraction_levels": sorted(unit_levels),
         "frontier_is_atomic_derived": derived_atomic,
-        "frontier_has_mixed_abstraction_reported": assessment.frontier_has_mixed_abstraction,
         "frontier_has_mixed_abstraction_derived": derived_mixed_abstraction,
+        "valid_unresolved_founder_owned_material_targets": [
+            unit.model_dump(mode="json") for unit in valid_unresolved_targets
+        ],
+        "atomic_unit_is_valid_target": atomic_unit_is_valid_target,
         "should_move_on": assessment.should_move_on,
         "too_broad": assessment.too_broad,
         "covered": covered,
@@ -1059,12 +972,12 @@ Do not change the proposed frontier."""),
         "frontier_shape_rule_result": "REJECT" if frontier_shape_reject else "PASS",
         "abstraction_rule_result": "REJECT" if abstraction_reject else "PASS",
         "frontier_shape_rule": (
-            "A frontier must already isolate one unresolved founder-owned atomic PRD "
-            "decision and must not mix product-level uncertainty with UX/implementation."
+            "Python accepts only one independently answerable unit. When unresolved, "
+            "that unit must itself be founder-owned and materially consequential. "
+            "Multiple units or product+lower-level mixing force replanning."
         ),
         "abstraction_rule": (
-            "Reject low-level INTERACTION_DESIGN/IMPLEMENTATION when the requested "
-            "detail itself has no material product consequence."
+            "A low-level unit without material product consequence is below discovery depth."
         ),
     }, ensure_ascii=False, indent=2, default=str))
     print("===== END STAGE 4 =====\n")
@@ -1084,17 +997,25 @@ Do not change the proposed frontier."""),
         )
     if frontier_shape_reject:
         shape_reasons = []
-        if target_decision_missing:
-            shape_reasons.append("no single unresolved founder-owned PRD decision was isolated")
         if not derived_atomic:
             shape_reasons.append(
                 "the original frontier contains multiple independently answerable units: "
-                + "; ".join(decision_units)
+                + "; ".join(unit.description for unit in decision_units)
             )
         if derived_mixed_abstraction:
             shape_reasons.append(
-                "a natural complete answer crosses product discovery and UX/implementation "
-                "levels: " + ", ".join(sorted(expected_answer_levels))
+                "the original frontier mixes product-level and UX/implementation units: "
+                + ", ".join(sorted(unit_levels))
+            )
+        if (
+            derived_atomic
+            and not covered
+            and not recap
+            and not atomic_unit_is_valid_target
+        ):
+            shape_reasons.append(
+                "the single unresolved unit is not both founder-owned and materially "
+                "consequential at PRD discovery depth"
             )
         return (
             "The proposed frontier concerns a potentially valid product area but is "
@@ -1104,13 +1025,10 @@ Do not change the proposed frontier."""),
             "already supported by the context, or move to another area. Do not invent "
             "a product fork merely to make this frontier askable."
         )
-    if (
-        assessment.abstraction_level in {"INTERACTION_DESIGN", "IMPLEMENTATION"}
-        and not assessment.material_product_consequence
-    ):
+    if abstraction_reject:
         return (
             "The proposed frontier is below the required product-discovery abstraction "
-            f"level ({assessment.abstraction_level}). The remaining detail is primarily "
+            f"level ({single_unit.abstraction_level}). The remaining detail is primarily "
             "UX/implementation refinement and does not materially change the product "
             "model or PRD. Move to a different product decision."
         )
