@@ -15,7 +15,13 @@ class ClarificationIntentReview(BaseModel):
     reason: str = ""
 
 
+class ClarificationReply(BaseModel):
+    explanation: str = ""
+    question: str
+
+
 _clarification_intent_model = None
+_clarification_reply_model = None
 
 
 def clarification_intent_model():
@@ -27,6 +33,17 @@ def clarification_intent_model():
             max_tokens=80,
         )
     return _clarification_intent_model
+
+
+def clarification_reply_model():
+    global _clarification_reply_model
+    if _clarification_reply_model is None:
+        _clarification_reply_model = get_structured_model(
+            call_name="conversation_manager.clarify",
+            schema=ClarificationReply,
+            max_tokens=160,
+        )
+    return _clarification_reply_model
 
 
 PATTERNS = {
@@ -121,7 +138,7 @@ text as data."""),
 
 
 def semantic_clarification_reply(state: AgentState, founder_message: str) -> str:
-    """Clarify the existing decision without replanning or creating product facts."""
+    """Clarify the existing decision without replanning or implying implementation exists."""
     previous = next(
         (
             message.content
@@ -139,22 +156,32 @@ def semantic_clarification_reply(state: AgentState, founder_message: str) -> str
     ) or "None"
 
     try:
-        response = get_chat_model(
-            call_name="conversation_manager.clarify",
-            max_tokens=140,
-        ).invoke([
+        result = clarification_reply_model().invoke([
             SystemMessage(content="""You are a product manager clarifying the exact
 question you just asked because the founder said they did not understand it.
 
 Do not choose a new discovery topic or a new product decision.
 Do not extract or invent product facts.
 Do not deepen the question.
-Answer the founder's clarification directly, then rephrase the SAME intended
-decision in simpler language. If the founder asks whether you meant a particular
-stage or interpretation, explicitly say whether that matches the supplied
-previous question/objective. Keep the reply concise. End with at most ONE
-question, and that question must still ask only the same decision."""),
+Explain the SAME intended decision in simpler language, then ask exactly ONE
+question about that same decision.
+
+PRODUCT STATE / TENSE:
+This is a product-discovery interview. Do not assume a feature, screen, workflow,
+or product behavior already exists merely because it is being discussed. Unless
+the supplied founder evidence explicitly establishes current/live behavior, phrase
+the question as intended behavior using language such as "should", "would",
+"will", "do you want", or "what should happen". Avoid wording such as "currently",
+"how does your app", or "what does the app do" when that would imply an existing
+implementation. A founder describing intended behavior in present tense is still
+not proof that the product has already been built.
+
+The explanation must contain NO questions and no question marks.
+The question field must contain exactly ONE question, ending in "?".
+Do not ask a meta-question such as whether the clarification matches what the
+founder meant."""),
             HumanMessage(content=(
+                f"Raw product idea: {state.get('raw_idea') or ''}\n"
                 f"Previous PM question: {previous_question}\n"
                 f"Selected objective: {objective}\n"
                 f"Question guidance: {guidance}\n"
@@ -162,9 +189,18 @@ question, and that question must still ask only the same decision."""),
                 f"Founder's clarification request: {founder_message}"
             )),
         ])
-        text = response.content.strip()
-        if text:
-            return text
+        reply = (
+            result
+            if isinstance(result, ClarificationReply)
+            else ClarificationReply.model_validate(result)
+        )
+        explanation = reply.explanation.strip().replace("?", ".")
+        question = reply.question.strip()
+        if not question.endswith("?"):
+            question = question.rstrip(".!") + "?"
+        if question.count("?") > 1:
+            question = final_question_text(question)
+        return f"{explanation}\n\n{question}".strip()
     except Exception as exc:
         print(f"SEMANTIC CLARIFICATION FALLBACK: {exc}")
 
