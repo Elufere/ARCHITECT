@@ -404,6 +404,9 @@ Critical distinctions:
   denial of only one dependency type, cannot support whole-field absence. Require
   the existing independent absence verdict for an explicit denial of the whole field.
 - Permissions require explicit authorization/restriction, not capabilities alone.
+  A product/process state such as money remaining locked until a review happens
+  is not a permission of the reviewer unless the quote separately states an
+  authorization boundary for that actor.
 - Audit responsibilities and permissions independently for each actor and action.
   "Can" alone supports a capability, not an authorization boundary. An
   exclusivity rule, prohibition, or access limitation alone supports permissions,
@@ -423,8 +426,11 @@ Critical distinctions:
   operation, external system, offline process, or third-party platform is not the
   current application merely because it participates in the same business process.
   Unknown surface means unresolved membership, not an invented application.
-  A supported current-process dependency, handoff, or business rule may retain a
-  participant from another/unknown surface without supporting an actor declaration.
+  The PM question and current scope may resolve pronouns or the subject being
+  discussed, but they MUST NOT establish application membership that the
+  founder's own quote did not state. A supported current-process dependency,
+  handoff, or business rule may retain a participant from another/unknown surface
+  without supporting an actor declaration.
   Evaluate those process candidates independently; an external participant need
   not belong to the current actor registry. Preserve explicit surface qualifiers
   and reject unrelated facts about the other application.
