@@ -77,6 +77,7 @@ class ThreadFrontierInquiry(BaseModel):
 class ThreadFeedbackKind(str, Enum):
     QUESTION_TOO_BROAD = "QUESTION_TOO_BROAD"
     IMPLEMENTATION_DEFERRED = "IMPLEMENTATION_DEFERRED"
+    PRODUCT_SCOPE_CLOSED = "PRODUCT_SCOPE_CLOSED"
 
 
 class ThreadFeedback(BaseModel):
@@ -221,8 +222,11 @@ The interview should feel like an excellent human PM conversation:
    normal product unless the founder's latest answer is primarily about that
    exception or the exception changes a core product rule.
 6. Requirements may be relevant to the current thread. Return only supplied
-   requirement IDs that should be eligible NOW. Leave unrelated requirements
-   deferred; do not delete or resolve them.
+   requirement IDs that should be eligible NOW. IMPORTANT: if the frontier is
+   directly eliciting information that would answer one or more supplied
+   requirement facets, include that requirement ID so the grounded answer can
+   update requirement coverage even though the question source is model-driven.
+   Leave unrelated requirements deferred; do not delete or resolve them.
 7. Ask EXACTLY one product decision at a time. "One decision" means one
    independently answerable uncertainty. Do not bundle timing + process +
    conditions, permissions + features + experience, or actor identity +
@@ -268,6 +272,12 @@ The interview should feel like an excellent human PM conversation:
     - question_too_broad means the underlying product area may still matter, but
       the prior question demanded too much at once. Do not repeat the broad form;
       decompose it into one smaller decision when that thread is still valuable.
+    - product_scope_closed means the founder explicitly established that this
+      line of detail is outside the product's responsibility OR explicitly closed
+      the current decision as sufficiently specified. Do not keep discovering
+      implementation/presentation/mechanics inside that closed area merely because
+      more detail could theoretically exist. Move to a materially different
+      product decision/thread unless later founder evidence explicitly reopens it.
     These are NOT product facts and must never be converted into requirements.
 12. If latest_conversation_intent is design_deferral or objection, the NEXT move
     must demonstrate that feedback was respected.
@@ -288,6 +298,14 @@ The interview should feel like an excellent human PM conversation:
       behavior, set feedback.kind=IMPLEMENTATION_DEFERRED and move away from that
       implementation detail. A specialist mentioned only as the person who will
       decide/implement a technical detail is not thereby a user of the product.
+    - If the founder explicitly says the app/product should not own, care about,
+      manage, or further specify the current line of detail, OR explicitly closes
+      the current decision as "enough/that's all" in context, set
+      feedback.kind=PRODUCT_SCOPE_CLOSED. Treat that as a product-discovery
+      stopping boundary for the current line, not as missing detail. Choose a
+      materially different thread/decision; do not convert the remaining UI,
+      formatting, channel mechanics, or external-process internals into new
+      discovery questions.
     feedback.evidence must quote the latest founder answer and feedback.instruction
     must describe the conversational boundary without inventing a product fact.
 15. Before choosing the next frontier, perform BREADTH ARBITRATION:
@@ -629,11 +647,13 @@ label as founder-provided facts.
 
 Discovery boundaries are conversation-control constraints, not missing product
 facts. If a proposed frontier asks for detail the founder explicitly delegated
-to a designer/implementation specialist, or repeats/deepens an inquiry they
-rejected as irrelevant, set should_move_on=true even if that detail remains
-unknown. A question_too_broad boundary does not close the underlying product
-area; it only forbids asking for the same oversized bundle again. Unknown does
-not mean worth asking.
+to a designer/implementation specialist, repeats/deepens an inquiry they
+rejected as irrelevant, or enters an area marked product_scope_closed, set
+should_move_on=true even if that detail remains unknown. A question_too_broad
+boundary does not close the underlying product area; it only forbids asking for
+the same oversized bundle again. A product_scope_closed boundary DOES close
+that line of discovery until later founder evidence explicitly reopens it.
+Unknown does not mean worth asking.
 
 """
 
@@ -790,6 +810,17 @@ def _plan_problem(
     rejected_frontiers: list[dict] | None = None,
 ) -> str | None:
     frontier = plan.frontier
+    if (
+        frontier is not None
+        and plan.feedback is not None
+        and plan.feedback.kind == ThreadFeedbackKind.PRODUCT_SCOPE_CLOSED
+        and plan.thread_id == state.get("active_discovery_thread")
+    ):
+        return (
+            "The founder explicitly closed the current line of product discovery. "
+            "Do not continue inside the same thread; choose a materially different "
+            "thread/decision or return no frontier if only requirements remain."
+        )
     if frontier is not None:
         for rejected in rejected_frontiers or []:
             if (
@@ -1026,7 +1057,11 @@ def discovery_thread_node(state: AgentState) -> dict:
     plan = plan_discovery_thread(state)
     threads: Dict[str, dict] = dict(state.get("discovery_threads", {}))
     previous = state.get("active_discovery_thread")
-    if previous and previous != plan.thread_id and previous in threads:
+    closes_previous = (
+        plan.feedback is not None
+        and plan.feedback.kind == ThreadFeedbackKind.PRODUCT_SCOPE_CLOSED
+    )
+    if previous and (previous != plan.thread_id or closes_previous) and previous in threads:
         threads[previous] = {
             **threads[previous],
             "status": ThreadStatus.PAUSED.value,
@@ -1065,6 +1100,7 @@ def discovery_thread_node(state: AgentState) -> dict:
             boundary_type = {
                 ThreadFeedbackKind.QUESTION_TOO_BROAD: "question_too_broad",
                 ThreadFeedbackKind.IMPLEMENTATION_DEFERRED: "implementation_deferred",
+                ThreadFeedbackKind.PRODUCT_SCOPE_CLOSED: "product_scope_closed",
             }[plan.feedback.kind]
             boundary = {
                 "type": boundary_type,
