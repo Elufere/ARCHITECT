@@ -11,6 +11,8 @@ invent product facts, or classify a generic product entity as an integration.
 from __future__ import annotations
 
 from enum import Enum
+import hashlib
+import json
 from typing import Any, Iterable, Optional
 
 from pydantic import BaseModel, Field
@@ -496,14 +498,17 @@ def _boundary_deferrals(
         if evidence:
             detail += f' Founder feedback: "{evidence}"'
 
-        signature = (
-            boundary.get("type"),
-            boundary.get("source_turn"),
-            boundary.get("decision_key"),
-            boundary.get("evidence"),
-        )
+        signature = {
+            "type": boundary.get("type"),
+            "source_turn": boundary.get("source_turn"),
+            "decision_key": boundary.get("decision_key"),
+            "evidence": boundary.get("evidence"),
+        }
+        digest = hashlib.sha256(
+            json.dumps(signature, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()[:16]
         result.append(UnderstandingItem(
-            id=f"boundary:{abs(hash(signature))}:{index}",
+            id=f"boundary:{digest}:{index}",
             label=str(label),
             detail=detail,
             state=UnderstandingItemState.DEFERRED,
