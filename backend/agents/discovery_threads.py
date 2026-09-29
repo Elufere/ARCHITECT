@@ -134,6 +134,26 @@ class InquiryAssessment(BaseModel):
         "IMPLEMENTATION",
     ]
     material_product_consequence: bool
+    target_product_decision: Optional[str] = Field(
+        default=None,
+        description=(
+            "The single unresolved founder-owned PRD-level decision already contained "
+            "in this frontier. Return null when no such single decision can be isolated "
+            "without inventing or repairing the frontier."
+        ),
+    )
+    frontier_is_atomic: bool = Field(
+        description=(
+            "True only when the frontier asks for one independently answerable material "
+            "product decision, not a process, walkthrough, checklist, or bundle."
+        )
+    )
+    frontier_has_mixed_abstraction: bool = Field(
+        description=(
+            "True when the frontier mixes a product-level decision with interaction-design "
+            "or implementation detail, even if all parts concern the same product area."
+        )
+    )
     current_frontier_value: float = Field(default=0.5, ge=0, le=1)
     best_alternative_value: float = Field(default=0.0, ge=0, le=1)
     higher_value_elsewhere: bool = False
@@ -649,12 +669,57 @@ Return:
   INTERACTION_DESIGN = screen flow, button/control sequence, layout, placement,
   presentation, microcopy, clickable-vs-text, modal/toast/component choice;
   IMPLEMENTATION = technical mechanism/architecture/code/service internals.
-- material_product_consequence=true only when knowing this answer could materially
-  change the PRD's product rule, authorization/security/compliance boundary,
-  money/data movement, lifecycle/state transition, major dependency, or similarly
-  consequential behavior. If abstraction_level is INTERACTION_DESIGN or
-  IMPLEMENTATION and there is no such consequence, set should_move_on=true even
-  when the detail is unknown.
+- material_product_consequence=true only when answering the SPECIFIC TARGET
+  UNCERTAINTY would materially change the PRD's product rule,
+  authorization/security/compliance boundary, money/data movement,
+  lifecycle/state transition, major dependency, or similarly consequential
+  behavior. Judge the requested detail itself, NOT the importance of the broader
+  feature/domain it belongs to. A payment area may be highly important while a
+  request for its detailed interaction steps or integration mechanics is still
+  non-material discovery detail.
+- target_product_decision: identify the ONE unresolved founder-owned PRD-level
+  decision already contained in the proposed frontier. This is an AUDIT, not a
+  rewrite. Do not invent a better decision, introduce a new fork, or restate the
+  broad topic in product-sounding language. Return null when the frontier does not
+  already isolate one such decision.
+- frontier_is_atomic=true only when the proposed frontier itself asks for ONE
+  independently answerable material product decision. A single topic or sentence
+  can still be non-atomic when a natural answer requires multiple decisions or a
+  procedural sequence.
+- frontier_has_mixed_abstraction=true when the frontier combines a product-level
+  uncertainty with interaction-design or implementation detail. This can happen
+  inside one apparently coherent topic: for example, a payment frontier may mix
+  a material funding/state rule with checkout steps or provider-integration
+  mechanics. Do not classify the whole bundle by its highest-level or most
+  important concept.
+- If abstraction_level is INTERACTION_DESIGN or IMPLEMENTATION and there is no
+  material product consequence, set should_move_on=true even when the detail is
+  unknown.
+
+TARGET-UNCERTAINTY RULE:
+First identify WHAT INFORMATION the frontier is actually asking the founder to
+supply. Do not infer materiality from the importance of the surrounding product
+area. Ask: "What would change in the PRD if this exact requested information were
+answered?"
+
+A valid target_product_decision must:
+1. already exist inside the proposed frontier;
+2. still be unresolved by founder evidence;
+3. be founder-owned rather than an engineering/UX implementation choice;
+4. be one independently answerable decision; and
+5. materially affect the product model/PRD.
+
+If the frontier says or implies "explain the process", "walk through how it
+works", or otherwise seeks a sequence, inspect the EXPECTED ANSWER rather than
+the wording alone. If a natural complete answer would mainly be user interaction
+steps, screens/controls, provider mechanics, internal representation, or technical
+execution, there is no valid atomic PRD target unless the frontier separately and
+clearly isolates a consequential product rule.
+
+Do not use target_product_decision to repair a bad frontier. If a broad/mixed
+frontier contains several possible material decisions, set frontier_is_atomic=false
+and/or frontier_has_mixed_abstraction=true and let the planner replan around one
+of them.
 
 CRITICAL COVERAGE RULE:
 Related context is NOT an answer. Knowing WHO the actors are does not answer WHAT
@@ -802,8 +867,10 @@ assessment. If ANY material information is still unknown, set
 information_need_resolved=false and list every such item in missing_information.
 If the need is fully resolved, missing_information must be empty. Supporting
 observation IDs must be UNIQUE and limited to the supplied IDs. Do not repeat an
-ID. You MUST also return repeats_prior_decision, abstraction_level, and
-material_product_consequence using the definitions in the main instruction.
+ID. You MUST also return repeats_prior_decision, abstraction_level,
+material_product_consequence, target_product_decision, frontier_is_atomic, and
+frontier_has_mixed_abstraction using the definitions in the main instruction.
+Do not repair, rewrite, or improve the proposed frontier while assessing it.
 Do not change the proposed frontier."""),
                 HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
             ])
@@ -854,9 +921,21 @@ Do not change the proposed frontier."""),
         f"repeats_prior={assessment.repeats_prior_decision} | "
         f"level={assessment.abstraction_level} | "
         f"material={assessment.material_product_consequence} | "
+        f"target={assessment.target_product_decision!r} | "
+        f"atomic={assessment.frontier_is_atomic} | "
+        f"mixed={assessment.frontier_has_mixed_abstraction} | "
         f"missing={assessment.missing_information} | {assessment.reason}"
     )
 
+    target_decision_missing = not (
+        assessment.target_product_decision
+        and assessment.target_product_decision.strip()
+    )
+    frontier_shape_reject = (
+        target_decision_missing
+        or not assessment.frontier_is_atomic
+        or assessment.frontier_has_mixed_abstraction
+    )
     abstraction_reject = (
         assessment.abstraction_level in {"INTERACTION_DESIGN", "IMPLEMENTATION"}
         and not assessment.material_product_consequence
@@ -865,15 +944,23 @@ Do not change the proposed frontier."""),
     print(json.dumps({
         "abstraction_level": assessment.abstraction_level,
         "material_product_consequence": assessment.material_product_consequence,
+        "target_product_decision": assessment.target_product_decision,
+        "frontier_is_atomic": assessment.frontier_is_atomic,
+        "frontier_has_mixed_abstraction": assessment.frontier_has_mixed_abstraction,
         "should_move_on": assessment.should_move_on,
         "too_broad": assessment.too_broad,
         "covered": covered,
         "recap": recap,
         "higher_value_elsewhere": assessment.higher_value_elsewhere,
+        "frontier_shape_rule_result": "REJECT" if frontier_shape_reject else "PASS",
         "abstraction_rule_result": "REJECT" if abstraction_reject else "PASS",
+        "frontier_shape_rule": (
+            "A frontier must already isolate one unresolved founder-owned atomic PRD "
+            "decision and must not mix product-level uncertainty with UX/implementation."
+        ),
         "abstraction_rule": (
-            "Reject only when abstraction_level is INTERACTION_DESIGN or IMPLEMENTATION "
-            "and material_product_consequence is false."
+            "Reject low-level INTERACTION_DESIGN/IMPLEMENTATION when the requested "
+            "detail itself has no material product consequence."
         ),
     }, ensure_ascii=False, indent=2, default=str))
     print("===== END STAGE 4 =====\n")
@@ -890,6 +977,22 @@ Do not change the proposed frontier."""),
             "in the interview, even though its ID/wording may differ. Prior question: "
             f"{assessment.matching_prior_question}. Choose a genuinely different "
             "product decision."
+        )
+    if frontier_shape_reject:
+        shape_reasons = []
+        if target_decision_missing:
+            shape_reasons.append("no single unresolved founder-owned PRD decision was isolated")
+        if not assessment.frontier_is_atomic:
+            shape_reasons.append("the frontier is not one independently answerable product decision")
+        if assessment.frontier_has_mixed_abstraction:
+            shape_reasons.append("the frontier mixes product discovery with UX/implementation detail")
+        return (
+            "The proposed frontier concerns a potentially valid product area but is "
+            "not a valid atomic discovery target: "
+            + "; ".join(shape_reasons)
+            + ". Replan around one existing material founder-owned product decision "
+            "already supported by the context, or move to another area. Do not invent "
+            "a product fork merely to make this frontier askable."
         )
     if (
         assessment.abstraction_level in {"INTERACTION_DESIGN", "IMPLEMENTATION"}
