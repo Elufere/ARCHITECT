@@ -735,9 +735,8 @@ Return:
   authorization/security/compliance boundary, money/data movement,
   lifecycle/state transition, major dependency, or similarly consequential
   behavior. Judge the requested detail itself, NOT the importance of the broader
-  feature/domain it belongs to. A payment area may be highly important while a
-  request for its detailed interaction steps or integration mechanics is still
-  non-material discovery detail.
+  feature/domain it belongs to. A business-critical product area may still contain
+  interaction or implementation details that are non-material at discovery depth.
 - frontier_decision_units: decompose the ORIGINAL proposed frontier into every
   independently answerable semantic unit it requests. Preserve the frontier's
   actual information demands; do not summarize several units into one umbrella
