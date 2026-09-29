@@ -310,8 +310,9 @@ the handoff point without asking what internal staff do.
 """
 
 INTERNAL_ROLE_PATTERN = re.compile(
-    r"\b(admin(?:istrator)?s?|support(?: staff)?|customer support|"
-    r"moderators?|back[- ]office|internal staff)\b", re.I
+    r"\b(admin(?:istrator)?s?|support (?:agent|agents|staff|team|representative|representatives)|"
+    r"customer support (?:agent|agents|staff|team|representative|representatives)|"
+    r"moderators?|back[- ]office(?: staff)?|internal staff)\b", re.I
 )
 
 
@@ -571,12 +572,48 @@ def guardrail_node(state: dict) -> dict:
             _record_requirement_question(state, last.content)
             if isinstance(last, AIMessage) else state.get("requirement_question_history", [])
         )
-        return {**result, "question_retry_count": 0, "requirement_question_history": history}
+        return {
+            **result,
+            "question_retry_count": 0,
+            "question_retry_exhausted": False,
+            "requirement_question_history": history,
+        }
     retries = state.get("question_retry_count", 0)
     if retries >= MAX_QUESTION_RETRIES:
-        logger.warning("Question retry limit reached; returning a gap clarification.")
-        return {"question_retry_count": 0, "messages": [AIMessage(content=(
-            "I'm having trouble resolving this part of your answer. "
-            + clarification_question(state)
-        ))]}
-    return {**result, "question_retry_count": retries + 1}
+        logger.warning(
+            "Question retry limit reached; abandoning the rejected inquiry and replanning."
+        )
+        boundaries = list(state.get("discovery_boundaries", []))
+        last_draft = next(
+            (
+                message.content
+                for message in reversed(state.get("messages", []))
+                if isinstance(message, AIMessage)
+            ),
+            "",
+        )
+        candidate = state.get("selected_inquiry") or state.get("selected_requirement_candidate") or {}
+        boundaries.append({
+            "type": "generation_exhausted",
+            "scope": getattr(state.get("discovery_scope"), "value", state.get("discovery_scope")),
+            "source_turn": state.get("turn_count", 0),
+            "evidence": last_draft,
+            "question": last_draft,
+            "thread_id": candidate.get("thread_id") or state.get("active_discovery_thread"),
+            "decision_key": candidate.get("decision_key"),
+            "objective": state.get("current_objective"),
+            "instruction": (
+                "The selected inquiry could not be phrased safely after bounded guardrail "
+                "retries. Do not emit a generic schema fallback or retry the same decision "
+                "again on this turn; re-plan to a materially different grounded inquiry."
+            ),
+        })
+        return {
+            "question_retry_count": 0,
+            "question_retry_exhausted": True,
+            "discovery_boundaries": boundaries[-50:],
+            "messages": [SystemMessage(content=(
+                "QUESTION GENERATION EXHAUSTED: abandon this inquiry and re-plan."
+            ))],
+        }
+    return {**result, "question_retry_count": retries + 1, "question_retry_exhausted": False}
