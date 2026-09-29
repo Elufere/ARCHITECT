@@ -131,26 +131,6 @@ A UI-adjacent question may remain PRODUCT_DISCOVERY only when the detail itself
 materially changes authorization/security/compliance, money/data movement,
 lifecycle/state, a major dependency, or another substantive PRD decision.
 
-EXPECTED ANSWER SPACE:
-Do not classify the final question from its surface vocabulary alone. Before
-passing it, imagine the natural complete answer a competent founder would give.
-If that answer would primarily be a procedural walkthrough, sequence of user
-interactions, screens/controls, provider-integration mechanics, internal system
-steps, or technical execution, the question is below product-discovery depth even
-when it contains no explicit UI/technical words.
-
-A broad "how" question is not automatically invalid, and the word "how" is not a
-banned term. It is valid when the natural answer is one atomic product rule,
-business decision, state/lifecycle condition, authorization rule, money/data rule,
-material dependency, or similarly consequential PRD behavior. It is invalid when
-a natural answer is mainly "first do X, then Y, then Z" or explains how the
-experience/system executes an already-known behavior.
-
-Judge the materiality of the SPECIFIC ANSWER being requested, not the importance
-of the surrounding feature or domain. A business-critical product area can still
-contain low-value interaction or implementation details that belong below
-discovery depth.
-
 FOUNDER-FACING ABSTRACTION:
 A product uncertainty can be legitimate while its wording is still wrong.
 The founder should be asked to choose or clarify DESIRED PRODUCT BEHAVIOR, not to
@@ -287,12 +267,6 @@ Reject if the response:
   component choice, or similar UX mechanics UNLESS that detail materially changes
   a product rule, authorization/security/compliance boundary, money/data movement,
   lifecycle/state transition, major dependency, or irreversible outcome
-- has an expected answer space that is primarily procedural even though the
-  question itself sounds product-level. For example, a broad request for how a
-  user performs a multi-step workflow can still be solution design if a natural
-  complete answer would be a sequence of interactions rather than one material
-  product rule. Evaluate what the question asks the founder to SPECIFY, not just
-  whether the wording contains UI/technical terminology
 - changes to another topic
 - drifts to a different product decision that does not help resolve the Current objective
 - asks more than ONE independently answerable product question when Planner source
@@ -335,26 +309,7 @@ the Current gap specifically.
 If the question directly discovers the current objective, it should pass ONLY
 when it stays at the objective's intended granularity. A question can mention the
 objective and still be invalid if it expands into a multi-stage recap, bundles
-several dimensions, asks for a checklist-like answer, or naturally elicits a
-procedural UX/implementation walkthrough instead of one PRD-level decision.
-
-Before returning passed=true, perform BOTH semantic tests internally:
-
-ATOMICITY TEST:
-Decompose the FINAL QUESTION into independently answerable information units.
-If the founder could fully answer one requested unit while leaving another
-unanswered, the question is not atomic. Do not merge units merely because they
-share one actor, feature, workflow, sentence, or broad label.
-
-EXPECTED-ANSWER TEST:
-Imagine the shortest natural answer that would FULLY satisfy the final question.
-Would that answer primarily specify one founder-owned PRD rule/decision/behavior,
-or would it require a procedural interaction walkthrough, interface mechanics,
-technical mechanism, or internal execution detail?
-
-Pass only when the final question asks for one independently answerable
-PRD-level uncertainty, unless a lower-level detail itself has a demonstrated
-material product consequence.
+several dimensions, or asks for a checklist-like answer.
 
 For model-driven discovery, prefer ONE short founder-facing question. Examples of
 invalid shapes include "when and how...", "what changes in A, B, and C?",
