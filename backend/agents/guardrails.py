@@ -245,12 +245,23 @@ against the Current objective. Reject advice that drifts into implementation,
 architecture, or a generic feature wishlist.
 
 Reject if the response:
-- phrases the discovery question as though the product behavior is already
-  implemented/currently operating when the supplied founder evidence does not
-  explicitly establish an existing/live implementation. Product discovery should
-  ask about intended behavior ("should", "would", "will", "do you want", "what
-  should happen") by default. A founder describing requirements in present tense
-  does not by itself prove the feature already exists.
+- phrases an UNDESIGNED/UNBUILT product behavior as descriptive present-tense
+  behavior when supplied founder evidence does not explicitly establish that the
+  behavior already exists in a live/existing product. This includes semantic
+  shapes such as "How do users...", "How does the app...", "What happens when..."
+  or equivalent wording when they ask the founder to describe the future product
+  as though it already operates that way. Product-under-design questions should
+  instead ask for the intended decision using normative/future language such as
+  "How should...", "What should...", "Would you like...", "Should...", or "What
+  should happen...".
+- do NOT reject descriptive present tense when the question is genuinely about
+  confirmed current reality: either an explicitly existing/live product behavior,
+  or the user's present-day real-world/manual/external process being studied as
+  context. The distinction is semantic: DESCRIBE WHAT EXISTS vs DECIDE WHAT THE
+  PRODUCT SHOULD DO.
+- a founder stating desired requirements in present tense does not prove those
+  behaviors already exist. When implementation status is unknown, treat the
+  selected product behavior as intended and require design-decision wording.
 - presents unsupported or inferred information in the acknowledgement as though
   the founder confirmed it
 - violates a persistent discovery boundary by retrying, paraphrasing, or deepening
