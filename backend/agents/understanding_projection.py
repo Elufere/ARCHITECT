@@ -138,9 +138,14 @@ def _field_label(key: str) -> str:
     return FIELD_LABELS.get(key, _humanize(key))
 
 
+def _enum_value(value: Any) -> Any:
+    return getattr(value, "value", value)
+
+
 def _scope_matches(raw_scope: Any, scope: DiscoveryScope) -> bool:
-    value = getattr(raw_scope, "value", raw_scope)
-    return value == scope.value
+    if raw_scope is None:
+        return True
+    return _enum_value(raw_scope) == scope.value
 
 
 def _knowledge_items(state: AgentState, scope: DiscoveryScope) -> list[KnowledgeItem]:
@@ -303,7 +308,7 @@ def _dependency_block_detail(raw: Any) -> Optional[str]:
     if not blocking:
         return "Waiting on another product decision."
     labels = [
-        f"{_humanize(str(requirement_id))} ({_humanize(str(reason))})"
+        f"{_humanize(str(requirement_id))} ({_humanize(str(_enum_value(reason)))})"
         for requirement_id, reason in blocking.items()
     ]
     return "Waiting on: " + ", ".join(labels)
@@ -449,6 +454,8 @@ def _validation_decisions(
 ) -> list[UnderstandingItem]:
     result: list[UnderstandingItem] = []
     selected = state.get("selected_validation_issue") or {}
+    if not isinstance(selected, dict) and hasattr(selected, "model_dump"):
+        selected = selected.model_dump(mode="json")
     selected_id = selected.get("id") if isinstance(selected, dict) else None
 
     for raw in state.get("validation_issues", []) or []:
@@ -458,7 +465,7 @@ def _validation_decisions(
             continue
         if not _scope_matches(issue.get("scope"), scope):
             continue
-        if issue.get("severity") != "BLOCKING":
+        if _enum_value(issue.get("severity")) != "BLOCKING":
             continue
         result.append(UnderstandingItem(
             id=f"validation:{issue_id}",
@@ -482,7 +489,7 @@ def _boundary_deferrals(
     scope: DiscoveryScope,
 ) -> list[UnderstandingItem]:
     result: list[UnderstandingItem] = []
-    for index, boundary in enumerate(state.get("discovery_boundaries", []) or []):
+    for boundary in state.get("discovery_boundaries", []) or []:
         if not isinstance(boundary, dict) or not _scope_matches(boundary.get("scope"), scope):
             continue
         if boundary.get("type") not in {"design_deferral", "implementation_deferred"}:
@@ -508,7 +515,7 @@ def _boundary_deferrals(
             json.dumps(signature, sort_keys=True, ensure_ascii=False).encode("utf-8")
         ).hexdigest()[:16]
         result.append(UnderstandingItem(
-            id=f"boundary:{digest}:{index}",
+            id=f"boundary:{digest}",
             label=str(label),
             detail=detail,
             state=UnderstandingItemState.DEFERRED,
