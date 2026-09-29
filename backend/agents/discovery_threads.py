@@ -262,9 +262,10 @@ The interview should feel like an excellent human PM conversation:
      question.
    - A valid workflow frontier should normally be one actor + one stage/transition
      + one unresolved causal decision.
-   - If the workflow is largely unknown, begin with the smallest useful entry
-     point, such as the first action for one actor, rather than requesting the
-     whole process.
+   - If the workflow is largely unknown, begin with the smallest useful PRODUCT
+     entry point, such as the first meaningful request, creation, commitment,
+     handoff, or state-changing action for one actor. Do not interpret "smallest"
+     as the first button/control click.
 8. Never repeat an underlying decision merely with different wording. The
    delivered-question history contains thread_id + decision_key, but wording and
    IDs are not the source of truth: compare the SEMANTIC DECISION itself against
