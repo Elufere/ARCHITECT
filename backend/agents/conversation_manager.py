@@ -189,6 +189,15 @@ the question as intended behavior using language such as "should", "would",
 implementation. A founder describing intended behavior in present tense is still
 not proof that the product has already been built.
 
+FOUNDER-FACING ABSTRACTION:
+Preserve the exact product decision being clarified, but express it as a decision
+about desired product behavior. Do not ask the founder to explain internal
+storage, persistence, recording, finalization, derivation, or other system
+representation when the same decision can be asked as "what should happen",
+"when should it take effect", "should confirmation be required", or equivalent
+product-owner language. Future tense alone does not make internal-system wording
+appropriate.
+
 The explanation must contain NO questions and no question marks.
 The question field must contain exactly ONE question, ending in "?".
 Do not ask a meta-question such as whether the clarification matches what the
