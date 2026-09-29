@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from agents.state import AgentState, DiscoveryScope
 from agents.graph import build_graph
-from agents.interview_checkpoint import save_checkpoint, load_checkpoint, unfinished_sessions, session_lock
+from agents.interview_checkpoint import save_checkpoint, load_checkpoint, session_lock
 from agents.llm_errors import LLMCallFailed, ExtractionFailed
 from agents.product_model import build_product_model
 from langchain_core.messages import HumanMessage
@@ -44,26 +44,6 @@ def run_phase(graph, state: AgentState, phase_label: str) -> AgentState:
         save_checkpoint(state)  # Before any graph/model work.
     return state
 
-
-def choose_session():
-    pending = unfinished_sessions()
-    if not pending:
-        return None
-    print("\nUnfinished interviews:")
-    for index, document in enumerate(pending, 1):
-        saved = document["state"]
-        print(f"{index}. {document['session_id']} | {saved.get('discovery_scope')} | "
-              f"turn {saved.get('turn_count', 0)} | {saved.get('current_topic')} -> {saved.get('current_gap')} | "
-              f"{document.get('interview_status')}")
-    while True:
-        choice = input("Enter to resume the latest, a session number, 'new', or 'quit': ").strip().lower()
-        if choice in ("new", "quit"):
-            return choice
-        if not choice:
-            return pending[0]["session_id"]
-        if choice.isdigit() and 1 <= int(choice) <= len(pending):
-            return pending[int(choice) - 1]["session_id"]
-        print("Please choose a listed session or 'new'.")
 
 
 def new_session():
@@ -143,16 +123,10 @@ def run_cli():
     print("ARCHITECT - PRODUCT MANAGER\nType 'quit' to save and exit. Use '.' on a blank line to send input.")
     session_id = None
     try:
-        selected = choose_session()
-        if selected == "quit":
+        state = new_session()
+        if state is None:
             return
-        if selected in (None, "new"):
-            state = new_session()
-            if state is None:
-                return
-            session_id = state["session_id"]
-        else:
-            session_id = selected
+        session_id = state["session_id"]
         with session_lock(session_id):
             state = load_checkpoint(session_id)
             print(f"Session: {session_id}")
