@@ -125,6 +125,15 @@ class InquiryAssessment(BaseModel):
     recap_of_known_information: bool = False
     should_move_on: bool = False
     repeats_rejected_frontier: bool = False
+    repeats_prior_decision: bool = False
+    matching_prior_question: str = ""
+    abstraction_level: Literal[
+        "PRODUCT_DECISION",
+        "PRODUCT_BEHAVIOR",
+        "INTERACTION_DESIGN",
+        "IMPLEMENTATION",
+    ] = "PRODUCT_DECISION"
+    material_product_consequence: bool = True
     current_frontier_value: float = Field(default=0.5, ge=0, le=1)
     best_alternative_value: float = Field(default=0.0, ge=0, le=1)
     higher_value_elsewhere: bool = False
@@ -154,6 +163,19 @@ class InquiryAssessment(BaseModel):
         if self.higher_value_elsewhere and not self.best_alternative_focus.strip():
             raise ValueError(
                 "higher_value_elsewhere requires a specific grounded alternative"
+            )
+        if self.repeats_prior_decision and not self.matching_prior_question.strip():
+            raise ValueError(
+                "repeats_prior_decision requires the matching prior delivered question"
+            )
+        if (
+            self.abstraction_level in {"INTERACTION_DESIGN", "IMPLEMENTATION"}
+            and not self.material_product_consequence
+            and not self.should_move_on
+        ):
+            raise ValueError(
+                "Low-level interaction/implementation detail without a material "
+                "product consequence must set should_move_on=true"
             )
         return self
 
@@ -245,21 +267,46 @@ The interview should feel like an excellent human PM conversation:
      whole process.
 8. Never repeat an underlying decision merely with different wording. The
    delivered-question history contains thread_id + decision_key, but wording and
-   IDs are not the source of truth: use the founder's accumulated evidence too.
-   If the substance was already answered across one or several earlier answers,
-   move on. Never ask the founder to summarize or restate an already-known flow.
-   If a decision was asked twice, choose another decision or another thread rather
-   than paraphrasing it again.
-9. The frontier is an UNCERTAINTY/DECISION, never an invented answer. Use the
+   IDs are not the source of truth: compare the SEMANTIC DECISION itself against
+   previously delivered questions and confirmed answers. Different decision keys
+   do not make two inquiries different. If the proposed frontier asks the same
+   governing product choice/rule/state/outcome as an earlier question, or merely
+   narrows an already-settled decision without material product consequence, move
+   on. A genuine next causal decision is not repetition just because it follows
+   the same workflow.
+9. DECOMPOSE TO THE PRODUCT-DECISION LEVEL, NOT THE SCREEN-DESIGN LEVEL.
+   The goal is to understand the product well enough to produce a PRD, not to
+   design every screen interaction during discovery.
+   Prefer questions about material product behavior such as:
+   - actors and meaningful responsibilities;
+   - goals/outcomes;
+   - business rules and authorization boundaries;
+   - state changes and completion conditions;
+   - money/data movement;
+   - important validations, constraints, dependencies, and product-owned
+     exception behavior.
+   Normally DO NOT ask the founder to specify:
+   - which button/control is clicked first;
+   - exact screen sequence/navigation mechanics;
+   - placement, visual style, formatting, copy wording, or iconography;
+   - clickable-vs-plain presentation;
+   - modal/toast/component choice;
+   - other interaction-design or implementation mechanics.
+   A low-level interaction detail is askable only when the answer materially
+   changes a product rule, security/authorization requirement, compliance
+   obligation, money/data state transition, irreversible outcome, or similarly
+   important PRD decision. "There is more UX detail we could know" is never by
+   itself a discovery reason.
+10. The frontier is an UNCERTAINTY/DECISION, never an invented answer. Use the
    product's own vocabulary. Phrase objectives/question hints as intended product
    behavior unless confirmed founder evidence explicitly establishes an existing
    implementation. Do not encode "currently", "how the app does X", or other
    already-built assumptions into the frontier simply because the founder is
    discussing the desired product in present tense.
-10. anchor_gap is optional normalization metadata only. Use null when no existing
+11. anchor_gap is optional normalization metadata only. Use null when no existing
     storage field cleanly represents the decision; never distort the question to
     fit a schema field.
-11. Respect discovery_boundaries as persistent interview-control memory.
+12. Respect discovery_boundaries as persistent interview-control memory.
     - design_deferral means UI/interface/navigation/design implementation detail
       has been delegated away from the founder. Do not ask it again in different
       wording unless a concrete unresolved product decision genuinely depends on it.
@@ -283,16 +330,16 @@ The interview should feel like an excellent human PM conversation:
       same underlying decision again; choose a materially different grounded
       inquiry so the interview can continue without a generic fallback question.
     These are NOT product facts and must never be converted into requirements.
-12. If latest_conversation_intent is design_deferral or objection, the NEXT move
+13. If latest_conversation_intent is design_deferral or objection, the NEXT move
     must demonstrate that feedback was respected.
-13. Read the founder's latest answer semantically, not only as product content.
+14. Read the founder's latest answer semantically, not only as product content.
     If it is primarily feedback about the INTERVIEW QUESTION itself — for example
     that the question asks for too much reasoning, too much of a process, or too
     many decisions at once — do not require a special phrase or intent label.
     Preserve the underlying product thread and replace the oversized inquiry with
     one smaller independently answerable decision. Do not store that feedback as
     product knowledge.
-14. Detect interview-control feedback semantically from the latest founder answer.
+15. Detect interview-control feedback semantically from the latest founder answer.
     This must not depend on a fixed phrase.
     - If the founder says the previous question asks for too much at once, set
       feedback.kind=QUESTION_TOO_BROAD, preserve the same underlying product
@@ -312,7 +359,7 @@ The interview should feel like an excellent human PM conversation:
       discovery questions.
     feedback.evidence must quote the latest founder answer and feedback.instruction
     must describe the conversational boundary without inventing a product fact.
-15. Before choosing the next frontier, perform BREADTH ARBITRATION:
+16. Before choosing the next frontier, perform BREADTH ARBITRATION:
     - identify the best next uncertainty inside the active thread;
     - identify the best materially unresolved decision outside that thread using
       confirmed product structure, paused threads, and eligible requirements;
@@ -582,6 +629,24 @@ Return:
   same underlying decision as any item in rejected_frontiers, even if its
   decision_key or wording changed. A rejected/covered frontier is closed for this
   repair attempt and must not be selected again.
+- repeats_prior_decision=true when the proposed frontier is semantically the same
+  governing uncertainty as ANY delivered question in delivered_question_history,
+  even when thread_id, decision_key, wording, or schema anchor differ. This is
+  about meaning, not string similarity. Set matching_prior_question to the most
+  relevant delivered question. Do NOT mark a genuine next causal decision as a
+  repeat merely because it occurs in the same workflow.
+- abstraction_level:
+  PRODUCT_DECISION = product-shape choice/rule/actor/goal/constraint;
+  PRODUCT_BEHAVIOR = material state/outcome/validation/authorization/dependency;
+  INTERACTION_DESIGN = screen flow, button/control sequence, layout, placement,
+  presentation, microcopy, clickable-vs-text, modal/toast/component choice;
+  IMPLEMENTATION = technical mechanism/architecture/code/service internals.
+- material_product_consequence=true only when knowing this answer could materially
+  change the PRD's product rule, authorization/security/compliance boundary,
+  money/data movement, lifecycle/state transition, major dependency, or similarly
+  consequential behavior. If abstraction_level is INTERACTION_DESIGN or
+  IMPLEMENTATION and there is no such consequence, set should_move_on=true even
+  when the detail is unknown.
 
 CRITICAL COVERAGE RULE:
 Related context is NOT an answer. Knowing WHO the actors are does not answer WHAT
@@ -632,7 +697,10 @@ discovery stage.
 Do not use a fixed question-count cutoff. Thread/question counts are evidence of
 possible drilling, not a stopping rule. Once the governing product rule is clear,
 do not keep drilling merely because more implementation detail, examples, UI
-mechanics, exhaustive enumeration, or edge specificity could exist. If recent
+mechanics, exhaustive enumeration, or edge specificity could exist. "Make the
+question smaller" must NOT become "make it more screen-specific"; decomposition
+stops when the remaining uncertainty is principally interaction design rather
+than a material product decision. If recent
 questions have stayed on the same narrow area and the next answer would not
 materially change the product model, PRD decision, business rule, architecture
 boundary, money movement, authorization model, lifecycle, or major dependency,
@@ -760,6 +828,9 @@ ID. Do not change the proposed frontier."""),
         f"alternative_value={assessment.best_alternative_value:.2f} | "
         f"higher_elsewhere={assessment.higher_value_elsewhere} | "
         f"repeats_rejected={assessment.repeats_rejected_frontier} | "
+        f"repeats_prior={assessment.repeats_prior_decision} | "
+        f"level={assessment.abstraction_level} | "
+        f"material={assessment.material_product_consequence} | "
         f"missing={assessment.missing_information} | {assessment.reason}"
     )
 
@@ -768,6 +839,23 @@ ID. Do not change the proposed frontier."""),
             "The proposed frontier repeats an underlying decision that was already "
             "rejected during this planning cycle. Choose a materially different "
             "decision or thread."
+        )
+    if assessment.repeats_prior_decision:
+        return (
+            "The proposed frontier semantically repeats a decision already delivered "
+            "in the interview, even though its ID/wording may differ. Prior question: "
+            f"{assessment.matching_prior_question}. Choose a genuinely different "
+            "product decision."
+        )
+    if (
+        assessment.abstraction_level in {"INTERACTION_DESIGN", "IMPLEMENTATION"}
+        and not assessment.material_product_consequence
+    ):
+        return (
+            "The proposed frontier is below the required product-discovery abstraction "
+            f"level ({assessment.abstraction_level}). The remaining detail is primarily "
+            "UX/implementation refinement and does not materially change the product "
+            "model or PRD. Move to a different product decision."
         )
     if covered or recap:
         support = (
@@ -930,8 +1018,9 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
                         "or a paraphrase. Choose EXACTLY ONE independently answerable "
                         "product decision. Stay on the current thread only when its NEXT "
                         "question is at least as valuable as the best unresolved alternative. "
-                        "If the rejected frontier was already covered or low-value, pause "
-                        "that thread and choose another grounded decision or relevant "
+                        "If the rejected frontier was already covered, repeated in prior "
+                        "history, below the product-decision abstraction level, or low-value, "
+                        "pause that thread and choose another grounded decision or relevant "
                         "requirement. Do not ask implementation/UI mechanics, an end-to-end "
                         "workflow recap, or another confirmation of a closed answer. Use "
                         "null for an uncertain anchor_gap and never invent requirement IDs."
