@@ -538,13 +538,16 @@ Return:
   available OUTSIDE the proposed thread using the supplied eligible requirement
   backlog, paused/current threads, and confirmed product model. Use 0 only when
   there is no grounded alternative.
-- higher_value_elsewhere=true when a specific grounded alternative would improve
-  product understanding more than this frontier now. Name that area/decision in
-  best_alternative_focus. Do not invent an alternative merely to create variety.
-- should_move_on=true when the local thread is coherent enough for the current
-  discovery stage and another question here has low marginal value, OR when a
-  clearly higher-value grounded decision exists elsewhere. The current thread
-  does not need to be fully specified. Set depth_reason to explain the tradeoff.
+- higher_value_elsewhere=true when a specific grounded alternative appears more
+  valuable than this frontier now. Name that area/decision in
+  best_alternative_focus. This is DIAGNOSTIC ONLY: the planner already owns global
+  breadth-vs-depth ranking, so do not invalidate an otherwise good frontier merely
+  because you can imagine a somewhat better alternative.
+- should_move_on=true ONLY when the proposed frontier itself is no longer worth
+  asking at this discovery stage: for example it is implementation/UI detail,
+  exhaustive refinement after the governing rule is already coherent, or continued
+  drilling whose answer would not materially change the product model. Do NOT set
+  should_move_on merely because another valid frontier might rank higher.
 - repeats_rejected_frontier=true when the proposed frontier is semantically the
   same underlying decision as any item in rejected_frontiers, even if its
   decision_key or wording changed. A rejected/covered frontier is closed for this
@@ -589,10 +592,12 @@ or rule, and the material state/decision currently being discussed are clear
 enough that remaining questions mostly refine rather than reshape it. This is a
 semantic judgment, not a required-field checklist.
 
-Then compare the proposed next question against the best grounded unresolved
-decision elsewhere. A current-thread question may still be useful and should
-still be deferred when another question has greater expected product value.
-Conversation continuity breaks ties; it must not dominate information value.
+The PLANNER, not this assessor, performs the global comparison against unresolved
+decisions elsewhere. You may report a stronger alternative as diagnostic context,
+but this assessor must not turn ranking disagreement into invalidity. Its job is
+to reject a frontier only when the frontier itself is covered, repeated, too
+broad, boundary-violating, or intrinsically too low-value/deep for the current
+discovery stage.
 
 Do not use a fixed question-count cutoff. Thread/question counts are evidence of
 possible drilling, not a stopping rule. Once the governing product rule is clear,
@@ -741,19 +746,14 @@ ID. Do not change the proposed frontier."""),
             "The proposed information need is already substantially answered or "
             f"is a recap of known information ({support}): {assessment.reason}"
         )
-    grounded_alternative = bool(assessment.best_alternative_focus.strip())
-    comparative_move_on = grounded_alternative and (
-        assessment.higher_value_elsewhere
-        or assessment.best_alternative_value > assessment.current_frontier_value
-    )
-    if assessment.should_move_on or comparative_move_on:
+    if assessment.should_move_on:
         alternative = (
-            f" Higher-value alternative: {assessment.best_alternative_focus}."
-            if grounded_alternative else ""
+            f" Possible next area: {assessment.best_alternative_focus}."
+            if assessment.best_alternative_focus.strip() else ""
         )
         return (
-            "Do not keep drilling the current thread. Its proposed next question is "
-            "lower marginal value than continuing breadth-first product discovery. "
+            "Do not keep drilling this frontier. The proposed question itself has "
+            "insufficient marginal discovery value at the current stage. "
             f"{assessment.depth_reason or assessment.reason}{alternative}"
         )
     if assessment.too_broad:
