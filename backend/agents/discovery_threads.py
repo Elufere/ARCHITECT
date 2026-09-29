@@ -1138,4 +1138,5 @@ def discovery_thread_node(state: AgentState) -> dict:
         "thread_frontier": frontier,
         "thread_relevant_requirement_ids": list(plan.relevant_requirement_ids),
         "discovery_boundaries": boundaries[-50:],
+        "question_retry_exhausted": False,
     }
