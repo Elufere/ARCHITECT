@@ -46,6 +46,19 @@ def clarification_reply_model():
     return _clarification_reply_model
 
 
+QUESTION_SHAPE = re.compile(
+    r"^\s*(?:what|why|how|when|where|who|which|can|could|would|should|"
+    r"do|does|did|is|are|am|will|have|has)\b",
+    re.I,
+)
+
+
+def looks_like_founder_question(content: str) -> bool:
+    """Generic conversational question shape; does not encode product/domain phrases."""
+    normalized = (content or "").strip()
+    return bool("?" in normalized or QUESTION_SHAPE.search(normalized))
+
+
 PATTERNS = {
     "clarification": re.compile(
         r"\b(what do you mean|what are you asking|can you explain|clarify|rephrase|"
@@ -215,7 +228,7 @@ def conversation_manager_node(state: AgentState) -> dict:
     intent = classify_turn(messages[-1].content)
     if (
         intent == "product_information"
-        and "?" in messages[-1].content
+        and looks_like_founder_question(messages[-1].content)
         and question_is_clarification(state, messages[-1].content)
     ):
         intent = "clarification"
