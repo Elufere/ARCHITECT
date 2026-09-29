@@ -92,6 +92,18 @@ Use only the supplied facts. Do not use outside domain assumptions.
 Return exactly one verdict for every pair_id. When uncertain, contradiction=false.
 """
 
+FACT_CONFLICT_REPAIR_INSTRUCTION = FACT_CONFLICT_INSTRUCTION + """
+PROTOCOL REPAIR:
+The previous review omitted one or more required pair verdicts. Review ONLY the
+pairs supplied in this repair request.
+
+Return exactly one verdict for every supplied pair_id and no verdicts for any
+other ID. Preserve each pair_id exactly as supplied. Do not summarize, rename,
+merge, or omit pairs. This repair is only for protocol coverage; use the same
+conservative contradiction standard above.
+"""
+
+
 
 # Cross-field pairs where mutually exclusive product decisions can be expressed
 # under different schema keys. The semantic reviewer still decides whether the
@@ -239,6 +251,38 @@ def _semantic_pair_candidates(
     return pairs
 
 
+def _invoke_conflict_review(payload: List[dict], *, repair: bool = False) -> FactConflictBatch:
+    """Run one semantic conflict review while preserving LLM/network failures."""
+    instruction = FACT_CONFLICT_REPAIR_INSTRUCTION if repair else FACT_CONFLICT_INSTRUCTION
+    try:
+        result = conflict_model().invoke([
+            SystemMessage(content=instruction),
+            HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+        ])
+        return (
+            result
+            if isinstance(result, FactConflictBatch)
+            else FactConflictBatch.model_validate(result)
+        )
+    except Exception as exc:
+        raise_if_llm_failure(exc)
+        raise ExtractionFailed(
+            "Fact consistency repair failed" if repair else "Fact consistency review failed"
+        ) from exc
+
+
+def _expected_conflict_verdicts(
+    result: FactConflictBatch,
+    expected_ids: set[str],
+) -> Dict[str, FactConflictVerdict]:
+    """Keep only supplied pair IDs; invented IDs never enter persistent cache."""
+    return {
+        verdict.pair_id: verdict
+        for verdict in result.verdicts
+        if verdict.pair_id in expected_ids
+    }
+
+
 def _review_unknown_pairs(
     pairs: Sequence[tuple[KnowledgeItem, KnowledgeItem]],
     cache: Dict[str, dict],
@@ -260,21 +304,49 @@ def _review_unknown_pairs(
             }
             for first, second in batch
         ]
-        try:
-            result = conflict_model().invoke([
-                SystemMessage(content=FACT_CONFLICT_INSTRUCTION),
-                HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
-            ])
-            if not isinstance(result, FactConflictBatch):
-                result = FactConflictBatch.model_validate(result)
-        except Exception as exc:
-            raise_if_llm_failure(exc)
-            raise ExtractionFailed("Fact consistency review failed") from exc
-
-        by_pair_id = {item.pair_id: item for item in result.verdicts}
         expected = {_pair_id(first, second) for first, second in batch}
-        if set(by_pair_id) != expected:
-            raise ExtractionFailed("Fact consistency review omitted or invented pair verdicts")
+        result = _invoke_conflict_review(payload)
+        by_pair_id = _expected_conflict_verdicts(result, expected)
+
+        missing = expected - set(by_pair_id)
+        unexpected = {
+            verdict.pair_id
+            for verdict in result.verdicts
+            if verdict.pair_id not in expected
+        }
+        if missing or unexpected:
+            print(
+                "FACT CONSISTENCY PROTOCOL MISMATCH: "
+                f"expected={len(expected)} returned_valid={len(by_pair_id)} "
+                f"missing={sorted(missing)} unexpected={sorted(unexpected)}"
+            )
+
+        if missing:
+            payload_by_id = {item["pair_id"]: item for item in payload}
+            repair_payload = [
+                payload_by_id[pair_id]
+                for pair_id in sorted(missing)
+            ]
+            repair_result = _invoke_conflict_review(repair_payload, repair=True)
+            repaired = _expected_conflict_verdicts(repair_result, missing)
+            by_pair_id.update(repaired)
+
+            still_missing = expected - set(by_pair_id)
+            repair_unexpected = {
+                verdict.pair_id
+                for verdict in repair_result.verdicts
+                if verdict.pair_id not in missing
+            }
+            if still_missing or repair_unexpected:
+                print(
+                    "FACT CONSISTENCY REPAIR MISMATCH: "
+                    f"still_missing={sorted(still_missing)} "
+                    f"unexpected={sorted(repair_unexpected)}"
+                )
+            if still_missing:
+                raise ExtractionFailed(
+                    "Fact consistency review omitted required pair verdicts after repair"
+                )
 
         for first, second in batch:
             verdict = by_pair_id[_pair_id(first, second)]
