@@ -125,15 +125,15 @@ class InquiryAssessment(BaseModel):
     recap_of_known_information: bool = False
     should_move_on: bool = False
     repeats_rejected_frontier: bool = False
-    repeats_prior_decision: bool = False
+    repeats_prior_decision: bool
     matching_prior_question: str = ""
     abstraction_level: Literal[
         "PRODUCT_DECISION",
         "PRODUCT_BEHAVIOR",
         "INTERACTION_DESIGN",
         "IMPLEMENTATION",
-    ] = "PRODUCT_DECISION"
-    material_product_consequence: bool = True
+    ]
+    material_product_consequence: bool
     current_frontier_value: float = Field(default=0.5, ge=0, le=1)
     best_alternative_value: float = Field(default=0.0, ge=0, le=1)
     higher_value_elsewhere: bool = False
@@ -785,7 +785,9 @@ assessment. If ANY material information is still unknown, set
 information_need_resolved=false and list every such item in missing_information.
 If the need is fully resolved, missing_information must be empty. Supporting
 observation IDs must be UNIQUE and limited to the supplied IDs. Do not repeat an
-ID. Do not change the proposed frontier."""),
+ID. You MUST also return repeats_prior_decision, abstraction_level, and
+material_product_consequence using the definitions in the main instruction.
+Do not change the proposed frontier."""),
                 HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
             ])
             assessment = (
