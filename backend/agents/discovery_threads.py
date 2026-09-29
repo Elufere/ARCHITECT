@@ -304,6 +304,12 @@ The interview should feel like an excellent human PM conversation:
    implementation. Do not encode "currently", "how the app does X", or other
    already-built assumptions into the frontier simply because the founder is
    discussing the desired product in present tense.
+   ALSO keep the frontier at the founder's product-owner abstraction. If the
+   uncertainty is really about WHEN a rule should take effect, WHETHER confirmation
+   is required, WHO should be allowed to act, or WHAT should happen, represent that
+   decision directly. Do not restate it as how/when the system stores, records,
+   persists, finalizes, derives, or internally represents the decision unless that
+   internal representation is itself the material product requirement.
 11. anchor_gap is optional normalization metadata only. Use null when no existing
     storage field cleanly represents the decision; never distort the question to
     fit a schema field.
