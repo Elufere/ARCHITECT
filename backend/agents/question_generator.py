@@ -278,10 +278,19 @@ Unresolved facets this question may cover:
 
 The anchor field shown below exists only for extraction normalization. Do NOT
 broaden the question to exhaust that field. Ask specifically about the selected
-requirement and its unresolved facets. Keep the question connected to the active
-discovery thread; do not use this requirement as an excuse to jump into another
-part of the product. You may cover closely related facets in one natural question
-when that is clearer for the user.
+requirement and its unresolved facets.
+
+The FINAL question MUST resolve one of the listed unresolved facets. Recent
+conversation may come from a different thread and is background only. Do not
+continue asking about the most recent topic merely because it appears in the
+founder's latest answer. If the selected requirement is different from that
+recent topic, you may acknowledge the latest answer briefly and then transition
+to the selected requirement. Never substitute a recent UI/support/workflow detail
+for the requirement decision named above.
+
+Keep the question connected to the selected requirement's product meaning.
+You may cover closely related facets in one natural question when that is clearer
+for the user.
 """
 
     if planner_source == "model":
@@ -524,6 +533,26 @@ OUTPUT
         # Put the latest rejection in the primary system prompt as well.
         system_prompt += "\nRevise the rejected draft using this feedback:\n" + state["messages"][-1].content
 
-    response = chat_llm.invoke([SystemMessage(content=system_prompt)] + state["messages"])
+    generation_messages = [SystemMessage(content=system_prompt)]
+    if planner_source == "requirement":
+        latest_founder = next(
+            (
+                message.content
+                for message in reversed(state.get("messages", []))
+                if isinstance(message, HumanMessage)
+            ),
+            "",
+        )
+        generation_messages.append(HumanMessage(content=(
+            "Generate the next PM response using the selected REQUIREMENT above as "
+            "the sole authority for what the final question asks. The founder's "
+            "latest answer is conversational background only and must not replace "
+            "the selected requirement:\n"
+            + latest_founder
+        )))
+    else:
+        generation_messages.extend(state["messages"])
+
+    response = chat_llm.invoke(generation_messages)
     print("response:", response.content)
     return {"messages": [response]}
