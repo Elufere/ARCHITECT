@@ -1,4 +1,5 @@
 # agents/question_generator.py
+import json
 from agents.llm import get_chat_model
 
 from agents.state import AgentState, DiscoveryScope, KnowledgeState
@@ -609,6 +610,37 @@ OUTPUT
     else:
         generation_messages.extend(state["messages"])
 
+    print("===== DISCOVERY ABSTRACTION DEBUG | STAGE 6: QUESTION GENERATOR INPUT =====")
+    print(json.dumps({
+        "planner_source": planner_source,
+        "current_topic": getattr(current_topic, "value", current_topic),
+        "current_gap": current_gap,
+        "current_role": current_role,
+        "current_objective": current_objective,
+        "question_hint": question_hint,
+        "discovery_move": discovery_move,
+        "selected_inquiry": selected_inquiry,
+        "selected_requirement": selected_requirement,
+        "question_retry_count": state.get("question_retry_count", 0),
+        "latest_retry_feedback": (
+            state["messages"][-1].content
+            if state.get("question_retry_count", 0)
+            and state.get("messages")
+            and isinstance(state["messages"][-1], SystemMessage)
+            else None
+        ),
+        "latest_confirmed_understanding": understanding_context,
+        "relevant_context": relevant_context,
+        "recent_conversation": format_recent_messages(state["messages"][-6:]),
+    }, ensure_ascii=False, indent=2, default=str))
+    print("===== END STAGE 6 =====\n")
+
     response = chat_llm.invoke(generation_messages)
+    print("===== DISCOVERY ABSTRACTION DEBUG | STAGE 7: GENERATED QUESTION =====")
+    print(json.dumps({
+        "current_objective": current_objective,
+        "generated_response": response.content,
+    }, ensure_ascii=False, indent=2, default=str))
+    print("===== END STAGE 7 =====\n")
     print("response:", response.content)
     return {"messages": [response]}
