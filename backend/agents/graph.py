@@ -55,7 +55,12 @@ def route_after_conversation_manager(state: AgentState) -> str:
     # it just because the intent classifier recognized the word "yes".
     if (
         state.get("conversation_intent") == "confirmation"
-        and (state.get("current_gap") or state.get("next_discovery_move") == "confirm_inference")
+        and (
+            state.get("current_gap")
+            or state.get("selected_inquiry")
+            or state.get("selected_requirement_candidate")
+            or state.get("next_discovery_move") == "confirm_inference"
+        )
     ):
         return "extract"
     if state.get("conversation_intent") == "confirmation":
