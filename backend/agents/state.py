@@ -187,6 +187,7 @@ class AgentState(TypedDict):
 
     turn_count: int
     question_retry_count: int
+    question_retry_exhausted: bool
     answer_followup: Optional[dict]
     awaiting_confirmation: bool
     current_role: Optional[str]
