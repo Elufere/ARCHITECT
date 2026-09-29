@@ -247,7 +247,11 @@ The interview should feel like an excellent human PM conversation:
    If a decision was asked twice, choose another decision or another thread rather
    than paraphrasing it again.
 9. The frontier is an UNCERTAINTY/DECISION, never an invented answer. Use the
-   product's own vocabulary.
+   product's own vocabulary. Phrase objectives/question hints as intended product
+   behavior unless confirmed founder evidence explicitly establishes an existing
+   implementation. Do not encode "currently", "how the app does X", or other
+   already-built assumptions into the frontier simply because the founder is
+   discussing the desired product in present tense.
 10. anchor_gap is optional normalization metadata only. Use null when no existing
     storage field cleanly represents the decision; never distort the question to
     fit a schema field.
