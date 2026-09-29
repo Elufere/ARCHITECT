@@ -67,6 +67,10 @@ def route_after_guardrail(state: AgentState) -> str:
     """
     Evaluates state directly after the guardrail checks the AI output.
     """
+    if state.get("question_retry_exhausted"):
+        logger.warning("Guardrail retries exhausted. Re-planning a different inquiry.")
+        return "plan_threads"
+
     messages = state["messages"]
     last_message = messages[-1]
 
@@ -155,8 +159,9 @@ def build_graph() -> StateGraph:
         "guardrail",
         route_after_guardrail,
         {
-            "generate": "generate",  # Forces LLM to rewrite based on System Message feedback
-            END: END                 # Returns control to the CLI for user input
+            "generate": "generate",      # Forces LLM to rewrite based on System Message feedback
+            "plan_threads": "plan_threads",  # Abandon exhausted inquiry and choose another
+            END: END                     # Returns control to the CLI for user input
         }
     )
 
