@@ -230,18 +230,26 @@ def _model_inquiries(state: AgentState) -> list[ProductInquiry]:
         key="workflow_steps",
     )
     if not workflow:
+        entry_actor = roles[0]
         return [ProductInquiry(
-            id=f"{scope.value}|model.core_workflow",
+            id=f"{scope.value}|model.core_workflow_entry|{entry_actor.strip().lower()}",
             source=InquirySource.MODEL,
             scope=scope,
             topic=DiscoveryTopic.CORE_WORKFLOW,
             anchor_gap="workflow_steps",
-            objective="Understand the normal end-to-end product interaction that produces the user's desired outcome.",
-            question_hint=(
-                "Ask for the normal flow from the point the user starts the core interaction "
-                "until the intended outcome is reached. Do not ask for exceptions yet."
+            objective=(
+                f"Understand the first meaningful action the {entry_actor} takes "
+                "to begin the product's core interaction."
             ),
-            reason="Actors and outcomes are known, but the product model has no coherent core workflow.",
+            question_hint=(
+                f"Ask only where the normal interaction begins for the {entry_actor}. "
+                "Do not ask for the full workflow, later stages, or another actor's journey."
+            ),
+            reason=(
+                "Actors and outcomes are known, but the product model does not yet "
+                "have a grounded entry point for the normal workflow."
+            ),
+            role=entry_actor,
             uncertainty=1.0,
             architecture_impact=1.0,
             business_risk=0.8,
@@ -474,10 +482,13 @@ def identify_open_inquiries(state: AgentState) -> list[ProductInquiry]:
         return [pending]
 
     thread_inquiry = _thread_frontier_inquiry(state)
-    if "thread_frontier" in state:
-        model_inquiries = [thread_inquiry] if thread_inquiry is not None else []
+    if thread_inquiry is not None:
+        model_inquiries = [thread_inquiry]
     else:
-        # Compatibility for focused callers/checkpoints that predate thread planning.
+        # A null thread frontier means the trajectory optimizer could not produce
+        # a safe model-specific next move. Fall back to the grounded foundational
+        # inquiry frontier rather than treating "no thread frontier" as "discovery
+        # is complete". This also preserves compatibility with older checkpoints.
         model_inquiries = _model_inquiries(state)
     inquiries = [
         *model_inquiries,
