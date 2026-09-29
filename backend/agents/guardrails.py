@@ -147,9 +147,9 @@ a natural answer is mainly "first do X, then Y, then Z" or explains how the
 experience/system executes an already-known behavior.
 
 Judge the materiality of the SPECIFIC ANSWER being requested, not the importance
-of the surrounding feature. A payment, healthcare, security, or compliance area
-can be important while a request for its detailed interaction or implementation
-mechanics is still below discovery depth.
+of the surrounding feature or domain. A business-critical product area can still
+contain low-value interaction or implementation details that belong below
+discovery depth.
 
 FOUNDER-FACING ABSTRACTION:
 A product uncertainty can be legitimate while its wording is still wrong.
@@ -338,11 +338,23 @@ objective and still be invalid if it expands into a multi-stage recap, bundles
 several dimensions, asks for a checklist-like answer, or naturally elicits a
 procedural UX/implementation walkthrough instead of one PRD-level decision.
 
-Before returning passed=true, explicitly test this counterfactual internally:
-"If the founder answered this question fully, would the answer primarily specify
-ONE product rule/decision, or would it primarily describe HOW the user/system
-executes the behavior?" Pass only the former unless the execution detail itself
-has a demonstrated material product consequence.
+Before returning passed=true, perform BOTH semantic tests internally:
+
+ATOMICITY TEST:
+Decompose the FINAL QUESTION into independently answerable information units.
+If the founder could fully answer one requested unit while leaving another
+unanswered, the question is not atomic. Do not merge units merely because they
+share one actor, feature, workflow, sentence, or broad label.
+
+EXPECTED-ANSWER TEST:
+Imagine the shortest natural answer that would FULLY satisfy the final question.
+Would that answer primarily specify one founder-owned PRD rule/decision/behavior,
+or would it require a procedural interaction walkthrough, interface mechanics,
+technical mechanism, or internal execution detail?
+
+Pass only when the final question asks for one independently answerable
+PRD-level uncertainty, unless a lower-level detail itself has a demonstrated
+material product consequence.
 
 For model-driven discovery, prefer ONE short founder-facing question. Examples of
 invalid shapes include "when and how...", "what changes in A, B, and C?",
