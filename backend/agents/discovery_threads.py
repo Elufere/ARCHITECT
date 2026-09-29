@@ -929,9 +929,35 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
             if rejected not in rejected_frontiers:
                 rejected_frontiers.append(rejected)
 
-    raise ExtractionFailed(
-        "Discovery-thread planning failed after bounded semantic repair attempts; "
-        "all proposed frontiers were invalid or repeated rejected decisions"
+    # Safe degradation: thread planning is a trajectory optimizer, not the
+    # sole source of askable product inquiries. If every proposed thread frontier
+    # is invalid, preserve the interview and hand control back to the existing
+    # foundational/requirement inquiry pipeline instead of terminating the session.
+    existing_threads = state.get("discovery_threads", {})
+    fallback_thread_id = state.get("active_discovery_thread") or "discovery_fallback"
+    existing_thread = existing_threads.get(fallback_thread_id, {})
+    print(
+        "DISCOVERY THREAD FALLBACK: no valid model frontier survived bounded "
+        "repair; delegating to foundational/requirement inquiries"
+    )
+    return DiscoveryThreadPlan(
+        thread_id=fallback_thread_id,
+        thread_label=existing_thread.get("label") or "Product discovery",
+        thread_objective=(
+            existing_thread.get("objective")
+            or "Continue with the next unresolved high-value product decision."
+        ),
+        frontier=None,
+        relevant_requirement_ids=[
+            item["requirement_id"]
+            for item in backlog
+            if item.get("requirement_id")
+        ],
+        feedback=captured_feedback,
+        rationale=(
+            "No model-generated thread frontier survived semantic validation. "
+            "Fallback to existing grounded inquiry and requirement candidates."
+        ),
     )
 
 
