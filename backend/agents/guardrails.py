@@ -161,7 +161,7 @@ Known facts may have been learned incidentally. A question asking the user to
 confirm their completeness or expand them for the Current gap is valid discovery;
 knowledge presence alone does not mean the gap has been deliberately resolved.
 
-Previously asked questions for this topic:
+Previously delivered interview decisions/questions:
 {previous_questions}
 
 Your job has TWO checks:
@@ -223,7 +223,19 @@ Reject if the response:
 - presents unsupported or inferred information in the acknowledgement as though
   the founder confirmed it
 - violates a persistent discovery boundary by retrying, paraphrasing, or deepening
-  a line of questioning the founder explicitly delegated or rejected
+  a line of questioning the founder explicitly delegated, rejected, or explicitly
+  closed as outside the product / sufficiently specified
+- semantically repeats an already delivered product decision, even when the new
+  wording, decision key, thread, or schema anchor differs. A genuine next causal
+  decision is allowed; a narrower UX refinement of an already-settled product
+  decision is not
+- descends below product discovery into interaction design merely because the
+  product behavior is already known. Reject questions whose remaining answer is
+  principally about button/control sequence, exact screen flow, layout/placement,
+  visual styling, copy wording, clickable-vs-plain presentation, modal/toast/
+  component choice, or similar UX mechanics UNLESS that detail materially changes
+  a product rule, authorization/security/compliance boundary, money/data movement,
+  lifecycle/state transition, major dependency, or irreversible outcome
 - changes to another topic
 - drifts to a different product decision that does not help resolve the Current objective
 - asks more than ONE independently answerable product question when Planner source
@@ -239,6 +251,8 @@ Reject if the response:
   answer requires several sequential actions, it is too broad
 - uses technical or implementation-shaped wording when the same product decision
   can be asked in simple founder-facing language
+- treats "make the question smaller" as permission to make it more screen-specific.
+  Atomicity should stop at one material PRODUCT decision/behavior, not one UI click
 - asks implementation
 - asks architecture
 - asks roadmap planning unrelated to the selected gap (MVP_SCOPE questions about
@@ -265,7 +279,8 @@ For model-driven discovery, prefer ONE short founder-facing question. Examples o
 invalid shapes include "when and how...", "what changes in A, B, and C?",
 "...what happens, and are there any conditions?", and "what are the main actions
 A and B perform from X to Y?". A valid workflow question should usually ask about
-one actor and one stage/transition at a time.
+one actor and one MATERIAL PRODUCT event/decision/state transition at a time.
+Do not convert that rule into click-by-click screen discovery.
 
 Return the schema.
 """
@@ -489,7 +504,11 @@ def evaluate_question(state: dict) -> dict:
                     if item.topic == current_topic
                     and item.knowledge_state == KnowledgeState.CONFIRMED
                 ) or "None",
-                previous_questions="\n".join(f"- {question}" for question in prior_ai_questions[-5:]) or "None",
+                previous_questions="\n".join(
+                    f"- {entry.get('objective') or 'decision'} :: {entry.get('question')}"
+                    for entry in state.get("requirement_question_history", [])[-12:]
+                    if entry.get("question")
+                ) or "\n".join(f"- {question}" for question in prior_ai_questions[-5:]) or "None",
             )
         )
 
@@ -537,6 +556,7 @@ def _record_requirement_question(state: dict, question: str) -> list[dict]:
         "target_facets": list(candidate.get("target_facets") or []),
         "thread_id": candidate.get("thread_id") or state.get("active_discovery_thread"),
         "decision_key": candidate.get("decision_key"),
+        "objective": state.get("current_objective"),
         "topic": (
             state.get("current_topic").value
             if getattr(state.get("current_topic"), "value", None)
