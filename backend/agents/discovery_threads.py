@@ -215,7 +215,11 @@ The interview should feel like an excellent human PM conversation:
    edge cases, analytics, administration, or implementation merely because a
    globally important requirement exists. Defer it until its thread is active,
    unless it blocks the current decision or the founder explicitly made it the
-   central subject.
+   central subject. An exception/failure/dispute mentioned incidentally while the
+   founder is explaining the normal flow is NOT by itself a signal to enter that
+   exception thread. Capture it, park it, and continue building breadth across the
+   normal product unless the founder's latest answer is primarily about that
+   exception or the exception changes a core product rule.
 6. Requirements may be relevant to the current thread. Return only supplied
    requirement IDs that should be eligible NOW. Leave unrelated requirements
    deferred; do not delete or resolve them.
@@ -746,6 +750,17 @@ ID. Do not change the proposed frontier."""),
             "The proposed information need is already substantially answered or "
             f"is a recap of known information ({support}): {assessment.reason}"
         )
+    if (
+        assessment.higher_value_elsewhere
+        and assessment.best_alternative_value > assessment.current_frontier_value
+        and assessment.best_alternative_focus.strip()
+    ):
+        return (
+            "BREADTH_PREFERENCE: This frontier is valid, but the assessor sees a "
+            "potentially higher-value unresolved area elsewhere: "
+            f"{assessment.best_alternative_focus}. This is a ranking preference, "
+            "not a semantic rejection."
+        )
     if assessment.should_move_on:
         alternative = (
             f" Possible next area: {assessment.best_alternative_focus}."
@@ -855,6 +870,8 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
     rejected_frontiers: list[dict] = []
     last_problem = None
     captured_feedback = None
+    soft_breadth_fallback = None
+    soft_breadth_replan_used = False
 
     for attempt in range(3):
         attempt_payload = payload
@@ -867,9 +884,10 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
                     "problem": last_problem,
                     "attempt": attempt,
                     "instruction": (
-                        "Choose a materially different valid next move. Every item in "
-                        "rejected_frontiers is semantically forbidden for this planning "
-                        "cycle: do not repeat it with a new decision_key, narrower wording, "
+                        "Choose a materially different valid next move when the prior "
+                        "problem is a breadth preference. Every item in rejected_frontiers "
+                        "is semantically forbidden for this planning cycle: do not repeat "
+                        "a HARD-rejected item with a new decision_key, narrower wording, "
                         "or a paraphrase. Choose EXACTLY ONE independently answerable "
                         "product decision. Stay on the current thread only when its NEXT "
                         "question is at least as valuable as the best unresolved alternative. "
@@ -908,6 +926,22 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
                 if proposed.feedback is None and captured_feedback is not None:
                     proposed = proposed.model_copy(update={"feedback": captured_feedback})
                 return proposed
+
+            if problem.startswith("BREADTH_PREFERENCE:"):
+                if soft_breadth_fallback is None:
+                    soft_breadth_fallback = proposed
+                if soft_breadth_replan_used:
+                    if proposed.feedback is None and captured_feedback is not None:
+                        proposed = proposed.model_copy(update={"feedback": captured_feedback})
+                    return proposed
+                soft_breadth_replan_used = True
+                last_problem = problem
+                print(
+                    "DISCOVERY THREAD BREADTH REPLAN: valid frontier deferred once "
+                    "to give the planner a chance to choose a higher-value area"
+                )
+                continue
+
             last_problem = problem
         except Exception as exc:
             raise_if_llm_failure(exc)
@@ -928,6 +962,17 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
             }
             if rejected not in rejected_frontiers:
                 rejected_frontiers.append(rejected)
+
+    if soft_breadth_fallback is not None:
+        if soft_breadth_fallback.feedback is None and captured_feedback is not None:
+            soft_breadth_fallback = soft_breadth_fallback.model_copy(
+                update={"feedback": captured_feedback}
+            )
+        print(
+            "DISCOVERY THREAD BREADTH FALLBACK: no better hard-valid frontier "
+            "survived; using the previously valid deferred frontier"
+        )
+        return soft_breadth_fallback
 
     # Safe degradation: thread planning is a trajectory optimizer, not the
     # sole source of askable product inquiries. If every proposed thread frontier
