@@ -3,6 +3,7 @@ Production-Ready Stage Classifier & Validator.
 Validates AI output against PRODUCT_DISCOVERY stage. Does NOT rewrite.
 """
 
+import json
 import logging
 import re
 from enum import Enum
@@ -434,6 +435,22 @@ def evaluate_question(state: dict) -> dict:
     selected_requirement = state.get("selected_requirement_candidate") or {}
     requirement_context = "None"
     validation_context = "None"
+
+    print("===== DISCOVERY ABSTRACTION DEBUG | STAGE 8: GUARDRAIL INPUT =====")
+    print(json.dumps({
+        "planner_source": planner_source,
+        "current_topic": getattr(current_topic, "value", current_topic),
+        "current_gap": current_gap,
+        "current_role": current_role,
+        "current_objective": current_objective,
+        "question_hint": question_hint,
+        "question_retry_count": state.get("question_retry_count", 0),
+        "generated_response": last_message.content,
+        "selected_inquiry": state.get("selected_inquiry") or {},
+        "selected_requirement": selected_requirement,
+    }, ensure_ascii=False, indent=2, default=str))
+    print("===== END STAGE 8 =====\n")
+
     if planner_source == "requirement":
         requirement_context = (
             f"requirement_id={selected_requirement.get('requirement_id')}; "
@@ -459,6 +476,14 @@ def evaluate_question(state: dict) -> dict:
         )
     ):
         logger.warning("Internal role introduced during USER_APP discovery. Forcing retry.")
+        print("===== DISCOVERY ABSTRACTION DEBUG | EARLY GUARDRAIL REJECT =====")
+        print(json.dumps({
+            "check": "internal_role_scope",
+            "result": "REJECT",
+            "generated_response": last_message.content,
+            "reason": USER_SCOPE_ROLE_REJECTION,
+        }, ensure_ascii=False, indent=2, default=str))
+        print("===== END EARLY GUARDRAIL REJECT =====\n")
         return {"messages": [SystemMessage(content=USER_SCOPE_ROLE_REJECTION)]}
 
     # --------------------------------------------------------
@@ -473,6 +498,14 @@ def evaluate_question(state: dict) -> dict:
     )
     if duplicate:
         logger.warning("Generated question semantically duplicates a prior question. Forcing retry.")
+        print("===== DISCOVERY ABSTRACTION DEBUG | EARLY GUARDRAIL REJECT =====")
+        print(json.dumps({
+            "check": "semantic_duplicate",
+            "result": "REJECT",
+            "generated_response": last_message.content,
+            "matching_prior_question": duplicate,
+        }, ensure_ascii=False, indent=2, default=str))
+        print("===== END EARLY GUARDRAIL REJECT =====\n")
         rejection = SystemMessage(
             content=f"CRITICAL ERROR: You already asked an equivalent question earlier: '{duplicate}'. "
                     f"The current objective is: {current_objective}. "
@@ -494,6 +527,17 @@ def evaluate_question(state: dict) -> dict:
     relevance_passed, relevance_reason = check_topic_relevance(
         last_message.content, question_hint, current_objective
     )
+    print("===== DISCOVERY ABSTRACTION DEBUG | STAGE 9: DETERMINISTIC GUARDRAIL CHECKS =====")
+    print(json.dumps({
+        "ends_with_question_mark": last_message.content.strip().endswith("?"),
+        "internal_role_pattern_found": bool(INTERNAL_ROLE_PATTERN.search(last_message.content)),
+        "semantic_duplicate_found": bool(duplicate),
+        "duplicate_question": duplicate,
+        "topic_relevance_passed": relevance_passed,
+        "topic_relevance_reason": relevance_reason,
+        "note": "Semantic abstraction/stage validation is performed by the LLM evaluator next.",
+    }, ensure_ascii=False, indent=2, default=str))
+    print("===== END STAGE 9 =====\n")
     if not relevance_passed:
         logger.warning(f"Topic relevance check failed: {relevance_reason}")
         rejection = SystemMessage(
@@ -546,6 +590,15 @@ def evaluate_question(state: dict) -> dict:
                 ) or "\n".join(f"- {question}" for question in prior_ai_questions[-5:]) or "None",
             )
         )
+
+        print("===== DISCOVERY ABSTRACTION DEBUG | STAGE 10: LLM GUARDRAIL VERDICT =====")
+        print(json.dumps({
+            "current_objective": current_objective,
+            "generated_response": last_message.content,
+            "verdict": result.model_dump(mode="json"),
+            "final_guardrail_result": "ALLOW" if result.passed else "REJECT",
+        }, ensure_ascii=False, indent=2, default=str))
+        print("===== END STAGE 10 =====\n")
 
         if result.passed:
             return state
