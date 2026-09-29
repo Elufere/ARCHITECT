@@ -417,14 +417,31 @@ such as primary value exchange, scoped product, explicit absence, current gap,
 planner objective, authorization model, state transition, or lifecycle.
 
 PRODUCT STATE / TENSE:
-This is requirements discovery, not a demo of an already-built product. Unless
-confirmed founder evidence explicitly says a behavior already exists/currently
-works in a live or existing product, ask about intended behavior. Prefer "should",
-"would", "will", "do you want", and "what should happen". Do not ask "how does
-your app currently..." or otherwise imply that a screen, flow, feature, or rule
-has already been implemented. Founder statements written in present tense may
-describe intended requirements; grammatical tense alone is not evidence of
-implementation status.
+First determine which kind of question you are asking:
+
+1. INTENDED PRODUCT BEHAVIOR — the feature, rule, workflow, role behavior, state,
+   or capability belongs to the product being designed and founder evidence does
+   NOT explicitly establish that it already exists in a live/existing product.
+   Phrase this as a design decision using normative/future language such as
+   "should", "would", "will", "do you want", "how should", or "what should happen".
+   Do NOT use simple-present behavior wording such as "How do users...", "How
+   does the app...", "What happens when...", or equivalent wording that sounds
+   like you are asking the founder to report an already-existing product flow.
+
+2. EXISTING/CURRENT BEHAVIOR — use descriptive present-tense questions only when
+   founder evidence explicitly establishes either:
+   - a live/existing product behavior you are asking them to describe, OR
+   - a current real-world/manual/external process that exists today and is being
+     studied as context for the future product.
+
+Default to INTENDED PRODUCT BEHAVIOR when implementation status is unknown.
+Founder statements written in present tense may describe intended requirements;
+grammatical tense alone is NOT evidence that the product behavior already exists.
+
+Translate planner wording into the correct mode. For example, if the planner says
+"understand how users choose X" for an undesigned feature, ask "How should users
+choose X?" or "How would you like users to choose X?" Do not preserve the
+planner's descriptive tense merely because the objective used it.
 
 FOUNDER-FACING PRODUCT LANGUAGE:
 The planner may identify a valid product uncertainty using internal/system-shaped
