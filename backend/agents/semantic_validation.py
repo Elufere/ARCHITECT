@@ -448,8 +448,10 @@ Critical distinctions:
   CURRENT application (or explicitly name its users). A named workflow participant
   or an administrative duty alone is insufficient. References to another app or
   back-office surface, and explicitly external dependencies, do not establish
-  current-scope membership. Resolve application references from scope/question.
-  actor_classification includes candidate proposals; it is not proof of membership.
+  current-scope membership. The PM's question/current scope may resolve pronouns
+  and discourse references, but it cannot prove that a newly mentioned actor
+  belongs to this application. actor_classification includes candidate proposals;
+  it is not proof of membership.
   Use confirmed_actor_context to distinguish established actors from new proposals.
   An INFERRED actor candidate may preserve an explicitly mentioned participant
   whose membership is genuinely unresolved, provided its value states that
