@@ -173,7 +173,11 @@ If the response mentions an implication that is not directly confirmed, it must
 be explicitly tentative (for example "this suggests" or "this may mean").
 Do not require the acknowledgement to mention every latest fact; concise is good.
 If there was no confirmed knowledge on the latest turn, a response containing
-no acknowledgement is valid.
+no acknowledgement is valid. If it does acknowledge the founder, it may only
+paraphrase explicit founder wording from the recent conversation. A product
+category or label does NOT make conventional domain mechanics founder-confirmed;
+reject statements that derive money flow, approval behavior, actors, assets,
+security semantics, or workflow merely from the category name.
 Reject the response if its acknowledgement invents or upgrades unconfirmed
 information. Explain exactly which claim is unsupported.
 
