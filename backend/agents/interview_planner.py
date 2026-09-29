@@ -198,8 +198,9 @@ PER_ROLE_TASKS = {
 }
 
 INTERNAL_ROLE_TERMS = {
-    "admin", "administrator", "administrators", "support", "moderator",
-    "moderators", "back office", "back-office", "internal staff",
+    "admin", "administrator", "administrators", "support agent", "support agents",
+    "support staff", "support team", "customer support agent", "customer support staff",
+    "moderator", "moderators", "back office", "back-office", "internal staff",
 }
 
 
