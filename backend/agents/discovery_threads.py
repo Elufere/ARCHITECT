@@ -504,12 +504,13 @@ def _recent_conversation(state: AgentState) -> list[dict]:
 
 def _history_payload(state: AgentState) -> list[dict]:
     result = []
-    for entry in state.get("requirement_question_history", [])[-12:]:
+    for entry in state.get("requirement_question_history", [])[-30:]:
         result.append({
             "turn": entry.get("turn"),
             "thread_id": entry.get("thread_id"),
             "decision_key": entry.get("decision_key"),
             "inquiry_id": entry.get("inquiry_id"),
+            "objective": entry.get("objective"),
             "question": entry.get("question"),
         })
     return result
