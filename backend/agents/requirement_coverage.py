@@ -569,6 +569,162 @@ def assess_selected_requirement_answer(
     })
     return updated_store, updated_coverage
 
+def assess_model_thread_requirement_answers(
+    state: AgentState,
+    store: RequirementStore,
+    coverage: Dict[str, dict],
+) -> tuple[RequirementStore, Dict[str, dict]]:
+    """Let model-driven answers satisfy requirement facets they directly resolve.
+
+    Requirement coverage must not depend on which planner source happened to ask
+    the question. The previous thread plan explicitly identifies requirement IDs
+    whose facets overlap the model-driven frontier; only those requirements are
+    assessed here, keeping the extra semantic work bounded.
+    """
+    if state.get("planner_source") != "model":
+        return store, coverage
+
+    relevant_requirement_ids = set(state.get("thread_relevant_requirement_ids") or [])
+    exchange = _latest_question_and_answer(state)
+    if not relevant_requirement_ids or exchange is None:
+        return store, coverage
+
+    question, answer = exchange
+    knowledge = state.get("discovered_knowledge", [])
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    turn = state.get("turn_count", 0)
+    fact_index = _confirmed_fact_index(knowledge, scope)
+    current_turn_ids = [
+        identity
+        for identity, item in fact_index.items()
+        if item.source_turn == turn
+    ]
+    if not current_turn_ids:
+        return store, coverage
+
+    updated_store = dict(store)
+    updated_coverage = dict(coverage)
+
+    for requirement_key, requirement in list(updated_store.items()):
+        if (
+            requirement.scope != scope
+            or requirement.status != RequirementStatus.ACTIVE
+            or requirement.id not in relevant_requirement_ids
+            or not requirement.facets
+        ):
+            continue
+
+        existing_payload = updated_coverage.get(requirement_key)
+        existing = (
+            RequirementCoverageRecord.model_validate(existing_payload)
+            if existing_payload else None
+        )
+        base_record = reconcile_requirement_coverage_record(
+            requirement,
+            knowledge,
+            existing,
+        )
+        target_facets = [
+            facet.id
+            for facet in requirement.facets
+            if facet.required
+            and (
+                base_record.facets.get(facet.id) is None
+                or base_record.facets[facet.id].state == RequirementFacetState.UNKNOWN
+            )
+        ]
+        if not target_facets:
+            continue
+
+        allowed_ids = list(dict.fromkeys([
+            *candidate_fact_ids(requirement, knowledge),
+            *current_turn_ids,
+        ]))
+        supplied_facts = [
+            {
+                "fact_id": identity,
+                "topic": fact_index[identity].topic.value,
+                "key": fact_index[identity].key,
+                "value": fact_index[identity].value,
+                "evidence": fact_index[identity].evidence,
+                "source_turn": fact_index[identity].source_turn,
+            }
+            for identity in allowed_ids
+            if identity in fact_index
+        ]
+        targets = {
+            facet.id: {
+                "label": facet.label,
+                "description": facet.description,
+            }
+            for facet in requirement.facets
+            if facet.id in target_facets
+        }
+
+        assessment = _assess_requirement_facets_with_repair(
+            {
+                "question": question,
+                "latest_response": answer,
+                "requirement_id": requirement.id,
+                "requirement": requirement.description or requirement.label,
+                "target_facets": targets,
+                "confirmed_facts": supplied_facts,
+                "planner_source": "model",
+                "instruction": (
+                    "Assess whether the model-driven answer directly resolves any "
+                    "of these requirement facets. Planner source does not affect "
+                    "coverage: explicit founder facts count wherever they were elicited."
+                ),
+            },
+            requirement,
+            target_facets,
+            allowed_ids,
+        )
+
+        used_ids = list(dict.fromkeys([
+            identity
+            for mapping in (
+                assessment.covered_facets,
+                assessment.not_applicable_facets,
+            )
+            for ids in mapping.values()
+            for identity in ids
+        ]))
+        if not used_ids:
+            continue
+
+        refs = list(requirement.evidence_refs)
+        seen = {ref.fact_id for ref in refs}
+        for identity in used_ids:
+            if identity in seen or identity not in fact_index:
+                continue
+            seen.add(identity)
+            item = fact_index[identity]
+            refs.append(RequirementEvidenceRef(
+                fact_id=identity,
+                source_turn=item.source_turn,
+                note="grounded answer from model-driven discovery thread",
+            ))
+
+        requirement = requirement.model_copy(update={"evidence_refs": refs})
+        record = apply_requirement_coverage_assessment(
+            requirement,
+            knowledge,
+            assessment,
+            existing,
+        )
+        updated_coverage[requirement_key] = record.model_dump(mode="json")
+        updated_store[requirement_key] = requirement.model_copy(update={
+            "status": (
+                RequirementStatus.RESOLVED
+                if record.status == RequirementCoverageStatus.RESOLVED
+                else RequirementStatus.ACTIVE
+            )
+        })
+
+    return updated_store, updated_coverage
+
+
 def reconcile_requirement_coverage(
     store: RequirementStore,
     knowledge: Sequence[KnowledgeItem],
@@ -621,6 +777,16 @@ def requirement_coverage_node(state: AgentState) -> dict:
     # grounded answer to the selected requirement facets. This never marks the
     # broad parent schema gap resolved.
     store, coverage = assess_selected_requirement_answer(state, store, coverage)
+
+    # Model-driven discovery may answer the same semantic decisions represented
+    # by active requirement facets. Keep both views synchronized so a resolved
+    # decision cannot reappear later only because a different planner source
+    # elicited it.
+    store, coverage = assess_model_thread_requirement_answers(
+        state,
+        store,
+        coverage,
+    )
 
     store, coverage = reconcile_requirement_coverage(
         store,
