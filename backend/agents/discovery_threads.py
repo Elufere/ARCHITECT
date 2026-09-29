@@ -278,6 +278,10 @@ The interview should feel like an excellent human PM conversation:
       implementation/presentation/mechanics inside that closed area merely because
       more detail could theoretically exist. Move to a materially different
       product decision/thread unless later founder evidence explicitly reopens it.
+    - generation_exhausted means the previous selected inquiry could not pass the
+      question guardrails after bounded retries. Do not immediately choose the
+      same underlying decision again; choose a materially different grounded
+      inquiry so the interview can continue without a generic fallback question.
     These are NOT product facts and must never be converted into requirements.
 12. If latest_conversation_intent is design_deferral or objection, the NEXT move
     must demonstrate that feedback was respected.
@@ -1014,7 +1018,15 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
     # is invalid, preserve the interview and hand control back to the existing
     # foundational/requirement inquiry pipeline instead of terminating the session.
     existing_threads = state.get("discovery_threads", {})
-    fallback_thread_id = state.get("active_discovery_thread") or "discovery_fallback"
+    closes_current_scope = (
+        captured_feedback is not None
+        and captured_feedback.kind == ThreadFeedbackKind.PRODUCT_SCOPE_CLOSED
+    )
+    fallback_thread_id = (
+        "discovery_fallback"
+        if closes_current_scope
+        else (state.get("active_discovery_thread") or "discovery_fallback")
+    )
     existing_thread = existing_threads.get(fallback_thread_id, {})
     print(
         "DISCOVERY THREAD FALLBACK: no valid model frontier survived bounded "
