@@ -64,10 +64,23 @@ def _with_retry(supplier, call_name):
                 return supplier().invoke(value, config=config)
             except APIError as exc:
                 retryable = _retryable(exc)
+                failure_kind = type(exc).__name__
+                status_code = getattr(exc, "status_code", None)
                 if not retryable or attempt == retries:
-                    raise LLMCallFailed(call_name, retryable=retryable) from exc
+                    raise LLMCallFailed(
+                        call_name,
+                        retryable=retryable,
+                        failure_kind=failure_kind,
+                        status_code=status_code,
+                    ) from exc
                 wait = min(10., delay * 2 ** attempt)
-                print(f"OpenAI connection/service failure. Retrying ({attempt + 1}/{retries}) in {wait:g}s... [{call_name}]")
+                diagnostic = failure_kind + (
+                    f" status={status_code}" if status_code is not None else ""
+                )
+                print(
+                    f"OpenAI {diagnostic}. Retrying ({attempt + 1}/{retries}) "
+                    f"in {wait:g}s... [{call_name}]"
+                )
                 time.sleep(wait)
 
     async def ainvoke(value, config: RunnableConfig):
@@ -77,10 +90,23 @@ def _with_retry(supplier, call_name):
                 return await supplier().ainvoke(value, config=config)
             except APIError as exc:
                 retryable = _retryable(exc)
+                failure_kind = type(exc).__name__
+                status_code = getattr(exc, "status_code", None)
                 if not retryable or attempt == retries:
-                    raise LLMCallFailed(call_name, retryable=retryable) from exc
+                    raise LLMCallFailed(
+                        call_name,
+                        retryable=retryable,
+                        failure_kind=failure_kind,
+                        status_code=status_code,
+                    ) from exc
                 wait = min(10., delay * 2 ** attempt)
-                print(f"OpenAI connection/service failure. Retrying ({attempt + 1}/{retries}) in {wait:g}s... [{call_name}]")
+                diagnostic = failure_kind + (
+                    f" status={status_code}" if status_code is not None else ""
+                )
+                print(
+                    f"OpenAI {diagnostic}. Retrying ({attempt + 1}/{retries}) "
+                    f"in {wait:g}s... [{call_name}]"
+                )
                 await asyncio.sleep(wait)
     return RunnableLambda(invoke, afunc=ainvoke, name=call_name)
 
