@@ -63,8 +63,11 @@ DISCOVERY_TASKS = {
             "question_hint": "Ask what event starts the process."
         },
         "workflow_steps": {
-            "objective": "Understand the stated normal interaction steps and their sequence.",
-            "question_hint": "Ask the user to describe the workflow from start to finish."
+            "objective": "Understand the meaningful product-level progression of the normal interaction.",
+            "question_hint": (
+                "Ask about one meaningful product action, handoff, decision, or state change at a time. "
+                "Do not request the full workflow and do not ask for button/screen interaction details."
+            )
         },
         "completion_condition": {  
             "objective": "Determine when the workflow is considered complete.",
