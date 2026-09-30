@@ -6,6 +6,7 @@ most one persisted Project.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
 import os
@@ -43,6 +44,35 @@ def project_directory() -> Path:
             str(Path(__file__).resolve().parents[1] / "projects"),
         )
     )
+
+
+@contextmanager
+def _repository_lock():
+    """Serialize project mutations so session ownership remains one-to-one."""
+
+    directory = project_directory()
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / ".projects.lock"
+    with path.open("a+b") as handle:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"0")
+            handle.flush()
+        handle.seek(0)
+        try:
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            yield
+        finally:
+            handle.seek(0)
+            if os.name == "nt":
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _canonical_session_id(session_id: str) -> str:
@@ -151,28 +181,29 @@ def create_project_record(
     """Register an existing durable discovery session as one web Project."""
 
     session_id = _canonical_session_id(discovery_session_id)
-    if not checkpoint_path(session_id).exists():
-        raise ProjectSessionNotFoundError(
-            f"Discovery session '{session_id}' was not found."
-        )
+    with _repository_lock():
+        if not checkpoint_path(session_id).exists():
+            raise ProjectSessionNotFoundError(
+                f"Discovery session '{session_id}' was not found."
+            )
 
-    existing = find_project_by_session(session_id)
-    if existing is not None:
-        raise ProjectConflictError(
-            f"Discovery session '{session_id}' already belongs to project '{existing.id}'."
-        )
+        existing = find_project_by_session(session_id)
+        if existing is not None:
+            raise ProjectConflictError(
+                f"Discovery session '{session_id}' already belongs to project '{existing.id}'."
+            )
 
-    now = datetime.now(timezone.utc)
-    record = ProjectRecord(
-        id=project_id or generate_project_id(name),
-        name=name,
-        description=description,
-        discovery_session_id=session_id,
-        created_at=now,
-        updated_at=now,
-    )
-    _write_project(record, require_absent=True)
-    return record
+        now = datetime.now(timezone.utc)
+        record = ProjectRecord(
+            id=project_id or generate_project_id(name),
+            name=name,
+            description=description,
+            discovery_session_id=session_id,
+            created_at=now,
+            updated_at=now,
+        )
+        _write_project(record, require_absent=True)
+        return record
 
 
 def update_project_metadata(
@@ -183,15 +214,16 @@ def update_project_metadata(
 ) -> ProjectRecord:
     """Update product-facing metadata without touching discovery state."""
 
-    current = get_project(project_id)
-    updated = current.model_copy(
-        update={
-            **({"name": name.strip()} if name is not None else {}),
-            **({"description": description.strip()} if description is not None else {}),
-            "updated_at": datetime.now(timezone.utc),
-        }
-    )
-    # Revalidate updates because model_copy does not rerun field validators.
-    updated = ProjectRecord.model_validate(updated.model_dump())
-    _write_project(updated)
-    return updated
+    with _repository_lock():
+        current = get_project(project_id)
+        updated = current.model_copy(
+            update={
+                **({"name": name.strip()} if name is not None else {}),
+                **({"description": description.strip()} if description is not None else {}),
+                "updated_at": datetime.now(timezone.utc),
+            }
+        )
+        # Revalidate updates because model_copy does not rerun field validators.
+        updated = ProjectRecord.model_validate(updated.model_dump())
+        _write_project(updated)
+        return updated
