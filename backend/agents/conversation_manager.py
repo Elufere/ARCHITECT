@@ -242,6 +242,7 @@ STRUCTURED_TURN_INTENTS = {
     "unknown": "uncertainty",
     "defer_design": "design_deferral",
     "continue_discovery": "continue_discovery",
+    "confirm_prd": "confirm_prd",
 }
 
 
@@ -260,10 +261,29 @@ def conversation_manager_node(state: AgentState) -> dict:
         intent = "clarification"
     update = {"conversation_intent": intent, "is_correction": intent == "correction",
               "question_retry_count": 0}
+    if intent == "confirm_prd":
+        return {
+            **update,
+            "awaiting_confirmation": False,
+            "prd_confirmation_pending": False,
+            "ready_to_compile": True,
+        }
     if intent == "continue_discovery":
-        # This is explicit founder control state, not a product fact. It becomes
-        # important once PRD completion requires founder confirmation.
-        return {**update, "awaiting_confirmation": False}
+        # Founder rejects completion. Do not rerun the same empty planner
+        # immediately; invite the founder to name the missing area, then wait.
+        return {
+            **update,
+            "awaiting_confirmation": False,
+            "prd_confirmation_pending": False,
+            "ready_to_compile": False,
+            "messages": [
+                AIMessage(
+                    content=(
+                        "Sure. What product decision or area do you want to add or revisit?"
+                    )
+                )
+            ],
+        }
     if intent == "clarification":
         return {
             **update,
