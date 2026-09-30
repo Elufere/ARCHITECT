@@ -303,6 +303,8 @@ def test_planner_can_finish_with_uncovered_schema_when_no_material_inquiry_remai
     update = interview_planner_node(state)
     merged = {**state, **update}
 
-    assert update["awaiting_confirmation"] is True
+    assert update["awaiting_confirmation"] is False
+    assert update["prd_confirmation_pending"] is True
+    assert update["ready_to_compile"] is False
     assert update["planner_source"] == "model"
     assert all_discovery_resolved(merged)
