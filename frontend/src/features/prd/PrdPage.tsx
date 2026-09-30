@@ -1,13 +1,50 @@
 import { FileText, LockKeyhole, Sparkles } from "lucide-react";
 import { useParams } from "react-router-dom";
 
-import { useWorkspace } from "@/features/discovery/queries";
+import {
+  useGeneratePrd,
+  useWorkspace,
+} from "@/features/discovery/queries";
 
 export function PrdPage() {
   const { projectId = "" } = useParams();
   const { data: workspace } = useWorkspace(projectId);
+  const generatePrd = useGeneratePrd(projectId);
 
   if (!workspace) return null;
+
+  if (workspace.prd.status === "generating") {
+    return (
+      <div className="grid h-full place-items-center p-8">
+        <div className="max-w-md text-center">
+          <span className="mx-auto mb-5 grid h-12 w-12 place-items-center rounded-2xl bg-violet-50 text-violet-600">
+            <Sparkles size={19} />
+          </span>
+          <p className="eyebrow mb-2">PRD</p>
+          <h2 className="text-xl font-semibold">Generation needs to finish</h2>
+          <p className="mt-2 text-sm leading-6 text-neutral-500">
+            Founder approval is already saved. Resume the verified compilation
+            without replaying the confirmation turn.
+          </p>
+          {generatePrd.isError && (
+            <p className="mt-3 text-sm text-red-700">
+              {generatePrd.error instanceof Error
+                ? generatePrd.error.message
+                : "PRD generation failed."}
+            </p>
+          )}
+          <button
+            type="button"
+            disabled={generatePrd.isPending}
+            onClick={() => generatePrd.mutate()}
+            className="mt-5 rounded-xl bg-neutral-950 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-40"
+          >
+            {generatePrd.isPending ? "Generating…" : "Resume PRD generation"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (workspace.prd.status !== "ready") {
     return (
