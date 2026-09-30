@@ -1,10 +1,7 @@
-from uuid import uuid4
-
 import pytest
 from langchain_core.messages import AIMessage
 
 from agents.interview_checkpoint import load_checkpoint, save_checkpoint
-from agents.state import DiscoveryScope
 from api.schemas import CreateProjectInput
 from services.project_repository import create_project_record, get_project
 from services.project_service import create_project_workspace, list_project_summaries
