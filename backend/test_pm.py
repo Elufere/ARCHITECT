@@ -33,12 +33,34 @@ def run_phase(graph, state: AgentState, phase_label: str) -> AgentState:
             print("Progress is saved. Run Architect again to retry compilation.")
             return state
         print(f"\nPM Agent: {state['messages'][-1].content}")
+        if state.get("prd_confirmation_pending"):
+            print("\nType 'generate' to approve the PRD, or 'more' to continue discovery.")
         print("\nYou:")
         answer = read_answer()
         if answer is None:
             print("Progress saved. Run Architect again to resume.")
             return state
-        state["messages"].append(HumanMessage(content=answer, id=str(uuid4())))
+
+        message_kwargs = {}
+        if state.get("prd_confirmation_pending"):
+            decision = answer.strip().lower()
+            if decision in {"generate", "yes", "y"}:
+                answer = "Yes, generate the PRD."
+                message_kwargs["architect_turn_type"] = "confirm_prd"
+            elif decision in {"more", "no", "n"}:
+                answer = "There is more I want to cover."
+                message_kwargs["architect_turn_type"] = "continue_discovery"
+            else:
+                print("Please enter 'generate' or 'more'.")
+                continue
+
+        state["messages"].append(
+            HumanMessage(
+                content=answer,
+                id=str(uuid4()),
+                additional_kwargs=message_kwargs,
+            )
+        )
         state["turn_count"] = state.get("turn_count", 0) + 1
         state.update(checkpoint_cursor="conversation_manager", interview_status="PROCESSING_ANSWER",
                      active_answer_result=None, extraction_status="PENDING")
