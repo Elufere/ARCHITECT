@@ -70,6 +70,28 @@ def actor_registry(state: AgentState, scope: DiscoveryScope) -> dict[str, ActorI
                 for normalized in (_normalize_label(alias) for alias in aliases)
                 if normalized
             )
+    # Role-policy facts may establish capacities for an actor whose membership
+    # was already confirmed elsewhere. They enrich identity; they never create it.
+    for item in state.get("discovered_knowledge", []):
+        if (
+            item.scope != scope
+            or item.topic != DiscoveryTopic.USER_ROLES
+            or item.key not in ("multiple_roles", "role_transitions")
+            or item.absence
+            or item.knowledge_state != KnowledgeState.CONFIRMED
+            or not item.aliases
+        ):
+            continue
+        for raw_role, aliases in item.aliases.items():
+            canonical = _normalize_label(raw_role)
+            identity = registry.get(canonical)
+            if identity is None:
+                continue
+            identity.labels.update(
+                normalized
+                for normalized in (_normalize_label(alias) for alias in aliases)
+                if normalized and normalized != canonical
+            )
     return registry
 
 
