@@ -131,7 +131,11 @@ export function InterviewPanel({ workspace }: Props) {
                 <button
                   type="button"
                   disabled={retryDiscovery.isPending}
-                  onClick={() => retryDiscovery.mutate()}
+                  onClick={() => {
+                    sendTurn.reset();
+                    retryDiscovery.reset();
+                    retryDiscovery.mutate();
+                  }}
                   className="shrink-0 font-semibold"
                 >
                   Retry saved work
