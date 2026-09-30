@@ -233,3 +233,25 @@ def test_owned_claim_with_capacity_alias_is_committed_to_canonical_actor():
     assert item is not None
     assert item.role == "customer"
     assert item.key == "responsibilities"
+
+
+
+def test_descriptive_reference_uses_previous_alias_context_without_new_actor():
+    state = state_with(
+        actor("customer"),
+        role_policy(),
+        messages=[
+            AIMessage(content="What should happen after the seller sends the item?"),
+            HumanMessage(content="The person receiving it should confirm delivery."),
+        ],
+    )
+
+    assert (
+        resolve_owned_claim_role(
+            None,
+            "The person receiving it should confirm delivery.",
+            state,
+            SCOPE,
+        )
+        == "customer"
+    )
