@@ -77,6 +77,7 @@ class ThreadFrontierInquiry(BaseModel):
 class ThreadFeedbackKind(str, Enum):
     QUESTION_TOO_BROAD = "QUESTION_TOO_BROAD"
     IMPLEMENTATION_DEFERRED = "IMPLEMENTATION_DEFERRED"
+    DECISION_DEFERRED = "DECISION_DEFERRED"
     PRODUCT_SCOPE_CLOSED = "PRODUCT_SCOPE_CLOSED"
 
 
@@ -363,6 +364,11 @@ The interview should feel like an excellent human PM conversation:
       behavior, set feedback.kind=IMPLEMENTATION_DEFERRED and move away from that
       implementation detail. A specialist mentioned only as the person who will
       decide/implement a technical detail is not thereby a user of the product.
+    - If the founder explicitly postpones, parks, or moves the CURRENT unresolved
+      product decision to a later time/phase/release instead of resolving it now,
+      set feedback.kind=DECISION_DEFERRED. Treat the decision as intentionally
+      unresolved and move to a materially different decision. Do not convert the
+      deferral itself into a product rule.
     - If the founder explicitly says the app/product should not own, care about,
       manage, or further specify the current line of detail, OR explicitly closes
       the current decision as "enough/that's all" in context, set
@@ -1285,6 +1291,7 @@ def discovery_thread_node(state: AgentState) -> dict:
             boundary_type = {
                 ThreadFeedbackKind.QUESTION_TOO_BROAD: "question_too_broad",
                 ThreadFeedbackKind.IMPLEMENTATION_DEFERRED: "implementation_deferred",
+                ThreadFeedbackKind.DECISION_DEFERRED: "decision_deferral",
                 ThreadFeedbackKind.PRODUCT_SCOPE_CLOSED: "product_scope_closed",
             }[plan.feedback.kind]
             boundary = {
