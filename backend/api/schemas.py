@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from agents.understanding_projection import UnderstandingSection
 
@@ -25,6 +25,37 @@ class CreateProjectInput(BaseModel):
         if not value:
             raise ValueError("Value cannot be blank")
         return value
+
+
+
+
+DiscoveryTurnType = Literal[
+    "answer",
+    "request_suggestion",
+    "unknown",
+    "defer_design",
+    "continue_discovery",
+]
+
+
+class DiscoveryTurnInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: DiscoveryTurnType
+    message: Optional[str] = Field(default=None, max_length=20000)
+
+    @model_validator(mode="after")
+    def validate_message(self):
+        if self.message is not None:
+            self.message = self.message.strip() or None
+
+        if self.type == "answer" and not self.message:
+            raise ValueError("An answer turn requires a non-empty message.")
+
+        if self.type in {"request_suggestion", "unknown", "defer_design"} and self.message is not None:
+            raise ValueError(f"Turn type '{self.type}' does not accept a message.")
+
+        return self
 
 
 class ProjectSummary(BaseModel):
