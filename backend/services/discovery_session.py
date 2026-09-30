@@ -41,6 +41,7 @@ def create_initial_discovery_state(description: str, *, session_id: str | None =
         discovered_knowledge=[],
         superseded_knowledge=[],
         product_concepts=[],
+        external_systems=[],
         captured_observations=[],
         discovery_boundaries=[],
         model_implications=[],
