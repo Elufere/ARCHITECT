@@ -37,9 +37,16 @@ export function InterviewPanel({ workspace }: Props) {
     sendTurn.mutate({ type: "answer", message });
   }
 
-  const processingError = sendTurn.isError || retryDiscovery.isError;
-  const disabled =
-    sendTurn.isPending || retryDiscovery.isPending || processingError;
+  const processingError = sendTurn.error ?? retryDiscovery.error;
+  const disabled = sendTurn.isPending || retryDiscovery.isPending;
+  const requiresResume =
+    workspace.discovery.status === "compiling" ||
+    (workspace.discovery.status === "active" &&
+      !workspace.discovery.activePrompt);
+  const errorMessage =
+    processingError instanceof Error
+      ? processingError.message
+      : "Architect could not finish processing the saved work.";
 
   return (
     <section className="flex min-h-0 flex-col bg-white">
@@ -122,23 +129,56 @@ export function InterviewPanel({ workspace }: Props) {
               </div>
             )}
 
-            {processingError && (
+            {requiresResume && (
+              <div className="surface border-amber-200 bg-amber-50/60 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-amber-900">
+                      {workspace.discovery.status === "compiling"
+                        ? "PRD generation needs to resume"
+                        : "Saved discovery work needs to resume"}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-amber-800/75">
+                      Architect has durable progress that is not currently at a
+                      founder-input boundary. Resume it instead of submitting the
+                      same answer again.
+                    </p>
+                    {retryDiscovery.isError && (
+                      <p className="mt-2 text-xs text-red-700">{errorMessage}</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => {
+                      sendTurn.reset();
+                      retryDiscovery.reset();
+                      retryDiscovery.mutate();
+                    }}
+                    className="shrink-0 rounded-lg bg-amber-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+                  >
+                    {retryDiscovery.isPending
+                      ? "Resuming…"
+                      : workspace.discovery.status === "compiling"
+                        ? "Resume generation"
+                        : "Resume discovery"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {processingError && !requiresResume && (
               <div className="flex items-center justify-between gap-4 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
-                <span>
-                  Architect could not finish processing the saved turn. Your input
-                  is already checkpointed.
-                </span>
+                <span>{errorMessage}</span>
                 <button
                   type="button"
-                  disabled={retryDiscovery.isPending}
                   onClick={() => {
                     sendTurn.reset();
                     retryDiscovery.reset();
-                    retryDiscovery.mutate();
                   }}
                   className="shrink-0 font-semibold"
                 >
-                  Retry saved work
+                  Dismiss
                 </button>
               </div>
             )}
@@ -147,7 +187,7 @@ export function InterviewPanel({ workspace }: Props) {
         </div>
       </div>
 
-      {workspace.discovery.status === "active" && (
+      {workspace.discovery.status === "active" && !requiresResume && (
         <div className="border-t border-black/8 bg-white px-5 py-4 md:px-10">
           <div className="mx-auto max-w-3xl">
             <div className="mb-2 flex flex-wrap gap-2">
