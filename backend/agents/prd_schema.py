@@ -81,8 +81,21 @@ class SemanticCategories(StrictModel):
     explanation: str = Field(min_length=1)
 
 
+class DeferredDecision(StrictModel):
+    id: str = Field(min_length=1)
+    kind: Literal["decision", "release_scope", "design_implementation"] = "decision"
+    decision: str = Field(min_length=1)
+    evidence: str = Field(min_length=1)
+    source_turn: int
+    resolution_stage: str | None = None
+    owner: str | None = None
+    downstream_consequence: str | None = None
+    requirement_id: str | None = None
+
+
 class PRDContract(PRDDraft):
     schema_version: Literal["2.0"] = "2.0"
     discovery_scope: Literal["USER_APP", "ADMIN_DASHBOARD"]
     source_facts: list[SourceFact]
     validation_report: list[ClaimVerdict]
+    deferred_decisions: list[DeferredDecision] = Field(default_factory=list)
