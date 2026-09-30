@@ -320,3 +320,63 @@ def test_all_factual_sections_are_enumerated_for_validation():
                  non_functional_constraints=[claim], scope=dict(in_scope=[claim], out_of_scope=[claim]),
                  personas=[dict(**ref, name="Manager", description=QUOTE, key_behaviors=[claim])])
     assert len(list(draft_claims(PRDDraft.model_validate(value)))) == 9
+
+
+
+def test_persistent_founder_deferral_survives_verified_prd(monkeypatch, tmp_path):
+    setup(monkeypatch, tmp_path)
+    initial = state()
+    initial["discovery_boundaries"] = [
+        {
+            "id": "deferral:fee-policy",
+            "type": "decision_deferral",
+            "kind": "decision",
+            "scope": S.USER_APP.value,
+            "source_turn": 6,
+            "evidence": "Let's decide the fee cap later.",
+            "decision_summary": "Maximum transaction fee cap",
+            "resolution_stage": "later",
+            "owner": None,
+            "downstream_consequence": None,
+            "requirement_id": "fee_policy",
+            "explicit_authorization": True,
+        }
+    ]
+
+    result = pm.pm_compile_node(initial)
+
+    assert result["pm_is_complete"]
+    contract = result["prd_contract"]
+    assert len(contract.deferred_decisions) == 1
+    deferred = contract.deferred_decisions[0]
+    assert deferred.id == "deferral:fee-policy"
+    assert deferred.decision == "Maximum transaction fee cap"
+    assert deferred.evidence == "Let's decide the fee cap later."
+    assert deferred.resolution_stage == "later"
+    assert deferred.requirement_id == "fee_policy"
+
+    saved = json.loads((tmp_path / "requirements_mvp.json").read_text())
+    assert saved["deferred_decisions"][0]["decision"] == "Maximum transaction fee cap"
+
+
+def test_reopened_deferral_is_not_published_in_prd(monkeypatch, tmp_path):
+    setup(monkeypatch, tmp_path)
+    initial = state()
+    initial["discovery_boundaries"] = [
+        {
+            "id": "deferral:fees",
+            "type": "decision_deferral",
+            "kind": "decision",
+            "scope": S.USER_APP.value,
+            "source_turn": 4,
+            "evidence": "We'll decide fees later.",
+            "decision_summary": "Fee policy",
+            "reopened_at_turn": 9,
+            "explicit_authorization": True,
+        }
+    ]
+
+    result = pm.pm_compile_node(initial)
+
+    assert result["pm_is_complete"]
+    assert result["prd_contract"].deferred_decisions == []
