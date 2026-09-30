@@ -1,7 +1,20 @@
 import pytest
 from fastapi import HTTPException
-from api.routes import create_project, get_projects
-from api.schemas import CreateProjectInput, ProjectSummary, WorkspaceSnapshot
+from api.routes import (
+    create_project,
+    get_projects,
+    retry_discovery,
+    submit_discovery_turn,
+)
+from api.schemas import (
+    CreateProjectInput,
+    DiscoveryTurnInput,
+    ProjectSummary,
+    WorkspaceSnapshot,
+)
+from services.discovery_session import DiscoverySessionStateError
+from services.discovery_turn import DiscoveryProcessingError
+from services.project_repository import ProjectNotFoundError
 from services.project_service import ProjectInitializationError
 
 
@@ -75,3 +88,72 @@ def test_list_projects_route_returns_summaries(monkeypatch):
     monkeypatch.setattr(routes, "list_project_summaries", lambda: expected)
 
     assert get_projects() == expected
+
+
+
+def test_submit_discovery_turn_route_returns_workspace(monkeypatch):
+    import api.routes as routes
+
+    expected = _workspace()
+    monkeypatch.setattr(
+        routes,
+        "submit_project_discovery_turn",
+        lambda project_id, input: expected,
+    )
+
+    result = submit_discovery_turn(
+        "escrow-app-a1b2c3d4",
+        DiscoveryTurnInput(type="answer", message="Customers."),
+    )
+    assert result == expected
+
+
+def test_submit_discovery_turn_route_maps_processing_failure_to_503(monkeypatch):
+    import api.routes as routes
+
+    def fail(project_id, input):
+        raise DiscoveryProcessingError(
+            project_id,
+            retryable=True,
+            reason="OpenAI unavailable",
+        )
+
+    monkeypatch.setattr(routes, "submit_project_discovery_turn", fail)
+
+    with pytest.raises(HTTPException) as exc:
+        submit_discovery_turn(
+            "escrow-app-a1b2c3d4",
+            DiscoveryTurnInput(type="answer", message="Customers."),
+        )
+
+    assert exc.value.status_code == 503
+    assert exc.value.detail["projectId"] == "escrow-app-a1b2c3d4"
+    assert exc.value.detail["retryable"] is True
+
+
+def test_retry_discovery_route_maps_no_pending_work_to_409(monkeypatch):
+    import api.routes as routes
+
+    def no_work(project_id):
+        raise DiscoverySessionStateError("There is no interrupted discovery work to retry.")
+
+    monkeypatch.setattr(routes, "retry_project_discovery", no_work)
+
+    with pytest.raises(HTTPException) as exc:
+        retry_discovery("escrow-app-a1b2c3d4")
+
+    assert exc.value.status_code == 409
+
+
+def test_retry_discovery_route_maps_missing_project_to_404(monkeypatch):
+    import api.routes as routes
+
+    def missing(project_id):
+        raise ProjectNotFoundError(f"Project '{project_id}' was not found.")
+
+    monkeypatch.setattr(routes, "retry_project_discovery", missing)
+
+    with pytest.raises(HTTPException) as exc:
+        retry_discovery("missing-project")
+
+    assert exc.value.status_code == 404
