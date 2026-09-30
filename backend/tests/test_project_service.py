@@ -13,11 +13,11 @@ from services.project_service import (
 from services.discovery_session import create_initial_discovery_state
 
 
-def _checkpoint(description: str, *, awaiting_confirmation=False, prd_contract=None):
+def _checkpoint(description: str, *, prd_confirmation_pending=False, prd_contract=None):
     state = create_initial_discovery_state(description)
     state["checkpoint_cursor"] = "waiting"
     state["interview_status"] = "WAITING_FOR_USER"
-    state["awaiting_confirmation"] = awaiting_confirmation
+    state["prd_confirmation_pending"] = prd_confirmation_pending
     state["prd_contract"] = prd_contract
     save_checkpoint(state)
     return state
@@ -124,7 +124,7 @@ def test_list_projects_derives_status_from_linked_checkpoint_and_sorts_by_live_u
         discovery_session_id=first["session_id"],
     )
 
-    second = _checkpoint("Second idea", awaiting_confirmation=True)
+    second = _checkpoint("Second idea", prd_confirmation_pending=True)
     second_project = create_project_record(
         name="Second",
         description="Second idea",
