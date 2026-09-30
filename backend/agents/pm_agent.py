@@ -17,12 +17,15 @@ from agents.state import AgentState, DiscoveryScope
 from agents.prd_schema import (
     ClaimVerdict,
     DeferredDecision,
+    ExternalSystemContract,
+    ExternalSystemStatementContract,
     PRDContract,
     PRDDraft,
     SemanticCategories,
 )
 from agents.prd_validation import build_source_snapshot, validate_prd, check_context_budget, PRDValidationError, PRDAuditError
 from agents.discovery_fields import FIELD_DEFINITIONS
+from agents.external_systems import ExternalSystem
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +59,33 @@ generate or modify either. Repair feedback is not a new source of requirements.
 Return the PRDDraft schema only.
 Canonical field definitions:
 """ + json.dumps(definitions, ensure_ascii=False)
+
+
+def build_prd_external_systems(
+    state: AgentState,
+    scope: DiscoveryScope,
+) -> list[ExternalSystemContract]:
+    """Carry grounded external integrations into the verified artifact."""
+    result = []
+    for raw in state.get("external_systems", []) or []:
+        system = raw if isinstance(raw, ExternalSystem) else ExternalSystem.model_validate(raw)
+        if system.scope != scope:
+            continue
+        result.append(ExternalSystemContract(
+            id=system.id,
+            name=system.name,
+            statements=[
+                ExternalSystemStatementContract(
+                    value=statement.value,
+                    evidence=statement.evidence,
+                    source_turn=statement.source_turn,
+                    relation=statement.relation,
+                    object=statement.object,
+                )
+                for statement in system.statements
+            ],
+        ))
+    return result
 
 
 def build_deferred_decisions(state: AgentState, scope: DiscoveryScope) -> list[DeferredDecision]:
@@ -157,6 +187,7 @@ def pm_compile_node(state: AgentState) -> dict:
                     discovery_scope=scope.value,
                     source_facts=sources,
                     validation_report=verdicts,
+                    external_systems=build_prd_external_systems(state, scope),
                     deferred_decisions=build_deferred_decisions(state, scope),
                 )
                 filename = "requirements_mvp.json" if scope == DiscoveryScope.USER_APP else "requirements_admin_dashboard.json"
