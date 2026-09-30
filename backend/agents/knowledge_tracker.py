@@ -27,6 +27,11 @@ from agents.product_concepts import (
     ProductConceptKind,
     merge_product_concepts,
 )
+from agents.external_systems import (
+    ExternalSystemMention,
+    ground_external_system_mentions,
+    merge_external_systems,
+)
 from agents.absence_supersession import matching_absences, can_replace_absence, supersession_record
 from agents.answer_contract import interpret_closed_answer
 from agents.evidence_spans import recover_evidence_span
@@ -566,7 +571,7 @@ def ground_batch(items, user_response, state, active_gap_review=None):
 
 
 class ExtractedBatch(list):
-    """Extracted schema facts plus parallel concepts and durable observations."""
+    """Extracted schema facts plus parallel structure/integration ledgers."""
 
     def __init__(
         self,
@@ -574,12 +579,14 @@ class ExtractedBatch(list):
         *,
         grounding_required=True,
         concepts=None,
+        external_systems=None,
         observations=None,
         observation_candidates=None,
     ):
         super().__init__(items)
         self.grounding_required = grounding_required
         self.concepts = list(concepts or [])
+        self.external_systems = list(external_systems or [])
         self.observations = list(observations or [])
         self.observation_candidates = dict(observation_candidates or {})
 
@@ -786,6 +793,25 @@ def _concept_from_claim(
     )
 
 
+def _external_system_from_claim(
+    claim: NeutralClaim,
+    scope: DiscoveryScope,
+    turn: int,
+) -> ExternalSystemMention:
+    if not claim.subject or not claim.subject.strip():
+        raise ValueError("external_system requires a system/service name in subject")
+    return ExternalSystemMention(
+        scope=scope,
+        name=claim.subject.strip(),
+        value=claim.value,
+        evidence=claim.evidence,
+        source_turn=turn,
+        relation=claim.relation,
+        object=claim.object,
+        confidence=claim.confidence,
+    )
+
+
 def _admit_claim_item(
     claim: NeutralClaim,
     state: AgentState,
@@ -890,6 +916,7 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
     primary_roles, secondary_roles = _existing_actor_sets(state, scope)
     accepted: list[KnowledgeItem] = []
     concepts: list[ProductConcept] = []
+    external_mentions: list[ExternalSystemMention] = []
     observations: list[dict] = []
     observation_candidates: dict[str, KnowledgeItem] = {}
 
@@ -903,6 +930,31 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
         rejection_reason = None
         item = None
         try:
+            if claim.kind == "external_system":
+                mention = _external_system_from_claim(
+                    claim,
+                    scope,
+                    state.get("turn_count", 0),
+                )
+                valid_evidence, reason = validate_extraction(
+                    KnowledgeItem(
+                        topic=DiscoveryTopic.CORE_WORKFLOW,
+                        scope=scope,
+                        key="downstream_dependency",
+                        value=mention.value,
+                        evidence=mention.evidence,
+                        confidence=mention.confidence,
+                        source_turn=mention.source_turn,
+                    ),
+                    state["messages"][-1].content,
+                    None,
+                )
+                if not valid_evidence:
+                    raise ValueError(reason)
+                external_mentions.append(mention)
+                admission_status = "EXTERNAL_SYSTEM_CANDIDATE"
+                continue
+
             if claim.kind in ("product_entity", "entity_relationship", "entity_attribute"):
                 concept = _concept_from_claim(
                     claim, scope, state.get("turn_count", 0)
@@ -973,12 +1025,25 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
                     f"{claim.kind} | {admission_status}"
                 )
 
-    # Python has validated provenance/schema only. Semantic support is still
-    # untrusted until the grounding model audits each canonical candidate.
+    try:
+        grounded_external_systems = ground_external_system_mentions(
+            external_mentions,
+            user_response,
+            state,
+        )
+    except Exception as exc:
+        raise_if_llm_failure(exc)
+        if external_mentions:
+            raise ExtractionFailed("External-system grounding failed") from exc
+        grounded_external_systems = []
+
+    # Python has validated provenance/schema only. Canonical knowledge facts and
+    # external-system candidates each pass an independent semantic grounding gate.
     return ExtractedBatch(
         accepted,
         grounding_required=True,
         concepts=concepts,
+        external_systems=grounded_external_systems,
         observations=observations,
         observation_candidates=observation_candidates,
     )
@@ -1277,6 +1342,7 @@ def knowledge_tracker_node(state: AgentState) -> dict:
                     promoted,
                     current_scope,
                     state.get("product_concepts", []),
+                    state.get("external_systems", []),
                 ),
                 "active_answer_result": answer_receipt(state, committed_promotions, promoted, confirmed_existing=True),
                 "fact_acquisition": acquisition_records(state, promoted, committed_promotions),
@@ -1293,6 +1359,7 @@ def knowledge_tracker_node(state: AgentState) -> dict:
     closed_answer = None if recovering_prior_answer or confirmed_prior_answer else interpret_closed_answer(state)
     answer_followup = None
     captured_concepts = []
+    captured_external_systems = []
     captured_observations = list(state.get("captured_observations", []))
     if closed_answer is not None:
         # The exact generated question defines the choice's meaning. No model
@@ -1305,6 +1372,9 @@ def knowledge_tracker_node(state: AgentState) -> dict:
     else:
         extracted_items = extract_passes(user_response, state, current_scope)
         captured_concepts = list(getattr(extracted_items, "concepts", []))
+        captured_external_systems = list(
+            getattr(extracted_items, "external_systems", [])
+        )
         observation_candidates = dict(
             getattr(extracted_items, "observation_candidates", {})
         )
@@ -1403,6 +1473,10 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         state.get("product_concepts", []),
         captured_concepts,
     )
+    external_systems = merge_external_systems(
+        state.get("external_systems", []),
+        captured_external_systems,
+    )
     discovered_knowledge = list(state.get("discovered_knowledge", []))
     if current_gap:
         print(f"ACTIVE ANSWER: gap={current_gap} accepted_facts="
@@ -1491,11 +1565,13 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         "superseded_knowledge": superseded_knowledge,
         "answer_followup": answer_followup,
         "product_concepts": product_concepts,
+        "external_systems": external_systems,
         "captured_observations": captured_observations,
         "product_model": build_product_model(
             discovered_knowledge,
             current_scope,
             product_concepts,
+            external_systems,
         ),
         "active_answer_result": answer_receipt(state, direct_answer_items, discovered_knowledge,
                                                confirmed_existing=confirmed_prior_answer),
