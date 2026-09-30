@@ -19,5 +19,10 @@ export function useCreateProject() {
       queryClient.setQueryData(["workspace", workspace.project.id], workspace);
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
+    onError: () => {
+      // Project creation persists metadata/session before initial discovery runs.
+      // Refresh so a saved project is visible even when that first model call fails.
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
   });
 }
