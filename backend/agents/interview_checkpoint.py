@@ -96,6 +96,7 @@ def load_checkpoint(session_id):
         for key, item in state.get("active_requirements", {}).items()
     }
     state.setdefault("product_concepts", [])
+    state.setdefault("external_systems", [])
     state.setdefault("captured_observations", [])
     state.setdefault("discovery_boundaries", [])
     state.setdefault("model_implications", [])
