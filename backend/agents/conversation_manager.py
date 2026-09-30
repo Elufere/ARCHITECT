@@ -9,6 +9,12 @@ from agents.state import AgentState
 from agents.conversation_language import clarification_reply, clarification_question, final_question_text
 from agents.llm import get_chat_model, get_structured_model
 from agents.llm_errors import raise_if_llm_failure
+from agents.discovery_deferrals import (
+    apply_deferral,
+    apply_reopen,
+    review_free_text_deferral,
+    should_review_free_text_deferral,
+)
 
 
 class ClarificationIntentReview(BaseModel):
@@ -253,14 +259,35 @@ def conversation_manager_node(state: AgentState) -> dict:
 
     structured_turn = (messages[-1].additional_kwargs or {}).get("architect_turn_type")
     intent = STRUCTURED_TURN_INTENTS.get(structured_turn) or classify_turn(messages[-1].content)
+
+    control_updates = {}
+    if (
+        not structured_turn
+        and intent in {"product_information", "uncertainty", "correction"}
+        and should_review_free_text_deferral(state)
+    ):
+        review = review_free_text_deferral(state, messages[-1].content)
+        if review.action == "defer":
+            control_updates = apply_deferral(state, review, messages[-1].content)
+            if review.primary_control_intent:
+                intent = "decision_deferral"
+        elif review.action == "reopen":
+            control_updates = apply_reopen(state, review)
+            if review.primary_control_intent:
+                intent = "reopen_deferral"
+
     if (
         intent == "product_information"
         and looks_like_founder_question(messages[-1].content)
         and question_is_clarification(state, messages[-1].content)
     ):
         intent = "clarification"
-    update = {"conversation_intent": intent, "is_correction": intent == "correction",
-              "question_retry_count": 0}
+    update = {
+        "conversation_intent": intent,
+        "is_correction": intent == "correction",
+        "question_retry_count": 0,
+        **control_updates,
+    }
     if intent == "confirm_prd":
         return {
             **update,
@@ -308,6 +335,22 @@ def conversation_manager_node(state: AgentState) -> dict:
         return {**update, "messages": [AIMessage(content=(
             "That is fine—I’ll keep it as an open decision and continue with the parts that are known."
         ))]}
+
+    if intent == "decision_deferral":
+        return {
+            **update,
+            "messages": [AIMessage(content=(
+                "Okay—I’ll keep that decision deferred and move on. We can revisit it when you’re ready."
+            ))],
+        }
+
+    if intent == "reopen_deferral":
+        return {
+            **update,
+            "messages": [AIMessage(content=(
+                "Sure—we can bring that deferred decision back into discovery."
+            ))],
+        }
 
     if intent in ("design_deferral", "objection"):
         boundaries = list(state.get("discovery_boundaries", []))
