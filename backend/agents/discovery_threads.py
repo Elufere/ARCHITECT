@@ -320,6 +320,11 @@ The interview should feel like an excellent human PM conversation:
     - rejected_inquiry means the founder rejected that inquiry as irrelevant or
       repeated. Do not retry, paraphrase, or deepen it. Move to a materially
       different product decision.
+    - decision_deferral means the founder intentionally postponed that unresolved
+      product decision. Treat it as deferred, not missing. Do not ask, paraphrase,
+      or deepen the same decision while the boundary is active, even if the answer
+      would otherwise be useful. Only later founder input that explicitly reopens
+      the boundary may return it to discovery.
     - implementation_deferred means the founder delegated a technical/design/
       implementation mechanism rather than choosing product behavior. Do not
       keep asking for that mechanism or turn the specialist into a product actor.
@@ -337,8 +342,10 @@ The interview should feel like an excellent human PM conversation:
       same underlying decision again; choose a materially different grounded
       inquiry so the interview can continue without a generic fallback question.
     These are NOT product facts and must never be converted into requirements.
-13. If latest_conversation_intent is design_deferral or objection, the NEXT move
-    must demonstrate that feedback was respected.
+13. If latest_conversation_intent is design_deferral, decision_deferral,
+    reopen_deferral, or objection, the NEXT move must demonstrate that feedback
+    was respected. A decision_deferral must move away from the deferred decision;
+    a reopen_deferral may bring only the explicitly reopened decision back.
 14. Read the founder's latest answer semantically, not only as product content.
     If it is primarily feedback about the INTERVIEW QUESTION itself — for example
     that the question asks for too much reasoning, too much of a process, or too
@@ -728,8 +735,11 @@ label as founder-provided facts.
 Discovery boundaries are conversation-control constraints, not missing product
 facts. If a proposed frontier asks for detail the founder explicitly delegated
 to a designer/implementation specialist, repeats/deepens an inquiry they
-rejected as irrelevant, or enters an area marked product_scope_closed, set
-should_move_on=true even if that detail remains unknown. A question_too_broad
+rejected as irrelevant, repeats an active decision_deferral, or enters an area
+marked product_scope_closed, set should_move_on=true even if that detail remains
+unknown. A decision_deferral is intentionally unresolved and must not be treated
+as ordinary missing information until its boundary is explicitly reopened.
+A question_too_broad
 boundary does not close the underlying product area; it only forbids asking for
 the same oversized bundle again. A product_scope_closed boundary DOES close
 that line of discovery until later founder evidence explicitly reopens it.
@@ -747,6 +757,24 @@ def _semantic_frontier_problem(
     frontier = plan.frontier
     if frontier is None:
         return None
+
+    for boundary in state.get("discovery_boundaries", []) or []:
+        if not isinstance(boundary, dict):
+            continue
+        if boundary.get("type") != "decision_deferral" or boundary.get("reopened_at_turn"):
+            continue
+        if boundary.get("scope") and boundary.get("scope") != scope.value:
+            continue
+        if (
+            boundary.get("decision_key")
+            and frontier.decision_key
+            and boundary.get("decision_key") == frontier.decision_key
+        ):
+            return (
+                "The proposed frontier exactly matches an explicitly deferred "
+                "founder decision. Choose a materially different product decision "
+                "unless the founder reopens this deferral."
+            )
 
     payload = {
         "proposed_frontier": {
