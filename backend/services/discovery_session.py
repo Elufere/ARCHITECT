@@ -4,7 +4,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
+
+from agents.llm_errors import ExtractionFailed, LLMCallFailed
 
 from agents.interview_checkpoint import (
     load_checkpoint,
@@ -101,20 +103,169 @@ def create_discovery_session(description: str) -> AgentState:
     return state
 
 
-def advance_discovery_to_waiting(session_id: str) -> AgentState:
-    """Resume the durable graph until it reaches the next user boundary."""
+class DiscoverySessionBusyError(RuntimeError):
+    pass
 
-    # Lazy import keeps API startup independent from graph/model construction.
+
+class DiscoverySessionStateError(RuntimeError):
+    pass
+
+
+TURN_TEXT = {
+    "request_suggestion": "What do you suggest?",
+    "unknown": "I haven't decided yet.",
+    "defer_design": "Leave this to design or engineering.",
+    "continue_discovery": "There is more I want to cover.",
+}
+
+
+def _turn_content(turn_type: str, message: str | None) -> str:
+    if turn_type == "answer":
+        value = (message or "").strip()
+        if not value:
+            raise DiscoverySessionStateError("An answer turn requires a message.")
+        return value
+    if turn_type == "continue_discovery" and message and message.strip():
+        return message.strip()
+    try:
+        return TURN_TEXT[turn_type]
+    except KeyError as exc:
+        raise DiscoverySessionStateError(
+            f"Unsupported discovery turn type '{turn_type}'."
+        ) from exc
+
+
+def _invoke_graph_locked(state: AgentState) -> AgentState:
+    """Invoke from a loaded state while the caller already owns the session lock."""
+
     from agents.graph import build_graph
 
-    with session_lock(session_id):
+    session_id = state["session_id"]
+    graph = build_graph()
+    graph.invoke(
+        state,
+        config={"metadata": {"openai_usage_session": session_id}},
+    )
+    return load_checkpoint(session_id)
+
+
+def _record_processing_failure(session_id: str) -> None:
+    """Keep the durable cursor intact and mark failed extraction when applicable."""
+
+    try:
+        state = load_checkpoint(session_id)
+    except Exception:
+        return
+    if state.get("checkpoint_cursor") == "extract":
+        state["extraction_status"] = "EXTRACTION_FAILED"
+        save_checkpoint(state)
+
+
+def _is_terminal(state: AgentState) -> bool:
+    return bool(
+        state.get("prd_contract") is not None
+        or state.get("checkpoint_cursor") in {"phase_complete", "completed"}
+    )
+
+
+def _run_with_session_lock(session_id: str, operation):
+    try:
+        with session_lock(session_id):
+            return operation()
+    except RuntimeError as exc:
+        if str(exc) == "This interview is already open in another process":
+            raise DiscoverySessionBusyError(
+                "This project is already processing another discovery request."
+            ) from exc
+        raise
+
+
+def advance_discovery_to_waiting(session_id: str) -> AgentState:
+    """Resume a durable graph until it reaches the next user boundary."""
+
+    def operation():
         state = load_checkpoint(session_id)
         if state.get("checkpoint_cursor") == "waiting":
             return state
+        return _invoke_graph_locked(state)
 
-        graph = build_graph()
-        graph.invoke(
-            state,
-            config={"metadata": {"openai_usage_session": session_id}},
+    return _run_with_session_lock(session_id, operation)
+
+
+def submit_discovery_session_turn(
+    session_id: str,
+    *,
+    turn_type: str,
+    message: str | None = None,
+) -> AgentState:
+    """Persist one founder turn before any model work, then advance the graph."""
+
+    def operation():
+        state = load_checkpoint(session_id)
+        if _is_terminal(state):
+            raise DiscoverySessionStateError(
+                "Discovery is complete for this project."
+            )
+        if state.get("checkpoint_cursor") != "waiting":
+            raise DiscoverySessionStateError(
+                "Architect is not waiting for a new founder turn. Retry the saved work instead."
+            )
+        if not state.get("messages") or not isinstance(state["messages"][-1], AIMessage):
+            raise DiscoverySessionStateError(
+                "Architect has saved work that must be retried before another answer can be submitted."
+            )
+
+        content = _turn_content(turn_type, message)
+        metadata = {"created_at": datetime.now(timezone.utc).isoformat()}
+        if turn_type != "answer":
+            metadata["architect_turn_type"] = turn_type
+
+        state["messages"].append(
+            HumanMessage(
+                content=content,
+                id=str(uuid4()),
+                additional_kwargs=metadata,
+            )
         )
-        return load_checkpoint(session_id)
+        state["turn_count"] = state.get("turn_count", 0) + 1
+        state.update(
+            checkpoint_cursor="conversation_manager",
+            interview_status="PROCESSING_ANSWER",
+            active_answer_result=None,
+            extraction_status="PENDING",
+        )
+        save_checkpoint(state)
+        return _invoke_graph_locked(state)
+
+    try:
+        return _run_with_session_lock(session_id, operation)
+    except (LLMCallFailed, ExtractionFailed):
+        _record_processing_failure(session_id)
+        raise
+
+
+def retry_discovery_session(session_id: str) -> AgentState:
+    """Resume the saved cursor without appending or replaying founder input."""
+
+    def operation():
+        state = load_checkpoint(session_id)
+        if _is_terminal(state):
+            raise DiscoverySessionStateError(
+                "Discovery is already complete for this project."
+            )
+
+        cursor = state.get("checkpoint_cursor")
+        if cursor == "waiting":
+            last = state.get("messages", [])[-1:] or [None]
+            if not isinstance(last[0], HumanMessage):
+                raise DiscoverySessionStateError(
+                    "There is no interrupted discovery work to retry."
+                )
+
+        return _invoke_graph_locked(state)
+
+    try:
+        return _run_with_session_lock(session_id, operation)
+    except (LLMCallFailed, ExtractionFailed):
+        _record_processing_failure(session_id)
+        raise
