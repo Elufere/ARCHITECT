@@ -274,15 +274,26 @@ def test_failed_atomic_replace_keeps_previous_prd(monkeypatch, tmp_path):
     assert not list(tmp_path.glob(".prd-*.tmp"))
 
 
-def test_graph_returns_blocked_compilation_without_saving(monkeypatch, tmp_path):
+def test_graph_waits_for_founder_confirmation_before_compilation(monkeypatch, tmp_path):
     from agents import graph
-    setup(monkeypatch, tmp_path, judge=lambda p: verdict(p, claim_supported=False, explanation="Unsupported claim"))
+    calls = setup(monkeypatch, tmp_path)
     monkeypatch.setattr(graph, "knowledge_tracker_node", lambda _: {})
-    monkeypatch.setattr(graph, "interview_planner_node", lambda _: {"awaiting_confirmation": True})
+    monkeypatch.setattr(
+        graph,
+        "interview_planner_node",
+        lambda _: {
+            "awaiting_confirmation": False,
+            "prd_confirmation_pending": True,
+            "ready_to_compile": False,
+        },
+    )
     monkeypatch.setattr(graph, "all_discovery_resolved", lambda _: True)
     result = graph.build_graph().invoke(state())
-    assert not result["pm_is_complete"] and not result["awaiting_confirmation"]
-    assert result["compilation_errors"] and result["prd_contract"] is None
+    assert not result["pm_is_complete"]
+    assert result["prd_confirmation_pending"] is True
+    assert result["ready_to_compile"] is False
+    assert result["messages"][-1].content == graph.PRD_CONFIRMATION_PROMPT
+    assert not calls["compile"]
     assert not (tmp_path / "requirements_mvp.json").exists()
 
 
