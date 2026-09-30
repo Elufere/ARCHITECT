@@ -9,6 +9,12 @@ from agents.discovery_deferrals import (
     apply_reopen,
 )
 from agents.graph import route_after_conversation_manager
+from agents.inquiries import InquirySource
+from agents.question_candidates import (
+    CandidateBlockReason,
+    QuestionCandidate,
+    filter_question_candidates,
+)
 from agents.interview_checkpoint import load_checkpoint, save_checkpoint
 from agents.requirements import (
     ActiveRequirement,
@@ -230,3 +236,37 @@ def test_understanding_projection_shows_active_deferral_and_hides_reopened_one()
     assert [item.label for item in section.items] == ["Reporting scope"]
     assert "phase 2" in (section.items[0].detail or "")
     assert "We'll leave reporting for phase 2." in (section.items[0].detail or "")
+
+
+
+def test_question_candidate_for_active_deferral_is_ineligible():
+    state = create_initial_discovery_state("A product.", session_id=str(uuid4()))
+    state["discovery_boundaries"] = [
+        {
+            "id": "deferral:fees",
+            "type": "decision_deferral",
+            "scope": SCOPE.value,
+            "source_turn": 2,
+            "evidence": "We'll decide fees later.",
+            "decision_summary": "Fee policy",
+            "decision_key": "fee_policy",
+            "explicit_authorization": True,
+        }
+    ]
+    candidate = QuestionCandidate(
+        id="question:fees",
+        inquiry_id="inquiry:fees",
+        source=InquirySource.MODEL,
+        scope=SCOPE,
+        topic=DiscoveryTopic.BUSINESS_RULES,
+        objective="Decide the fee policy.",
+        decision_key="fee_policy",
+        thread_id="payments",
+    )
+
+    eligible, decisions = filter_question_candidates(state, [candidate])
+
+    assert eligible == []
+    assert CandidateBlockReason.EXPLICITLY_DEFERRED_DECISION in decisions[
+        candidate.id
+    ].reasons
