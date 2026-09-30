@@ -36,6 +36,8 @@ def create_initial_discovery_state(description: str, *, session_id: str | None =
         discovery_scope=DiscoveryScope.USER_APP,
         turn_count=0,
         awaiting_confirmation=False,
+        prd_confirmation_pending=False,
+        ready_to_compile=False,
         discovered_knowledge=[],
         superseded_knowledge=[],
         product_concepts=[],
@@ -116,6 +118,7 @@ TURN_TEXT = {
     "unknown": "I haven't decided yet.",
     "defer_design": "Leave this to design or engineering.",
     "continue_discovery": "There is more I want to cover.",
+    "confirm_prd": "Yes, generate the PRD.",
 }
 
 
@@ -206,6 +209,17 @@ def submit_discovery_session_turn(
             raise DiscoverySessionStateError(
                 "Discovery is complete for this project."
             )
+
+        confirmation_pending = state.get("prd_confirmation_pending", False)
+        if confirmation_pending and turn_type not in {"confirm_prd", "continue_discovery"}:
+            raise DiscoverySessionStateError(
+                "Architect is waiting for the founder's PRD confirmation decision."
+            )
+        if not confirmation_pending and turn_type in {"confirm_prd", "continue_discovery"}:
+            raise DiscoverySessionStateError(
+                "PRD confirmation is not currently pending for this project."
+            )
+
         if state.get("checkpoint_cursor") != "waiting":
             raise DiscoverySessionStateError(
                 "Architect is not waiting for a new founder turn. Retry the saved work instead."
