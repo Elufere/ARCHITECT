@@ -1043,6 +1043,40 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
             raise ExtractionFailed("External-system grounding failed") from exc
         grounded_external_systems = []
 
+    if external_mentions:
+        grounded_signatures = {
+            (
+                mention.name.strip().lower(),
+                mention.value,
+                mention.evidence,
+            )
+            for mention in grounded_external_systems
+        }
+        updated_observations = []
+        for observation in observations:
+            if observation.get("kind") != "external_system":
+                updated_observations.append(observation)
+                continue
+            signature = (
+                str(observation.get("subject") or "").strip().lower(),
+                observation.get("value"),
+                observation.get("evidence"),
+            )
+            updated_observations.append({
+                **observation,
+                "admission_status": (
+                    "GROUNDED_EXTERNAL_SYSTEM"
+                    if signature in grounded_signatures
+                    else "SEMANTIC_REJECTED"
+                ),
+                "rejection_reason": (
+                    None
+                    if signature in grounded_signatures
+                    else "External-system grounding did not support this interpretation"
+                ),
+            })
+        observations = updated_observations
+
     # Python has validated provenance/schema only. Canonical knowledge facts and
     # external-system candidates each pass an independent semantic grounding gate.
     return ExtractedBatch(
