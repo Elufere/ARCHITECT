@@ -6,7 +6,7 @@ import json
 from enum import Enum
 from typing import Literal, Optional
 
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, model_validator
 
 from agents.llm import get_structured_model
@@ -191,7 +191,7 @@ def review_free_text_deferral(
     try:
         result = deferral_review_model().invoke([
             SystemMessage(content=DEFERRAL_REVIEW_INSTRUCTION),
-            SystemMessage(content=json.dumps(payload, ensure_ascii=False, default=str)),
+            HumanMessage(content=json.dumps(payload, ensure_ascii=False, default=str)),
         ])
         review = (
             result
@@ -342,7 +342,13 @@ def apply_reopen(
         if requirement.status == RequirementStatus.DEFERRED:
             store[key] = requirement.model_copy(update={"status": RequirementStatus.ACTIVE})
 
-    return {
+    updates = {
         "discovery_boundaries": boundaries[-50:],
         "active_requirements": store,
     }
+    if key:
+        eligible = list(state.get("eligible_requirement_keys", []))
+        if key not in eligible:
+            eligible.append(key)
+        updates["eligible_requirement_keys"] = eligible
+    return updates
