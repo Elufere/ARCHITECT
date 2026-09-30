@@ -130,7 +130,7 @@ def _load_checkpoint_bundle(project_id: str) -> tuple[ProjectRecord, bool, dict,
 def _project_status(state: dict) -> str:
     if state.get("prd_contract") is not None:
         return "prd_ready"
-    if state.get("awaiting_confirmation"):
+    if state.get("prd_confirmation_pending"):
         return "ready_for_prd"
     return "discovering"
 
@@ -146,7 +146,7 @@ def _discovery_status(state: dict) -> str:
         or state.get("interview_status") == "COMPILING_PRD"
     ):
         return "compiling"
-    if state.get("awaiting_confirmation"):
+    if state.get("prd_confirmation_pending"):
         return "ready_for_confirmation"
     return "active"
 
