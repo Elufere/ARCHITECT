@@ -118,7 +118,8 @@ receives data/events from, or uses to perform part of its workflow.
 Support a candidate only when:
 - the quoted founder evidence explicitly establishes an outside system/service/
   provider/integration relationship with the product or its workflow; and
-- the proposed value preserves only the relationship/action stated by that quote.
+- the proposed value preserves only the relationship/action stated by that quote;
+- any proposed relation/object metadata is also explicitly supported by that quote.
 
 Examples of source language that can establish an external-system relationship
 include "use X for...", "through X", "via X", "integrate with X", "X handles...",
@@ -134,7 +135,9 @@ Do NOT support a candidate merely because:
 confirmed_external_systems and previous_question are reference context only. They
 may resolve a pronoun such as "it" to an ALREADY CONFIRMED external system, but
 they cannot supply the new interaction. The current evidence must state that
-interaction itself.
+interaction itself. If the proposed system name is absent from the current quote,
+support it only when the quote contains a genuine contextual reference and that
+name already exists in confirmed_external_systems.
 
 Return a verdict for every candidate id: supported_ids for supported candidates,
 otherwise rejection_reasons keyed by the numeric id as a string. Do not invent
