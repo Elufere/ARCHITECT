@@ -174,10 +174,25 @@ const mockApi = {
       founderText = "Leave this to design or engineering.";
       architectText =
         "Understood. I’ll treat the interaction or implementation detail as deferred and stay at the product-decision level.";
+    } else if (input.type === "confirm_prd") {
+      founderText = "Yes, generate the PRD.";
+      architectText = "PRD generated from the confirmed discovery decisions.";
+      workspace.discovery.status = "complete";
+      workspace.project.status = "prd_ready";
+      workspace.prd = {
+        status: "ready",
+        sections: [
+          {
+            id: "overview",
+            title: "Overview",
+            body: `${workspace.project.name} is defined from the confirmed discovery decisions.`,
+          },
+        ],
+      };
     } else {
       founderText = input.message || "There is more I want to cover.";
       architectText =
-        "Sure. Tell me the product decision or area you want to add or revisit.";
+        "Sure. What product decision or area do you want to add or revisit?";
       workspace.discovery.status = "active";
       workspace.project.status = "discovering";
     }
