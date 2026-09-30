@@ -6,6 +6,9 @@ __pycache__/
 # Env secrets
 .env
 
+# Runtime state
+backend/projects/
+
 # Vector DB
 backend/chroma_store/
 

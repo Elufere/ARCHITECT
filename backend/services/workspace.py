@@ -1,4 +1,4 @@
-"""Build the founder-facing workspace snapshot from a durable Architect session.
+"""Build the founder-facing workspace snapshot from a durable Architect project.
 
 This service is the boundary between product-facing HTTP responses and internal
 LangGraph/checkpoint state. React should never need to understand AgentState,
@@ -6,9 +6,9 @@ requirement coverage, thread planning, or PRD validation internals.
 """
 from __future__ import annotations
 
+from datetime import datetime
 import hashlib
 import json
-from pathlib import Path
 from typing import Iterable
 from uuid import UUID
 
@@ -26,6 +26,12 @@ from api.schemas import (
     WorkspaceMessage,
     WorkspaceSnapshot,
 )
+from models.project import ProjectRecord
+from services.project_repository import (
+    ProjectNotFoundError,
+    ProjectRepositoryError,
+    get_project,
+)
 
 
 class WorkspaceNotFoundError(LookupError):
@@ -36,42 +42,89 @@ class WorkspaceUnavailableError(RuntimeError):
     pass
 
 
-def _resolve_session_id(project_id: str) -> str:
-    """Temporary compatibility resolver until first-class Project ownership lands.
+def _legacy_session_project(project_id: str) -> ProjectRecord | None:
+    """Compatibility only: allow old CLI session UUIDs to remain viewable.
 
-    The web API is project-oriented, while the current durable backend is still
-    session-oriented. For existing sessions, a canonical checkpoint UUID can act
-    as the project id without leaking this compromise into the response contract.
-    A future ProjectRepository can replace this function with project->session
-    lookup while leaving build_workspace_snapshot and the HTTP route unchanged.
+    New web projects must resolve through ProjectRecord. This fallback can be
+    removed after existing sessions are migrated into the project repository.
     """
     try:
-        return str(UUID(project_id))
-    except (ValueError, AttributeError, TypeError) as exc:
-        raise WorkspaceNotFoundError(f"Project '{project_id}' was not found.") from exc
+        session_id = str(UUID(project_id))
+    except (ValueError, AttributeError, TypeError):
+        return None
 
+    path = checkpoint_path(session_id)
+    if not path.exists():
+        return None
 
-def _load_checkpoint_bundle(project_id: str) -> tuple[dict, dict]:
-    session_id = _resolve_session_id(project_id)
     try:
-        path = checkpoint_path(session_id)
-    except (ValueError, AttributeError, TypeError) as exc:
-        raise WorkspaceNotFoundError(f"Project '{project_id}' was not found.") from exc
+        document = json.loads(path.read_text(encoding="utf-8"))
+        state = load_checkpoint(session_id)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+
+    timestamp = document.get("updated_at")
+    try:
+        updated_at = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+    contract = state.get("prd_contract")
+    name = "Untitled project"
+    if isinstance(contract, PRDContract) and contract.product_name is not None:
+        name = contract.product_name.text
+
+    return ProjectRecord(
+        id=f"legacy-{session_id.split('-')[0]}",
+        name=name,
+        description=state.get("raw_idea", ""),
+        discovery_session_id=session_id,
+        created_at=updated_at,
+        updated_at=updated_at,
+    )
+
+
+def _resolve_project(project_id: str) -> tuple[ProjectRecord, bool]:
+    try:
+        return get_project(project_id), False
+    except ProjectNotFoundError:
+        legacy = _legacy_session_project(project_id)
+        if legacy is not None:
+            return legacy, True
+        raise WorkspaceNotFoundError(f"Project '{project_id}' was not found.")
+    except ProjectRepositoryError as exc:
+        raise WorkspaceUnavailableError(
+            f"Project '{project_id}' exists but its metadata could not be read safely."
+        ) from exc
+
+
+def _load_checkpoint_bundle(project_id: str) -> tuple[ProjectRecord, bool, dict, dict]:
+    project, is_legacy = _resolve_project(project_id)
+    session_id = project.discovery_session_id
+    path = checkpoint_path(session_id)
 
     if not path.exists():
-        raise WorkspaceNotFoundError(f"Project '{project_id}' was not found.")
+        if is_legacy:
+            raise WorkspaceNotFoundError(f"Project '{project_id}' was not found.")
+        raise WorkspaceUnavailableError(
+            f"Project '{project_id}' exists but its discovery session is missing."
+        )
 
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
         state = load_checkpoint(session_id)
     except FileNotFoundError as exc:
-        raise WorkspaceNotFoundError(f"Project '{project_id}' was not found.") from exc
+        if is_legacy:
+            raise WorkspaceNotFoundError(f"Project '{project_id}' was not found.") from exc
+        raise WorkspaceUnavailableError(
+            f"Project '{project_id}' exists but its discovery session is missing."
+        ) from exc
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         raise WorkspaceUnavailableError(
             f"Project '{project_id}' exists but its saved workspace could not be read safely."
         ) from exc
 
-    return document, state
+    return project, is_legacy, document, state
 
 
 def _project_status(state: dict) -> str:
@@ -256,20 +309,23 @@ def _prd_sections(contract: PRDContract | None) -> list[PrdSection]:
     return sections
 
 
-def _project_name(state: dict) -> str:
-    contract = state.get("prd_contract")
-    if isinstance(contract, PRDContract) and contract.product_name is not None:
-        return contract.product_name.text
-    return "Untitled project"
+def _workspace_updated_at(project: ProjectRecord, document: dict) -> str:
+    raw = document.get("updated_at")
+    if not isinstance(raw, str) or not raw:
+        raise WorkspaceUnavailableError(
+            f"Project '{project.id}' has no valid saved update timestamp."
+        )
+    try:
+        checkpoint_updated = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise WorkspaceUnavailableError(
+            f"Project '{project.id}' has an invalid saved update timestamp."
+        ) from exc
+    return max(project.updated_at, checkpoint_updated).isoformat()
 
 
 def build_workspace_snapshot(project_id: str) -> WorkspaceSnapshot:
-    document, state = _load_checkpoint_bundle(project_id)
-    updated_at = document.get("updated_at")
-    if not isinstance(updated_at, str) or not updated_at:
-        raise WorkspaceUnavailableError(
-            f"Project '{project_id}' has no valid saved update timestamp."
-        )
+    project, is_legacy, document, state = _load_checkpoint_bundle(project_id)
 
     messages = _visible_messages(state)
     understanding = build_understanding_projection(state)
@@ -279,11 +335,11 @@ def build_workspace_snapshot(project_id: str) -> WorkspaceSnapshot:
 
     return WorkspaceSnapshot(
         project=ProjectSummary(
-            id=project_id,
-            name=_project_name(state),
-            description=state.get("raw_idea", ""),
+            id=project_id if is_legacy else project.id,
+            name=project.name,
+            description=project.description,
             status=_project_status(state),
-            updatedAt=updated_at,
+            updatedAt=_workspace_updated_at(project, document),
         ),
         discovery=DiscoverySnapshot(
             status=_discovery_status(state),
