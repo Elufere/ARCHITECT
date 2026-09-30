@@ -2,6 +2,7 @@
 Agent A: The Product Manager (PRD Compilation Only)
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -13,7 +14,13 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import ValidationError
 
 from agents.state import AgentState, DiscoveryScope
-from agents.prd_schema import PRDContract, PRDDraft, ClaimVerdict, SemanticCategories
+from agents.prd_schema import (
+    ClaimVerdict,
+    DeferredDecision,
+    PRDContract,
+    PRDDraft,
+    SemanticCategories,
+)
 from agents.prd_validation import build_source_snapshot, validate_prd, check_context_budget, PRDValidationError, PRDAuditError
 from agents.discovery_fields import FIELD_DEFINITIONS
 
@@ -49,6 +56,62 @@ generate or modify either. Repair feedback is not a new source of requirements.
 Return the PRDDraft schema only.
 Canonical field definitions:
 """ + json.dumps(definitions, ensure_ascii=False)
+
+
+def build_deferred_decisions(state: AgentState, scope: DiscoveryScope) -> list[DeferredDecision]:
+    """Project explicit founder deferrals into the verified artifact deterministically."""
+    result = []
+    seen = set()
+    for boundary in state.get("discovery_boundaries", []) or []:
+        if not isinstance(boundary, dict):
+            continue
+        if boundary.get("type") != "decision_deferral" or boundary.get("reopened_at_turn"):
+            continue
+        raw_scope = getattr(boundary.get("scope"), "value", boundary.get("scope"))
+        if raw_scope and raw_scope != scope.value:
+            continue
+
+        decision = (
+            boundary.get("decision_summary")
+            or boundary.get("objective")
+            or boundary.get("question")
+        )
+        evidence = boundary.get("evidence")
+        if not decision or not evidence:
+            continue
+
+        identity = boundary.get("id")
+        if not identity:
+            signature = json.dumps(
+                {
+                    "scope": scope.value,
+                    "source_turn": boundary.get("source_turn", 0),
+                    "decision": decision,
+                    "evidence": evidence,
+                },
+                sort_keys=True,
+                ensure_ascii=False,
+            )
+            identity = "deferral:" + hashlib.sha256(signature.encode("utf-8")).hexdigest()[:16]
+        if identity in seen:
+            continue
+        seen.add(identity)
+
+        kind = boundary.get("kind") or "decision"
+        if kind not in {"decision", "release_scope", "design_implementation"}:
+            kind = "decision"
+        result.append(DeferredDecision(
+            id=identity,
+            kind=kind,
+            decision=str(decision),
+            evidence=str(evidence),
+            source_turn=int(boundary.get("source_turn", 0)),
+            resolution_stage=boundary.get("resolution_stage"),
+            owner=boundary.get("owner"),
+            downstream_consequence=boundary.get("downstream_consequence"),
+            requirement_id=boundary.get("requirement_id"),
+        ))
+    return result
 
 
 def save_verified_prd(contract, path):
@@ -89,8 +152,13 @@ def pm_compile_node(state: AgentState) -> dict:
                     raise PRDValidationError("Compiler did not return a valid structured draft.")
                 draft = PRDDraft.model_validate(parsed)
                 verdicts = validate_prd(draft, sources, audit_llm, category_llm, category_cache)
-                contract = PRDContract(**draft.model_dump(), discovery_scope=scope.value,
-                                       source_facts=sources, validation_report=verdicts)
+                contract = PRDContract(
+                    **draft.model_dump(),
+                    discovery_scope=scope.value,
+                    source_facts=sources,
+                    validation_report=verdicts,
+                    deferred_decisions=build_deferred_decisions(state, scope),
+                )
                 filename = "requirements_mvp.json" if scope == DiscoveryScope.USER_APP else "requirements_admin_dashboard.json"
                 output_path = OUTPUT_DIR / filename
                 save_verified_prd(contract, output_path)
