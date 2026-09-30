@@ -29,6 +29,7 @@ from agents.product_concepts import (
 )
 from agents.external_systems import (
     ExternalSystemMention,
+    external_system_context,
     ground_external_system_mentions,
     merge_external_systems,
 )
@@ -638,12 +639,17 @@ def merge_captured_observations(existing: list[dict], incoming: list[dict]) -> l
 
 def _claim_prompt(state: AgentState, scope: DiscoveryScope) -> str:
     known = confirmed_actor_context(state, scope)
+    known_external_systems = external_system_context(state, scope)
     return f"""Extract neutral product claims from the latest user response.
 
 Current scope: {scope.value}
 Current interview focus: {state.get('current_gap') or 'none'}
 Last question (reference context only): {answer_context(state)['question']}
 Confirmed actor identity context: {json.dumps(known, default=str)}
+Confirmed external systems context: {json.dumps(known_external_systems, default=str)}
+External-system context may resolve a pronoun/name only. It is not evidence for a
+new interaction; every new external_system claim still needs its OWN exact quote
+from the latest response.
 
 {CLAIM_CAPTURE_INSTRUCTION}
 
