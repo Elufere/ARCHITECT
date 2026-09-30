@@ -3,19 +3,39 @@ import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { useCreateProject } from "@/features/projects/queries";
+import { ArchitectApiError } from "@/lib/workspaceApi";
 
 export function NewProjectPage() {
   const navigate = useNavigate();
   const createProject = useCreateProject();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!name.trim() || !description.trim()) return;
 
-    const workspace = await createProject.mutateAsync({ name, description });
-    navigate(`/projects/${workspace.project.id}/discovery`);
+    setSubmitError(null);
+    setSavedProjectId(null);
+
+    try {
+      const workspace = await createProject.mutateAsync({ name, description });
+      navigate(`/projects/${workspace.project.id}/discovery`);
+    } catch (error) {
+      if (error instanceof ArchitectApiError && error.projectId) {
+        setSavedProjectId(error.projectId);
+        setSubmitError(
+          `${error.message} The project and founder idea were saved and can be resumed.`,
+        );
+        return;
+      }
+
+      setSubmitError(
+        error instanceof Error ? error.message : "Project creation failed.",
+      );
+    }
   }
 
   return (
@@ -64,6 +84,20 @@ export function NewProjectPage() {
               className="w-full resize-none rounded-xl border border-black/10 bg-neutral-50 px-3.5 py-3 text-sm leading-6 outline-none transition focus:border-neutral-400 focus:bg-white"
             />
           </label>
+
+          {submitError && (
+            <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">
+              <p>{submitError}</p>
+              {savedProjectId && (
+                <Link
+                  to={`/projects/${savedProjectId}/discovery`}
+                  className="mt-2 inline-block font-semibold underline"
+                >
+                  Open saved project
+                </Link>
+              )}
+            </div>
+          )}
 
           <button
             type="submit"
