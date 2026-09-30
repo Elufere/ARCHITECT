@@ -446,6 +446,8 @@ def _validation_plan(state: AgentState, issue: DiscoveryValidationIssue) -> dict
         "relevant_context": context,
         "next_discovery_move": "resolve_contradiction",
         "awaiting_confirmation": False,
+        "prd_confirmation_pending": False,
+        "ready_to_compile": False,
     }
 
 
@@ -512,6 +514,8 @@ def _requirement_plan(state: AgentState, candidate: QuestionCandidate) -> dict:
             else "requirement_discovery"
         ),
         "awaiting_confirmation": False,
+        "prd_confirmation_pending": False,
+        "ready_to_compile": False,
     }
 
 
@@ -575,6 +579,8 @@ def _model_plan(state: AgentState, candidate: QuestionCandidate) -> dict:
             else "resolve_model_uncertainty"
         ),
         "awaiting_confirmation": False,
+        "prd_confirmation_pending": False,
+        "ready_to_compile": False,
     }
 
 
@@ -782,7 +788,7 @@ def interview_planner_node(state: AgentState) -> dict:
             "Discovery consistency is still unresolved; compilation is blocked: " + details
         )
 
-    print("No material inquiry remains. Discovery is ready to compile.")
+    print("No material inquiry remains. Founder PRD confirmation is required.")
     return {
         **frontier_updates,
         "gap_coverage": coverage,
@@ -803,5 +809,7 @@ def interview_planner_node(state: AgentState) -> dict:
         "inferred_gap_evidence": [],
         "relevant_context": [],
         "next_discovery_move": None,
-        "awaiting_confirmation": True,
+        "awaiting_confirmation": False,
+        "prd_confirmation_pending": True,
+        "ready_to_compile": False,
     }
