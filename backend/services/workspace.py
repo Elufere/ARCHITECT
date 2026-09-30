@@ -281,6 +281,24 @@ def _prd_sections(contract: PRDContract | None) -> list[PrdSection]:
             )
         )
 
+    if contract.external_systems:
+        systems = []
+        for system in contract.external_systems:
+            statements = list(dict.fromkeys(
+                item.value for item in system.statements if item.value.strip()
+            ))
+            block = system.name
+            if statements:
+                block += "\n" + _bullet_block(statements)
+            systems.append(block)
+        sections.append(
+            PrdSection(
+                id="external_systems",
+                title="External systems & integrations",
+                body="\n\n".join(systems),
+            )
+        )
+
     constraints = _claim_texts(contract.non_functional_constraints)
     if constraints:
         sections.append(
