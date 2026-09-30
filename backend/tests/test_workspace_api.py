@@ -35,6 +35,8 @@ def _state(session_id: str):
         "prd_contract": None,
         "pm_is_complete": False,
         "awaiting_confirmation": False,
+        "prd_confirmation_pending": False,
+        "ready_to_compile": False,
         "discovery_scope": DiscoveryScope.USER_APP,
         "current_topic": DiscoveryTopic.USER_ROLES,
         "discovered_knowledge": [customer],
@@ -122,14 +124,15 @@ def test_workspace_snapshot_uses_confirmation_and_compilation_statuses(tmp_path,
     project, session_id = _save_project(tmp_path, monkeypatch)
 
     state = _state(session_id)
-    state["awaiting_confirmation"] = True
+    state["prd_confirmation_pending"] = True
     save_checkpoint(state)
 
     snapshot = build_workspace_snapshot(project.id)
     assert snapshot.project.status == "ready_for_prd"
     assert snapshot.discovery.status == "ready_for_confirmation"
 
-    state["awaiting_confirmation"] = False
+    state["prd_confirmation_pending"] = False
+    state["ready_to_compile"] = True
     state["checkpoint_cursor"] = "compile_prd"
     state["interview_status"] = "COMPILING_PRD"
     save_checkpoint(state)
