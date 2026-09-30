@@ -2,6 +2,7 @@ import {
   Check,
   Circle,
   Clock3,
+  LockKeyhole,
   Minus,
 } from "lucide-react";
 
@@ -20,6 +21,7 @@ const iconByState: Record<UnderstandingState, typeof Check> = {
   confirmed: Check,
   active: Clock3,
   open: Circle,
+  blocked: LockKeyhole,
   deferred: Minus,
 };
 
@@ -27,6 +29,7 @@ const classByState: Record<UnderstandingState, string> = {
   confirmed: "bg-emerald-50 text-emerald-700",
   active: "bg-amber-50 text-amber-700",
   open: "bg-neutral-100 text-neutral-400",
+  blocked: "bg-neutral-100 text-neutral-500",
   deferred: "bg-violet-50 text-violet-600",
 };
 
