@@ -389,8 +389,17 @@ class ActorFact(Fact):
     @model_validator(mode="after")
     def valid_actor(self):
         if self.key in ("multiple_roles", "role_transitions"):
-            if self.roles or self.aliases:
-                raise ValueError("Role policies cannot declare actors or aliases")
+            # A role policy does not establish application membership, but it may
+            # preserve an explicit capacity/alias relationship for one already
+            # confirmed canonical actor. Admission verifies that membership.
+            if self.aliases and not self.roles:
+                raise ValueError("Role-policy aliases require one canonical actor")
+            if self.roles:
+                role = canonical_role(self.roles[0])
+                if role in ("primary_users", "secondary_users", "multiple_roles", "role_transitions"):
+                    raise ValueError("An actor ID cannot be an actor field name")
+                if role in GENERIC_ROLES or not valid_role_id(self.roles[0]):
+                    raise ValueError("Malformed canonical actor role")
             return self
         if self.absence:
             if self.roles or self.aliases:
