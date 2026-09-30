@@ -33,6 +33,11 @@ from agents.evidence_spans import recover_evidence_span
 from agents.knowledge_duplicates import FactComparison, compare_candidate
 from agents.knowledge_corrections import CorrectionReview, correction_targets
 from agents.role_utils import role_identity, roles_match, split_role_labels
+from agents.actor_context import (
+    actors_mentioned_in_text,
+    canonical_actor_for_label,
+    resolve_owned_claim_role,
+)
 from agents.conversation_language import final_question_text
 from agents.extraction_passes import (
     PASSES,
@@ -679,87 +684,36 @@ def _actor_role_from_claim_text(text: str) -> str | None:
 
 
 def _aliases_from_actor_claim(text: str) -> list[str]:
-    """Recover an explicit 'one actor can act as X or Y' relationship."""
-    match = re.search(
+    """Recover an explicit one-actor/multiple-capacity relationship."""
+    patterns = (
         r"\b(?:be|act\s+as)\s+(?:either\s+)?(?:a\s+)?"
         r"([a-z][a-z _-]{1,30}?)\s+(?:or|and)\s+(?:a\s+)?"
         r"([a-z][a-z _-]{1,30}?)(?=\s+(?:in|during|for|within)\b|[.,;]|$)",
-        text,
-        re.I,
+        r"\b(?:be|act\s+as)\s+(?:either\s+)?(?:a\s+)?"
+        r"([a-z][a-z_-]{1,30})\s+(?:in|during|for|within)\b[^,.;]{0,80}?"
+        r"\s+(?:or|and)\s+(?:a\s+)?([a-z][a-z_-]{1,30})\b",
     )
-    if not match:
-        return []
-    return list(dict.fromkeys(
-        canonical_role(role_identity(label))
-        for label in match.groups()
-        if role_identity(label)
-    ))
+    for pattern in patterns:
+        match = re.search(pattern, text, re.I)
+        if not match:
+            continue
+        return list(dict.fromkeys(
+            canonical_role(role_identity(label))
+            for label in match.groups()
+            if role_identity(label)
+        ))
+    return []
 
 
 def _role_from_actor_evidence(state: AgentState, scope: DiscoveryScope, evidence: str) -> str | None:
-    """Resolve an omitted owned-claim role from confirmed actor labels/aliases."""
-    normalized = re.sub(r"[^a-z0-9]+", " ", evidence.lower()).strip()
-    matches = set()
-    all_roles = set()
-
-    def mentions(label: str) -> bool:
-        phrase = " ".join(canonical_role(label).split("_"))
-        phrase = role_identity(phrase)
-        if not phrase:
-            return False
-        forms = {phrase, phrase + "s"}
-        return any(re.search(rf"\b{re.escape(form)}\b", normalized) for form in forms)
-
-    for item in state.get("discovered_knowledge", []):
-        if (
-            item.scope != scope
-            or item.key not in ("primary_users", "secondary_users")
-            or item.absence
-            or item.knowledge_state != KnowledgeState.CONFIRMED
-        ):
-            continue
-        for canonical in item.roles or []:
-            canonical_id = canonical_role(canonical)
-            all_roles.add(canonical_id)
-            labels = [canonical_id]
-            labels.extend((item.aliases or {}).get(canonical, []))
-            labels.extend((item.aliases or {}).get(canonical_id, []))
-            if any(mentions(label) for label in labels):
-                matches.add(canonical_id)
-
-    if len(matches) == 1:
-        return next(iter(matches))
-    if not matches and len(all_roles) == 1 and re.search(
-        r"\b(?:either\s+party|both\s+parties|either\s+side|both\s+sides|they|them)\b",
-        normalized,
-    ):
-        return next(iter(all_roles))
-    return None
+    """Resolve an omitted owned-claim role without creating a new actor."""
+    return resolve_owned_claim_role(None, evidence, state, scope)
 
 
 def _canonical_claim_role(role: str | None, state: AgentState, scope: DiscoveryScope) -> str | None:
     if not role:
         return role
-    normalized = canonical_role(role)
-    for item in state.get("discovered_knowledge", []):
-        if (
-            item.scope != scope
-            or item.key not in ("primary_users", "secondary_users")
-            or item.absence
-            or item.knowledge_state != KnowledgeState.CONFIRMED
-        ):
-            continue
-        for canonical in item.roles or []:
-            canonical_id = canonical_role(canonical)
-            if normalized == canonical_id:
-                return canonical_id
-            aliases = [
-                *(item.aliases or {}).get(canonical, []),
-                *(item.aliases or {}).get(canonical_id, []),
-            ]
-            if normalized in {canonical_role(alias) for alias in aliases}:
-                return canonical_id
-    return normalized
+    return canonical_actor_for_label(role, state, scope) or canonical_role(role)
 
 
 def _explicit_whole_field_absence(evidence: str) -> bool:
@@ -836,16 +790,40 @@ def _admit_claim_item(
     primary_roles: set[str],
     secondary_roles: set[str],
 ) -> KnowledgeItem | None:
-    resolved_role = _canonical_claim_role(claim.role, state, scope)
     aliases = list(claim.aliases)
-    if not resolved_role and claim.kind in ("primary_actor", "secondary_actor"):
-        resolved_role = _actor_role_from_claim_text(claim.value)
+
+    if claim.kind in ("primary_actor", "secondary_actor"):
+        # Identity claims may legitimately introduce a new canonical actor.
+        resolved_role = _canonical_claim_role(claim.role, state, scope)
+        if not resolved_role:
+            resolved_role = _actor_role_from_claim_text(claim.value)
         if resolved_role and not aliases:
             aliases = _aliases_from_actor_claim(claim.value)
-    if not resolved_role and claim.kind in (
-        "actor_action", "authorization_boundary", "desired_outcome"
-    ):
-        resolved_role = _role_from_actor_evidence(state, scope, claim.evidence)
+    elif claim.kind in ("multiple_roles", "role_transition"):
+        # Role-policy claims may enrich an existing actor with explicit capacity
+        # aliases, but must never create membership on their own.
+        resolved_role = canonical_actor_for_label(claim.role, state, scope)
+        if not resolved_role:
+            matches = actors_mentioned_in_text(claim.evidence, state, scope)
+            resolved_role = next(iter(matches)) if len(matches) == 1 else None
+        if resolved_role and not aliases:
+            aliases = [
+                alias for alias in _aliases_from_actor_claim(claim.evidence)
+                if canonical_role(alias) != resolved_role
+            ]
+    elif claim.kind in ("actor_action", "authorization_boundary", "desired_outcome"):
+        resolved_role = resolve_owned_claim_role(
+            claim.role,
+            claim.evidence,
+            state,
+            scope,
+        )
+    else:
+        resolved_role = (
+            canonical_actor_for_label(claim.role, state, scope)
+            if claim.role else None
+        )
+
     claim = claim.model_copy(update={"role": resolved_role, "aliases": aliases})
 
     converted = claim_to_fact(
