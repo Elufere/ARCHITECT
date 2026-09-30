@@ -6,6 +6,7 @@ from agents.graph import build_graph
 from agents.interview_checkpoint import save_checkpoint, load_checkpoint, session_lock
 from agents.llm_errors import LLMCallFailed, ExtractionFailed
 from agents.product_model import build_product_model
+from services.discovery_session import create_initial_discovery_state
 from langchain_core.messages import HumanMessage
 
 
@@ -51,28 +52,7 @@ def new_session():
     idea = read_answer()
     if idea is None:
         return None
-    state = AgentState(session_id=str(uuid4()), messages=[HumanMessage(content=idea, id=str(uuid4()))],
-        raw_idea=idea, prd_contract=None, pm_is_complete=False,
-        discovery_scope=DiscoveryScope.USER_APP, turn_count=0, awaiting_confirmation=False,
-        discovered_knowledge=[], superseded_knowledge=[], product_concepts=[], captured_observations=[],
-        discovery_boundaries=[], model_implications=[],
-        thread_planning_enabled=True, discovery_threads={}, active_discovery_thread=None, thread_frontier=None,
-        thread_relevant_requirement_ids=[],
-        active_requirements={}, requirement_coverage={}, requirement_dependency_state={},
-        eligible_requirement_keys=[], open_inquiries=[], selected_inquiry=None,
-        question_candidates=[], eligible_question_candidates=[], question_candidate_eligibility={},
-        ranked_question_candidates=[], question_candidate_priority={},
-        requirement_question_history=[], planner_source="model",
-        selected_requirement_candidate=None, selected_requirement_priority=None,
-        validation_issues=[], validation_pair_cache={}, validation_blocking=False,
-        validation_candidate_blocking=False, selected_validation_issue=None,
-        product_model={},
-        gap_coverage={}, fact_acquisition={}, asked_gap=None, active_answer_result=None,
-        checkpoint_cursor="conversation_manager", interview_status="PROCESSING_ANSWER", extraction_status="PENDING",
-        current_topic=None, current_gap=None, current_objective=None, question_hint=None,
-        known_keys=[], missing_keys=[], inferred_gap_evidence=[], known_gap_evidence=[], relevant_context=[],
-        next_discovery_move=None, conversation_intent=None, is_correction=False, current_role=None,
-        question_retry_count=0, question_retry_exhausted=False, answer_followup=None)
+    state = create_initial_discovery_state(idea)
     save_checkpoint(state)
     return state
 
