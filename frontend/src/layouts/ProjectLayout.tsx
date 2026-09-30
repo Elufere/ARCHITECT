@@ -11,14 +11,29 @@ const tabs = [
 
 export function ProjectLayout() {
   const { projectId = "" } = useParams();
-  const { data: workspace, isLoading, isError } = useWorkspace(projectId);
+  const { data: workspace, isLoading, isError, error, refetch } =
+    useWorkspace(projectId);
 
   if (isLoading) {
     return <div className="p-8 text-sm text-neutral-500">Loading project…</div>;
   }
 
   if (isError || !workspace) {
-    return <div className="p-8 text-sm text-red-600">Project could not be loaded.</div>;
+    return (
+      <div className="p-8">
+        <p className="text-sm font-medium text-red-700">Project could not be loaded.</p>
+        <p className="mt-1 text-sm text-neutral-500">
+          {error instanceof Error ? error.message : "The API request failed."}
+        </p>
+        <button
+          type="button"
+          onClick={() => void refetch()}
+          className="mt-4 rounded-lg bg-neutral-950 px-3 py-2 text-xs font-semibold text-white"
+        >
+          Try again
+        </button>
+      </div>
+    );
   }
 
   return (
