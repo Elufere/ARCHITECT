@@ -7,8 +7,30 @@ import type {
 } from "@/types/workspace";
 
 const STORAGE_KEY = "architect.frontend.mock.v1";
-const API_URL = import.meta.env.VITE_API_URL as string | undefined;
-const useMockApi = (import.meta.env.VITE_USE_MOCK_API ?? "true") !== "false";
+const API_URL = ((import.meta.env.VITE_API_URL as string | undefined)?.trim() ?? "")
+  .replace(/\/+$/, "");
+const useMockApi = (import.meta.env.VITE_USE_MOCK_API ?? "false") === "true";
+
+export class ArchitectApiError extends Error {
+  readonly status: number;
+  readonly projectId?: string;
+  readonly retryable?: boolean;
+
+  constructor(
+    message: string,
+    options: {
+      status: number;
+      projectId?: string;
+      retryable?: boolean;
+    },
+  ) {
+    super(message);
+    this.name = "ArchitectApiError";
+    this.status = options.status;
+    this.projectId = options.projectId;
+    this.retryable = options.retryable;
+  }
+}
 
 type Store = {
   projects: ProjectSummary[];
@@ -54,29 +76,48 @@ function wait(ms = 250) {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  if (!API_URL) {
-    throw new Error("VITE_API_URL is required when VITE_USE_MOCK_API=false");
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...init?.headers,
+      },
+    });
+  } catch {
+    throw new ArchitectApiError(
+      "Could not reach the Architect API. Make sure the backend is running.",
+      { status: 0, retryable: true },
+    );
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-  });
+  const body = await response.json().catch(() => null);
 
   if (!response.ok) {
-    const body = await response.json().catch(() => null);
     const detail = body?.detail;
+    const detailObject =
+      detail && typeof detail === "object" ? detail : undefined;
     const message =
-      (typeof detail === "string" ? detail : detail?.message) ??
+      (typeof detail === "string" ? detail : detailObject?.message) ??
       body?.message ??
-      "Architect API request failed";
-    throw new Error(message);
+      `Architect API request failed (${response.status})`;
+
+    throw new ArchitectApiError(message, {
+      status: response.status,
+      projectId:
+        typeof detailObject?.projectId === "string"
+          ? detailObject.projectId
+          : undefined,
+      retryable:
+        typeof detailObject?.retryable === "boolean"
+          ? detailObject.retryable
+          : response.status >= 500,
+    });
   }
 
-  return response.json() as Promise<T>;
+  return body as T;
 }
 
 const mockApi = {
