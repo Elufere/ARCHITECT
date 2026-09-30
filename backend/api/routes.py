@@ -16,6 +16,11 @@ from services.discovery_turn import (
     retry_project_discovery,
     submit_project_discovery_turn,
 )
+from services.prd_generation import (
+    PrdGenerationProcessingError,
+    PrdGenerationStateError,
+    generate_project_prd,
+)
 from services.project_repository import ProjectNotFoundError, ProjectRepositoryError
 from services.project_service import (
     ProjectInitializationError,
@@ -123,6 +128,32 @@ def retry_discovery(
     except (DiscoverySessionBusyError, DiscoverySessionStateError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except DiscoveryProcessingError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": exc.reason,
+                "projectId": exc.project_id,
+                "retryable": exc.retryable,
+            },
+        ) from exc
+    except ProjectRepositoryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except WorkspaceUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post(
+    "/projects/{project_id}/prd/generate",
+    response_model=WorkspaceSnapshot,
+)
+def generate_prd(project_id: str) -> WorkspaceSnapshot:
+    try:
+        return generate_project_prd(project_id)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (DiscoverySessionBusyError, PrdGenerationStateError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except PrdGenerationProcessingError as exc:
         raise HTTPException(
             status_code=503,
             detail={
