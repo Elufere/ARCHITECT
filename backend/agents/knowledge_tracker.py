@@ -686,12 +686,15 @@ def _actor_role_from_claim_text(text: str) -> str | None:
 def _aliases_from_actor_claim(text: str) -> list[str]:
     """Recover an explicit one-actor/multiple-capacity relationship."""
     patterns = (
-        r"\b(?:be|act\s+as)\s+(?:either\s+)?(?:a\s+)?"
-        r"([a-z][a-z _-]{1,30}?)\s+(?:or|and)\s+(?:a\s+)?"
-        r"([a-z][a-z _-]{1,30}?)(?=\s+(?:in|during|for|within)\b|[.,;]|$)",
+        # Capacity labels separated by contextual conditions:
+        # "a buyer in one transaction and a seller in another".
         r"\b(?:be|act\s+as)\s+(?:either\s+)?(?:a\s+)?"
         r"([a-z][a-z_-]{1,30})\s+(?:in|during|for|within)\b[^,.;]{0,80}?"
         r"\s+(?:or|and)\s+(?:a\s+)?([a-z][a-z_-]{1,30})\b",
+        # Direct "buyer or seller" / "buyer and seller" relationship.
+        r"\b(?:be|act\s+as)\s+(?:either\s+)?(?:a\s+)?"
+        r"([a-z][a-z _-]{1,30}?)\s+(?:or|and)\s+(?:a\s+)?"
+        r"([a-z][a-z _-]{1,30}?)(?=\s+(?:in|during|for|within)\b|[.,;]|$)",
     )
     for pattern in patterns:
         match = re.search(pattern, text, re.I)
