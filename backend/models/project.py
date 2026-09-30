@@ -3,9 +3,10 @@ from __future__ import annotations
 
 from datetime import datetime
 import re
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 PROJECT_ID_PATTERN = r"^[a-z0-9][a-z0-9-]{2,79}$"
@@ -16,7 +17,7 @@ class ProjectRecord(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: int = 1
+    schema_version: Literal[1] = 1
     id: str = Field(pattern=PROJECT_ID_PATTERN)
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=10000)
@@ -49,3 +50,11 @@ class ProjectRecord(BaseModel):
     @classmethod
     def canonical_session_id(cls, value: str) -> str:
         return str(UUID(value))
+
+    @model_validator(mode="after")
+    def valid_timestamps(self):
+        if self.created_at.tzinfo is None or self.updated_at.tzinfo is None:
+            raise ValueError("Project timestamps must be timezone-aware")
+        if self.updated_at < self.created_at:
+            raise ValueError("Project updated_at cannot precede created_at")
+        return self
