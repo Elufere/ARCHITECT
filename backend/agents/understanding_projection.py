@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from agents.discovery_coverage import fact_id
 from agents.product_concepts import ProductConcept, ProductConceptKind, concept_id
+from agents.external_systems import ExternalSystem
 from agents.requirement_coverage import (
     RequirementCoverageRecord,
     RequirementCoverageStatus,
@@ -79,6 +80,7 @@ SECTION_ORDER = [
     "mvp_scope",
     "exceptions",
     "edge_cases",
+    "external_systems",
     "product_structure",
     "open_decisions",
     "deferred_decisions",
@@ -233,6 +235,33 @@ def _concept_items(state: AgentState, scope: DiscoveryScope) -> list[Understandi
             state=UnderstandingItemState.CONFIRMED,
             source="concept",
             source_refs=[identity],
+        ))
+    return result
+
+
+def _external_system_items(
+    state: AgentState,
+    scope: DiscoveryScope,
+) -> list[UnderstandingItem]:
+    result: list[UnderstandingItem] = []
+    for raw in state.get("external_systems", []) or []:
+        system = raw if isinstance(raw, ExternalSystem) else ExternalSystem.model_validate(raw)
+        if system.scope != scope:
+            continue
+
+        statements = []
+        for statement in system.statements:
+            value = statement.value.strip()
+            if value and value not in statements:
+                statements.append(value)
+
+        result.append(UnderstandingItem(
+            id=system.id,
+            label=system.name,
+            detail="; ".join(statements) or None,
+            state=UnderstandingItemState.CONFIRMED,
+            source="external_system",
+            source_refs=[system.id],
         ))
     return result
 
@@ -606,6 +635,10 @@ def build_understanding_projection(state: AgentState) -> UnderstandingProjection
         section_id, _ = TOPIC_SECTIONS[item.topic]
         section_items.setdefault(section_id, []).extend(_confirmed_fact_item(item))
 
+    external_systems = _external_system_items(state, scope)
+    if external_systems:
+        section_items["external_systems"] = external_systems
+
     concepts = _concept_items(state, scope)
     if concepts:
         section_items["product_structure"] = concepts
@@ -643,6 +676,7 @@ def build_understanding_projection(state: AgentState) -> UnderstandingProjection
 
     titles = {section_id: title for _, (section_id, title) in TOPIC_SECTIONS.items()}
     titles.update({
+        "external_systems": "External systems & integrations",
         "product_structure": "Product structure",
         "open_decisions": "Open decisions",
         "deferred_decisions": "Deferred decisions",
