@@ -292,6 +292,17 @@ def _prd_sections(contract: PRDContract | None) -> list[PrdSection]:
         )
 
     deferred = _claim_texts(contract.deferred_items)
+    for item in contract.deferred_decisions:
+        qualifiers = []
+        if item.resolution_stage:
+            qualifiers.append(f"revisit: {item.resolution_stage}")
+        if item.owner:
+            qualifiers.append(f"owner: {item.owner}")
+        text = item.decision
+        if qualifiers:
+            text += " (" + "; ".join(qualifiers) + ")"
+        deferred.append(text)
+    deferred = list(dict.fromkeys(deferred))
     if deferred:
         sections.append(
             PrdSection(
