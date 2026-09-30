@@ -1319,7 +1319,10 @@ def discovery_thread_node(state: AgentState) -> dict:
             state.get("discovery_boundaries", []),
         )
     )
-    if plan.feedback is not None:
+    if (
+        plan.feedback is not None
+        and plan.feedback.kind != ThreadFeedbackKind.DECISION_DEFERRED
+    ):
         if plan.feedback.evidence and plan.feedback.evidence in latest_answer:
             boundary_type = {
                 ThreadFeedbackKind.QUESTION_TOO_BROAD: "question_too_broad",
