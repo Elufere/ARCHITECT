@@ -30,8 +30,8 @@ logger = logging.getLogger(__name__)
 
 def route_after_plan(state: AgentState) -> str:
     """
-    After planning, check if the interview planner decided we are done.
-    If so, skip question generation and go straight to compilation.
+    After planning, check if Architect has no material inquiry left.
+    If so, stop at the founder confirmation boundary instead of compiling.
     """
     if state.get("prd_confirmation_pending") and all_discovery_resolved(state):
         logger.info("No material inquiry remains. Waiting for founder PRD confirmation.")
@@ -195,7 +195,7 @@ def build_graph() -> StateGraph:
     workflow.add_edge("filter_candidates", "prioritize_candidates")
     workflow.add_edge("prioritize_candidates", "plan")
 
-    # 4. Plan -> Compile OR Generate
+    # 4. Plan -> Founder Confirmation OR Generate
     workflow.add_conditional_edges(
         "plan",
         route_after_plan,
