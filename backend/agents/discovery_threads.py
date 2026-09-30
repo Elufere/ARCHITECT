@@ -16,6 +16,11 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from agents.discovery_coverage import fact_id
+from agents.discovery_deferrals import (
+    DeferralKind,
+    FreeTextDeferralReview,
+    apply_deferral,
+)
 from agents.llm import get_structured_model
 from agents.llm_errors import ExtractionFailed, raise_if_llm_failure
 from agents.state import AgentState, DiscoveryScope, DiscoveryTopic, KnowledgeState, TOPIC_KEY_MAP
@@ -1284,9 +1289,37 @@ def discovery_thread_node(state: AgentState) -> dict:
             "thread_objective": plan.thread_objective,
         }
 
-    boundaries = list(state.get("discovery_boundaries", []))
+    control_updates = {}
+    latest_answer = _latest_human(state)
+    if (
+        plan.feedback is not None
+        and plan.feedback.kind == ThreadFeedbackKind.DECISION_DEFERRED
+        and plan.feedback.evidence
+        and plan.feedback.evidence in latest_answer
+    ):
+        control_updates = apply_deferral(
+            state,
+            FreeTextDeferralReview(
+                action="defer",
+                primary_control_intent=True,
+                kind=DeferralKind.DECISION,
+                decision_summary=(
+                    state.get("current_objective")
+                    or (state.get("selected_inquiry") or {}).get("objective")
+                    or plan.thread_objective
+                ),
+                reason=plan.feedback.instruction,
+            ),
+            latest_answer,
+        )
+
+    boundaries = list(
+        control_updates.get(
+            "discovery_boundaries",
+            state.get("discovery_boundaries", []),
+        )
+    )
     if plan.feedback is not None:
-        latest_answer = _latest_human(state)
         if plan.feedback.evidence and plan.feedback.evidence in latest_answer:
             boundary_type = {
                 ThreadFeedbackKind.QUESTION_TOO_BROAD: "question_too_broad",
@@ -1325,6 +1358,7 @@ def discovery_thread_node(state: AgentState) -> dict:
                 boundaries.append(boundary)
 
     return {
+        **control_updates,
         "discovery_threads": threads,
         "active_discovery_thread": plan.thread_id,
         "thread_frontier": frontier,
