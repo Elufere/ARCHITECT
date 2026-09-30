@@ -9,7 +9,10 @@ import {
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { useSendDiscoveryTurn } from "@/features/discovery/queries";
+import {
+  useRetryDiscovery,
+  useSendDiscoveryTurn,
+} from "@/features/discovery/queries";
 import type { WorkspaceSnapshot } from "@/types/workspace";
 
 interface Props {
@@ -20,6 +23,7 @@ export function InterviewPanel({ workspace }: Props) {
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const sendTurn = useSendDiscoveryTurn(workspace.project.id);
+  const retryDiscovery = useRetryDiscovery(workspace.project.id);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -33,7 +37,9 @@ export function InterviewPanel({ workspace }: Props) {
     sendTurn.mutate({ type: "answer", message });
   }
 
-  const disabled = sendTurn.isPending;
+  const processingError = sendTurn.isError || retryDiscovery.isError;
+  const disabled =
+    sendTurn.isPending || retryDiscovery.isPending || processingError;
 
   return (
     <section className="flex min-h-0 flex-col bg-white">
@@ -109,10 +115,27 @@ export function InterviewPanel({ workspace }: Props) {
               </div>
             )}
 
-            {sendTurn.isPending && (
+            {(sendTurn.isPending || retryDiscovery.isPending) && (
               <div className="flex items-center gap-2 text-sm text-neutral-400">
                 <LoaderCircle size={15} className="animate-spin" />
                 Architect is thinking…
+              </div>
+            )}
+
+            {processingError && (
+              <div className="flex items-center justify-between gap-4 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
+                <span>
+                  Architect could not finish processing the saved turn. Your input
+                  is already checkpointed.
+                </span>
+                <button
+                  type="button"
+                  disabled={retryDiscovery.isPending}
+                  onClick={() => retryDiscovery.mutate()}
+                  className="shrink-0 font-semibold"
+                >
+                  Retry saved work
+                </button>
               </div>
             )}
             <div ref={bottomRef} />
@@ -178,21 +201,6 @@ export function InterviewPanel({ workspace }: Props) {
               </button>
             </form>
 
-            {sendTurn.isError && (
-              <div className="mt-2 flex items-center justify-between gap-4 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
-                <span>
-                  Architect could not process the turn. Your submitted answer should
-                  remain durable once the live backend is connected.
-                </span>
-                <button
-                  type="button"
-                  onClick={() => sendTurn.reset()}
-                  className="font-semibold"
-                >
-                  Dismiss
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}
