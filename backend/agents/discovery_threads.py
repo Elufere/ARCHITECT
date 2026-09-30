@@ -25,6 +25,7 @@ from agents.llm import get_structured_model
 from agents.llm_errors import ExtractionFailed, raise_if_llm_failure
 from agents.state import AgentState, DiscoveryScope, DiscoveryTopic, KnowledgeState, TOPIC_KEY_MAP
 from agents.product_concepts import ProductConcept
+from agents.external_systems import ExternalSystem
 
 
 class ThreadStatus(str, Enum):
@@ -212,8 +213,9 @@ authoritative; requirements are a backlog of decisions, not an interview agenda.
 
 The interview should feel like an excellent human PM conversation:
 1. Start by understanding what CHANGED in the founder's latest answer. The
-   payload explicitly identifies facts and product concepts captured on the latest
-   turn. Treat that as strong continuity context, not an automatic instruction to
+   payload explicitly identifies facts, product concepts, and grounded external
+   systems captured on the latest turn. Treat that as strong continuity context,
+   not an automatic instruction to
    keep drilling it. Follow the newly revealed structure/rule only when its NEXT
    uncertainty still beats the best grounded alternative elsewhere.
 2. Stay on one coherent discovery thread only while its NEXT unresolved decision
@@ -465,6 +467,33 @@ def _concept_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]:
             continue
         result.append(concept.model_dump(mode="json"))
     return result[-40:]
+
+
+def _external_system_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]:
+    result = []
+    for raw in state.get("external_systems", []) or []:
+        system = raw if isinstance(raw, ExternalSystem) else ExternalSystem.model_validate(raw)
+        if system.scope != scope:
+            continue
+        result.append(system.model_dump(mode="json"))
+    return result[-30:]
+
+
+def _latest_turn_external_systems(
+    state: AgentState,
+    scope: DiscoveryScope,
+) -> list[dict]:
+    turn = state.get("turn_count", 0)
+    result = []
+    for system in _external_system_payload(state, scope):
+        latest_statements = [
+            statement
+            for statement in system.get("statements", [])
+            if statement.get("source_turn") == turn
+        ]
+        if latest_statements:
+            result.append({**system, "statements": latest_statements})
+    return result
 
 
 def _observation_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]:
@@ -1063,8 +1092,10 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "recent_conversation": _recent_conversation(state),
         "new_confirmed_facts_this_turn": _latest_turn_facts(state, scope),
         "new_product_concepts_this_turn": _latest_turn_concepts(state, scope),
+        "new_external_systems_this_turn": _latest_turn_external_systems(state, scope),
         "confirmed_product_facts": _fact_payload(state, scope),
         "confirmed_product_concepts": _concept_payload(state, scope),
+        "confirmed_external_systems": _external_system_payload(state, scope),
         "captured_observations": _observation_payload(state, scope),
         "current_threads": state.get("discovery_threads", {}),
         "active_thread_id": state.get("active_discovery_thread"),
