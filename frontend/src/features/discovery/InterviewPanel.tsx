@@ -9,10 +9,7 @@ import {
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
-import {
-  useGeneratePrd,
-  useSendDiscoveryTurn,
-} from "@/features/discovery/queries";
+import { useSendDiscoveryTurn } from "@/features/discovery/queries";
 import type { WorkspaceSnapshot } from "@/types/workspace";
 
 interface Props {
@@ -23,7 +20,6 @@ export function InterviewPanel({ workspace }: Props) {
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const sendTurn = useSendDiscoveryTurn(workspace.project.id);
-  const generatePrd = useGeneratePrd(workspace.project.id);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -37,7 +33,7 @@ export function InterviewPanel({ workspace }: Props) {
     sendTurn.mutate({ type: "answer", message });
   }
 
-  const disabled = sendTurn.isPending || generatePrd.isPending;
+  const disabled = sendTurn.isPending;
 
   return (
     <section className="flex min-h-0 flex-col bg-white">
@@ -94,10 +90,10 @@ export function InterviewPanel({ workspace }: Props) {
                   <button
                     type="button"
                     disabled={disabled}
-                    onClick={() => generatePrd.mutate()}
+                    onClick={() => sendTurn.mutate({ type: "confirm_prd" })}
                     className="rounded-xl bg-neutral-950 px-4 py-2.5 text-sm font-medium text-white"
                   >
-                    {generatePrd.isPending ? "Generating…" : "Yes, generate PRD"}
+                    {sendTurn.isPending ? "Generating…" : "Yes, generate PRD"}
                   </button>
                   <button
                     type="button"
@@ -124,7 +120,7 @@ export function InterviewPanel({ workspace }: Props) {
         </div>
       </div>
 
-      {workspace.discovery.status !== "complete" && (
+      {workspace.discovery.status === "active" && (
         <div className="border-t border-black/8 bg-white px-5 py-4 md:px-10">
           <div className="mx-auto max-w-3xl">
             <div className="mb-2 flex flex-wrap gap-2">
