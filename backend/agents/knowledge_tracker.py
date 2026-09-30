@@ -1584,7 +1584,12 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         "fact_acquisition": acquisition_records(state, discovered_knowledge, direct_answer_items),
         "extraction_status": (
             "SUCCESS"
-            if extracted_items or captured_concepts or confirmed_prior_answer
+            if (
+                extracted_items
+                or captured_concepts
+                or captured_external_systems
+                or confirmed_prior_answer
+            )
             else "NO_FACTS_FOUND"
         ),
     }
