@@ -24,7 +24,7 @@ export interface Message {
   id: string;
   role: MessageRole;
   content: string;
-  createdAt: string;
+  createdAt?: string | null;
 }
 
 export type UnderstandingState =
@@ -58,7 +58,7 @@ export interface WorkspaceSnapshot {
   discovery: {
     status: DiscoveryStatus;
     messages: Message[];
-    activePrompt?: string;
+    activePrompt?: string | null;
   };
   understanding: {
     sections: UnderstandingSection[];
