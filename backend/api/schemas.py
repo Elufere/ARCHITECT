@@ -1,9 +1,9 @@
-"""HTTP response contracts for the Architect workspace API."""
+"""HTTP response and request contracts for the Architect API."""
 from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from agents.understanding_projection import UnderstandingSection
 
@@ -12,6 +12,19 @@ ProjectStatus = Literal["draft", "discovering", "ready_for_prd", "prd_ready"]
 DiscoveryStatus = Literal["active", "ready_for_confirmation", "compiling", "complete"]
 PrdStatus = Literal["not_generated", "generating", "ready"]
 MessageRole = Literal["architect", "founder"]
+
+
+class CreateProjectInput(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(min_length=1, max_length=10000)
+
+    @field_validator("name", "description")
+    @classmethod
+    def strip_required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Value cannot be blank")
+        return value
 
 
 class ProjectSummary(BaseModel):

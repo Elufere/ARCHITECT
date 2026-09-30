@@ -324,6 +324,19 @@ def _workspace_updated_at(project: ProjectRecord, document: dict) -> str:
     return max(project.updated_at, checkpoint_updated).isoformat()
 
 
+def build_project_summary(project_id: str) -> ProjectSummary:
+    """Return product-facing metadata with live status from the linked checkpoint."""
+
+    project, is_legacy, document, state = _load_checkpoint_bundle(project_id)
+    return ProjectSummary(
+        id=project_id if is_legacy else project.id,
+        name=project.name,
+        description=project.description,
+        status=_project_status(state),
+        updatedAt=_workspace_updated_at(project, document),
+    )
+
+
 def build_workspace_snapshot(project_id: str) -> WorkspaceSnapshot:
     project, is_legacy, document, state = _load_checkpoint_bundle(project_id)
 
