@@ -143,6 +143,7 @@ class AgentState(TypedDict):
     discovered_knowledge: List[KnowledgeItem]
     superseded_knowledge: List[dict]
     product_concepts: List[dict]
+    external_systems: List[dict]
     captured_observations: List[dict]
     discovery_boundaries: List[dict]
     model_implications: List[dict]
