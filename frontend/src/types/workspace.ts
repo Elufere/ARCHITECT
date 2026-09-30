@@ -74,7 +74,8 @@ export type DiscoveryTurnInput =
   | { type: "request_suggestion" }
   | { type: "unknown" }
   | { type: "defer_design" }
-  | { type: "continue_discovery"; message?: string };
+  | { type: "continue_discovery"; message?: string }
+  | { type: "confirm_prd" };
 
 export interface CreateProjectInput {
   name: string;
