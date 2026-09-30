@@ -5,12 +5,14 @@ from typing import Dict, Iterable, List
 
 from agents.state import DiscoveryScope, KnowledgeItem, KnowledgeState
 from agents.product_concepts import ProductConcept
+from agents.external_systems import ExternalSystem
 
 
 def build_product_model(
     knowledge: Iterable[KnowledgeItem],
     scope: DiscoveryScope,
     product_concepts: Iterable[dict | ProductConcept] | None = None,
+    external_systems: Iterable[dict | ExternalSystem] | None = None,
 ) -> Dict[str, List[str]]:
     model: dict[str, list[str]] = defaultdict(list)
     for item in knowledge:
@@ -35,6 +37,16 @@ def build_product_model(
             )
         if text not in model["PRODUCT_STRUCTURE"]:
             model["PRODUCT_STRUCTURE"].append(text)
+
+    for raw in external_systems or []:
+        system = raw if isinstance(raw, ExternalSystem) else ExternalSystem.model_validate(raw)
+        if system.scope != scope:
+            continue
+        for statement in system.statements:
+            text = f"EXTERNAL SYSTEM {system.name}: {statement.value}"
+            if text not in model["EXTERNAL_SYSTEMS"]:
+                model["EXTERNAL_SYSTEMS"].append(text)
+
     return dict(model)
 
 
