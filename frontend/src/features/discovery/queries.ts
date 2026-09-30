@@ -22,6 +22,10 @@ function useWorkspaceMutation(
       queryClient.setQueryData(["workspace", projectId], workspace);
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace", projectId] });
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
   });
 }
 
@@ -33,6 +37,13 @@ export function useSendDiscoveryTurn(projectId: string) {
       workspaceApi.sendTurn(projectId, input),
     onSuccess: (workspace) => {
       queryClient.setQueryData(["workspace", projectId], workspace);
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
+    onError: () => {
+      // Founder input is checkpointed before graph work begins. Refetch the
+      // durable server state so a reload/error cannot leave React pretending
+      // Architect is still waiting for a new answer.
+      void queryClient.invalidateQueries({ queryKey: ["workspace", projectId] });
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
   });
