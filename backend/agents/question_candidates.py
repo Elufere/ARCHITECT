@@ -61,6 +61,7 @@ class CandidateBlockReason(str, Enum):
     NO_UNRESOLVED_FACETS = "NO_UNRESOLVED_FACETS"
     RECENTLY_ASKED_SAME_TARGET = "RECENTLY_ASKED_SAME_TARGET"
     REPEATED_THREAD_DECISION = "REPEATED_THREAD_DECISION"
+    EXPLICITLY_DEFERRED_DECISION = "EXPLICITLY_DEFERRED_DECISION"
 
 
 class CandidateEligibilityDecision(BaseModel):
@@ -204,6 +205,37 @@ def _thread_decision_repeat_count(state: AgentState, candidate: QuestionCandidat
     )
 
 
+def _matches_active_deferral(state: AgentState, candidate: QuestionCandidate) -> bool:
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    scope_value = getattr(scope, "value", scope)
+    for boundary in state.get("discovery_boundaries", []) or []:
+        if not isinstance(boundary, dict):
+            continue
+        if boundary.get("type") != "decision_deferral" or boundary.get("reopened_at_turn"):
+            continue
+        if boundary.get("scope") and boundary.get("scope") != scope_value:
+            continue
+        if (
+            boundary.get("requirement_key")
+            and candidate.requirement_key
+            and boundary.get("requirement_key") == candidate.requirement_key
+        ):
+            return True
+        if (
+            boundary.get("requirement_id")
+            and candidate.requirement_id
+            and boundary.get("requirement_id") == candidate.requirement_id
+        ):
+            return True
+        if (
+            boundary.get("decision_key")
+            and candidate.decision_key
+            and boundary.get("decision_key") == candidate.decision_key
+        ):
+            return True
+    return False
+
+
 def _requirement_reasons(
     state: AgentState,
     candidate: QuestionCandidate,
@@ -285,6 +317,9 @@ def filter_question_candidates(
 
         if candidate.source == InquirySource.REQUIREMENT:
             reasons.extend(_requirement_reasons(state, candidate))
+
+        if _matches_active_deferral(state, candidate):
+            reasons.append(CandidateBlockReason.EXPLICITLY_DEFERRED_DECISION)
 
         signature = _candidate_signature(candidate)
         repeat_count = _thread_decision_repeat_count(state, candidate)
