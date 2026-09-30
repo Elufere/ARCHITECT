@@ -133,7 +133,9 @@ Kinds:
   A process/state condition such as "funds stay locked until X reviews it" is
   NOT a permission for X; capture the workflow/state rule instead.
 - multiple_roles / role_transition: explicit policy about one person/account
-  holding several roles or changing roles.
+  holding several roles or changing roles. When the quote explicitly says a
+  confirmed canonical actor acts in named capacities, put that canonical actor
+  in role and the capacity labels in aliases. Do not create separate actors.
 - desired_outcome: a result an actor explicitly wants, needs, seeks, or that the
   product explicitly aims to provide to that actor. Do not relabel the actor's
   ordinary action as an outcome.
@@ -225,6 +227,9 @@ For every claim:
 - value must preserve only what that evidence states, including conditions/negation;
 - role is REQUIRED for primary_actor, secondary_actor, actor_action,
   authorization_boundary, and desired_outcome. Use one canonical actor ID.
+  For multiple_roles/role_transition, role is optional but SHOULD contain the
+  canonical actor when the source explicitly links that actor to named capacity
+  aliases; aliases then contains those capacity labels.
 - actor identity claims put the canonical actor ID in role. When the source
   explicitly says one actor can act as named capacities (for example customer
   acting as buyer or seller), keep the canonical actor in role and put those
@@ -305,7 +310,12 @@ def claim_to_fact(
 
     if claim.kind in ("multiple_roles", "role_transition"):
         key = "multiple_roles" if claim.kind == "multiple_roles" else "role_transitions"
-        return ActorFact(key=key, roles=[], aliases=[], **common), DiscoveryTopic.USER_ROLES
+        return ActorFact(
+            key=key,
+            roles=[claim.role] if claim.role else [],
+            aliases=claim.aliases,
+            **common,
+        ), DiscoveryTopic.USER_ROLES
 
     if claim.kind == "actor_action":
         if not claim.role:
@@ -822,8 +832,14 @@ def normalize_fact(fact: Fact, topic: DiscoveryTopic, scope, turn: int) -> Knowl
         data["roles"] = [canonical_role(role) for role in data["roles"]]
         if not data["roles"] and fact.key in ("multiple_roles", "role_transitions"):
             data.pop("roles")
-        if aliases:
-            data["aliases"] = {data["roles"][0]: [alias.strip().lower() for alias in aliases]}
+        if aliases and data.get("roles"):
+            data["aliases"] = {
+                data["roles"][0]: [
+                    canonical_role(alias)
+                    for alias in aliases
+                    if canonical_role(alias) != data["roles"][0]
+                ]
+            }
     if isinstance(fact, OwnedFact):
         data["role"] = canonical_role(data["role"])
     if isinstance(fact, GoalFact) and data.get("role"):
