@@ -22,7 +22,7 @@ CURSORS = {"conversation_manager", "extract", "resolve_validation_answer", "infe
            "activate_requirements", "cover_requirements", "resolve_requirements",
            "validate_consistency", "plan_threads", "identify_inquiries", "build_candidates",
            "filter_candidates", "prioritize_candidates", "plan", "generate",
-           "guardrail", "compile_prd", "waiting", "phase_complete", "completed"}
+           "guardrail", "request_prd_confirmation", "compile_prd", "waiting", "phase_complete", "completed"}
 
 
 def checkpoint_directory():
@@ -135,6 +135,23 @@ def load_checkpoint(session_id):
     state.setdefault("question_retry_count", 0)
     state.setdefault("question_retry_exhausted", False)
     state.setdefault("answer_followup", None)
+
+    # Migrate pre-confirmation checkpoints safely. Older planner versions used
+    # awaiting_confirmation as an automatic compile trigger; never treat that
+    # legacy flag as founder approval.
+    legacy_confirmation = bool(state.get("awaiting_confirmation", False))
+    state.setdefault("prd_confirmation_pending", legacy_confirmation)
+    state.setdefault("ready_to_compile", False)
+    if (
+        legacy_confirmation
+        and not state.get("prd_contract")
+        and state.get("checkpoint_cursor") == "compile_prd"
+        and not state.get("ready_to_compile")
+    ):
+        state["checkpoint_cursor"] = "request_prd_confirmation"
+        state["interview_status"] = "AWAITING_PRD_CONFIRMATION"
+    state["awaiting_confirmation"] = False
+
     if state.get("prd_contract"):
         state["prd_contract"] = PRDContract.model_validate(state["prd_contract"])
     if (state.get("answer_followup") or {}).get("scope"):
@@ -204,6 +221,7 @@ def durable_node(name, node, next_node):
                   "filter_candidates": "FILTERING_QUESTION_CANDIDATES",
                   "prioritize_candidates": "PRIORITIZING_QUESTION_CANDIDATES",
                   "plan": "ACTIVE", "generate": "GENERATING_QUESTION", "guardrail": "VALIDATING_QUESTION",
+                  "request_prd_confirmation": "AWAITING_PRD_CONFIRMATION",
                   "compile_prd": "COMPILING_PRD", "waiting": "WAITING_FOR_USER",
                   "phase_complete": "AWAITING_PHASE_CHOICE", "completed": "COMPLETED"}[cursor]
         metadata = dict(checkpoint_cursor=cursor, interview_status=status)
