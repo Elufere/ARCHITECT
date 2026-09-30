@@ -81,6 +81,20 @@ class SemanticCategories(StrictModel):
     explanation: str = Field(min_length=1)
 
 
+class ExternalSystemStatementContract(StrictModel):
+    value: str = Field(min_length=1)
+    evidence: str = Field(min_length=1)
+    source_turn: int
+    relation: str | None = None
+    object: str | None = None
+
+
+class ExternalSystemContract(StrictModel):
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    statements: list[ExternalSystemStatementContract] = Field(default_factory=list)
+
+
 class DeferredDecision(StrictModel):
     id: str = Field(min_length=1)
     kind: Literal["decision", "release_scope", "design_implementation"] = "decision"
@@ -98,4 +112,5 @@ class PRDContract(PRDDraft):
     discovery_scope: Literal["USER_APP", "ADMIN_DASHBOARD"]
     source_facts: list[SourceFact]
     validation_report: list[ClaimVerdict]
+    external_systems: list[ExternalSystemContract] = Field(default_factory=list)
     deferred_decisions: list[DeferredDecision] = Field(default_factory=list)
