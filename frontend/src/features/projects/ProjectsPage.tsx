@@ -4,7 +4,13 @@ import { Link } from "react-router-dom";
 import { useProjects } from "@/features/projects/queries";
 
 export function ProjectsPage() {
-  const { data: projects = [], isLoading } = useProjects();
+  const {
+    data: projects = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useProjects();
 
   return (
     <div className="h-full overflow-y-auto p-8 lg:p-12">
@@ -29,6 +35,22 @@ export function ProjectsPage() {
 
         {isLoading ? (
           <div className="surface p-6 text-sm text-neutral-500">Loading projects…</div>
+        ) : isError ? (
+          <div className="surface p-6">
+            <p className="text-sm font-medium text-red-700">
+              Could not load projects from Architect.
+            </p>
+            <p className="mt-1 text-sm text-neutral-500">
+              {error instanceof Error ? error.message : "The API request failed."}
+            </p>
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="mt-4 rounded-lg bg-neutral-950 px-3 py-2 text-xs font-semibold text-white"
+            >
+              Try again
+            </button>
+          </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {projects.map((project) => (
