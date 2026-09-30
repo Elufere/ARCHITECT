@@ -38,6 +38,12 @@ export function useSendDiscoveryTurn(projectId: string) {
   });
 }
 
+export function useRetryDiscovery(projectId: string) {
+  return useWorkspaceMutation(projectId, () =>
+    workspaceApi.retryDiscovery(projectId),
+  );
+}
+
 export function useGeneratePrd(projectId: string) {
   return useWorkspaceMutation(projectId, () => workspaceApi.generatePrd(projectId));
 }
