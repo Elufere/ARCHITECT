@@ -1,8 +1,22 @@
 """HTTP routes for the product-facing Architect API."""
 from fastapi import APIRouter, HTTPException
 
-from api.schemas import CreateProjectInput, ProjectSummary, WorkspaceSnapshot
-from services.project_repository import ProjectRepositoryError
+from api.schemas import (
+    CreateProjectInput,
+    DiscoveryTurnInput,
+    ProjectSummary,
+    WorkspaceSnapshot,
+)
+from services.discovery_session import (
+    DiscoverySessionBusyError,
+    DiscoverySessionStateError,
+)
+from services.discovery_turn import (
+    DiscoveryProcessingError,
+    retry_project_discovery,
+    submit_project_discovery_turn,
+)
+from services.project_repository import ProjectNotFoundError, ProjectRepositoryError
 from services.project_service import (
     ProjectInitializationError,
     create_project_workspace,
@@ -62,5 +76,62 @@ def get_project_workspace(project_id: str) -> WorkspaceSnapshot:
         return build_workspace_snapshot(project_id)
     except WorkspaceNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except WorkspaceUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post(
+    "/projects/{project_id}/discovery/turn",
+    response_model=WorkspaceSnapshot,
+)
+def submit_discovery_turn(
+    project_id: str,
+    input: DiscoveryTurnInput,
+) -> WorkspaceSnapshot:
+    try:
+        return submit_project_discovery_turn(project_id, input)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (DiscoverySessionBusyError, DiscoverySessionStateError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except DiscoveryProcessingError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": exc.reason,
+                "projectId": exc.project_id,
+                "retryable": exc.retryable,
+            },
+        ) from exc
+    except ProjectRepositoryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except WorkspaceUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post(
+    "/projects/{project_id}/discovery/retry",
+    response_model=WorkspaceSnapshot,
+)
+def retry_discovery(
+    project_id: str,
+) -> WorkspaceSnapshot:
+    try:
+        return retry_project_discovery(project_id)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (DiscoverySessionBusyError, DiscoverySessionStateError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except DiscoveryProcessingError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": exc.reason,
+                "projectId": exc.project_id,
+                "retryable": exc.retryable,
+            },
+        ) from exc
+    except ProjectRepositoryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except WorkspaceUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
