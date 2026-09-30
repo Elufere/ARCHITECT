@@ -189,6 +189,10 @@ class AgentState(TypedDict):
     question_retry_count: int
     question_retry_exhausted: bool
     answer_followup: Optional[dict]
+    # Legacy field retained for checkpoint compatibility. PRD authorization is
+    # represented explicitly by the two fields below.
     awaiting_confirmation: bool
+    prd_confirmation_pending: bool
+    ready_to_compile: bool
     current_role: Optional[str]
     discovery_scope: DiscoveryScope
