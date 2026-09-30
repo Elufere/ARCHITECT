@@ -31,6 +31,7 @@ export type UnderstandingState =
   | "confirmed"
   | "active"
   | "open"
+  | "blocked"
   | "deferred";
 
 export interface UnderstandingItem {
