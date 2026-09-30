@@ -68,7 +68,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(body?.message ?? "Architect API request failed");
+    const detail = body?.detail;
+    const message =
+      (typeof detail === "string" ? detail : detail?.message) ??
+      body?.message ??
+      "Architect API request failed";
+    throw new Error(message);
   }
 
   return response.json() as Promise<T>;
@@ -201,6 +206,13 @@ const mockApi = {
     return workspace;
   },
 
+  async retryDiscovery(projectId: string) {
+    await wait(120);
+    const workspace = loadStore().workspaces[projectId];
+    if (!workspace) throw new Error("Project not found");
+    return workspace;
+  },
+
   async generatePrd(projectId: string) {
     await wait(500);
     const store = loadStore();
@@ -253,6 +265,10 @@ const liveApi = {
     request<WorkspaceSnapshot>(`/api/projects/${projectId}/discovery/turn`, {
       method: "POST",
       body: JSON.stringify(input),
+    }),
+  retryDiscovery: (projectId: string) =>
+    request<WorkspaceSnapshot>(`/api/projects/${projectId}/discovery/retry`, {
+      method: "POST",
     }),
   generatePrd: (projectId: string) =>
     request<WorkspaceSnapshot>(`/api/projects/${projectId}/prd/generate`, {
