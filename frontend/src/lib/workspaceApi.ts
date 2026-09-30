@@ -190,7 +190,7 @@ const mockApi = {
         ],
       };
     } else {
-      founderText = input.message || "There is more I want to cover.";
+      founderText = "There is more I want to cover.";
       architectText =
         "Sure. What product decision or area do you want to add or revisit?";
       workspace.discovery.status = "active";
