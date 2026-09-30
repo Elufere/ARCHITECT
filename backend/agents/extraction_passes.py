@@ -72,6 +72,7 @@ ClaimKind = Literal[
     "product_entity",
     "entity_relationship",
     "entity_attribute",
+    "external_system",
     "unclassified",
 ]
 
@@ -169,6 +170,14 @@ Kinds:
 - entity_attribute: an explicit property or dimension of a product entity, such
   as "a group has a currency" or "a package can have size/colour variants".
   Put the entity in subject, property in relation, and stated value(s) in object.
+- external_system: an explicitly identified software/service/provider outside the
+  product boundary that this product integrates with, calls, depends on, routes
+  through, or exchanges data/events with. Put the external system/service name in
+  subject. Use relation/object only when the quote explicitly states them. The
+  value must preserve the stated product-to-system relationship. A company/person
+  mentioned without an integration/dependency relationship is not an external
+  system. A domain object inside the product is a product_entity, not an external
+  system.
 - unclassified: use when the clause is meaningful but none of the supported kinds
   is explicitly established. Unclassified claims are not persisted.
 
@@ -234,7 +243,7 @@ For every claim:
   explicitly says one actor can act as named capacities (for example customer
   acting as buyer or seller), keep the canonical actor in role and put those
   capacity labels in aliases.
-- product_entity/entity_relationship/entity_attribute claims do not use role.
+- product_entity/entity_relationship/entity_attribute/external_system claims do not use role.
   They MUST use subject; relationship/attribute claims MUST also use relation
   and object. Use short canonical nouns for subjects/objects (for example
   "package", not "selling packages"). value should contain the proposition;
@@ -343,7 +352,7 @@ def claim_to_fact(
         key = "success_criteria" if claim.kind == "success_condition" else "motivations"
         return GoalFact(key=key, role=claim.role, **common), DiscoveryTopic.USER_GOALS
 
-    if claim.kind in ("product_entity", "entity_relationship", "entity_attribute"):
+    if claim.kind in ("product_entity", "entity_relationship", "entity_attribute", "external_system"):
         return None
 
     if claim.kind == "unclassified":
