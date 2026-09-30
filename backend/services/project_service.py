@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from agents.interview_checkpoint import load_checkpoint, save_checkpoint
+from agents.interview_checkpoint import checkpoint_path, load_checkpoint, save_checkpoint
 from agents.llm_errors import ExtractionFailed, LLMCallFailed
 from api.schemas import ProjectSummary, WorkspaceSnapshot
 from services.discovery_session import (
@@ -11,16 +11,10 @@ from services.discovery_session import (
     create_discovery_session,
 )
 from services.project_repository import (
-    ProjectRecord,
-    ProjectRepositoryError,
     create_project_record,
     list_projects,
 )
-from services.workspace import (
-    WorkspaceUnavailableError,
-    build_project_summary,
-    build_workspace_snapshot,
-)
+from services.workspace import build_project_summary, build_workspace_snapshot
 
 
 class ProjectInitializationError(RuntimeError):
@@ -55,11 +49,20 @@ def create_project_workspace(*, name: str, description: str) -> WorkspaceSnapsho
     """Create Project + durable discovery session, then ask Architect's first question."""
 
     state = create_discovery_session(description)
-    project = create_project_record(
-        name=name,
-        description=description,
-        discovery_session_id=state["session_id"],
-    )
+    try:
+        project = create_project_record(
+            name=name,
+            description=description,
+            discovery_session_id=state["session_id"],
+        )
+    except Exception:
+        # A session created for a Project that never persisted is an orphan.
+        # Best-effort cleanup is safe here because no Project owns it yet.
+        try:
+            checkpoint_path(state["session_id"]).unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
     try:
         advance_discovery_to_waiting(project.discovery_session_id)
