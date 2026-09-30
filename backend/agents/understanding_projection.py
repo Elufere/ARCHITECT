@@ -314,6 +314,33 @@ def _dependency_block_detail(raw: Any) -> Optional[str]:
     return "Waiting on: " + ", ".join(labels)
 
 
+def _active_decision_deferrals(
+    state: AgentState,
+    scope: DiscoveryScope,
+) -> list[dict]:
+    return [
+        item
+        for item in state.get("discovery_boundaries", []) or []
+        if isinstance(item, dict)
+        and item.get("type") == "decision_deferral"
+        and not item.get("reopened_at_turn")
+        and _scope_matches(item.get("scope"), scope)
+    ]
+
+
+def _deferral_detail(boundary: dict) -> str:
+    parts = ["Intentionally deferred by the founder."]
+    if boundary.get("resolution_stage"):
+        parts.append(f"Planned revisit: {boundary['resolution_stage']}.")
+    if boundary.get("owner"):
+        parts.append(f"Resolution owner: {boundary['owner']}.")
+    if boundary.get("downstream_consequence"):
+        parts.append(f"Consequence: {boundary['downstream_consequence']}.")
+    if boundary.get("evidence"):
+        parts.append(f"Founder feedback: \"{boundary['evidence']}\"")
+    return " ".join(parts)
+
+
 def _requirement_decisions(
     state: AgentState,
     scope: DiscoveryScope,
@@ -336,10 +363,20 @@ def _requirement_decisions(
         if requirement.status == RequirementStatus.DEFERRED or (
             coverage is not None and coverage.status == RequirementCoverageStatus.DEFERRED
         ):
+            boundary = next(
+                (
+                    item for item in _active_decision_deferrals(state, scope)
+                    if item.get("requirement_key") == store_key
+                ),
+                None,
+            )
+            details = [requirement.description] if requirement.description else []
+            if boundary is not None:
+                details.append(_deferral_detail(boundary))
             deferred_items.append(UnderstandingItem(
                 id=f"requirement:{store_key}",
                 label=requirement.label,
-                detail=requirement.description,
+                detail=" ".join(details) or None,
                 state=UnderstandingItemState.DEFERRED,
                 source="requirement",
                 source_refs=[store_key],
@@ -492,17 +529,32 @@ def _boundary_deferrals(
     for boundary in state.get("discovery_boundaries", []) or []:
         if not isinstance(boundary, dict) or not _scope_matches(boundary.get("scope"), scope):
             continue
-        if boundary.get("type") not in {"design_deferral", "implementation_deferred"}:
+        if boundary.get("reopened_at_turn"):
+            continue
+        if boundary.get("type") not in {
+            "design_deferral",
+            "implementation_deferred",
+            "decision_deferral",
+        }:
+            continue
+        if boundary.get("type") == "decision_deferral" and boundary.get("requirement_key"):
+            # Requirement-backed deferrals are rendered by _requirement_decisions
+            # so the founder sees one durable item rather than duplicate rows.
             continue
 
         label = (
-            boundary.get("objective")
+            boundary.get("decision_summary")
+            or boundary.get("objective")
             or boundary.get("question")
-            or "Design / implementation detail"
+            or "Deferred product decision"
+        )
+        detail = (
+            _deferral_detail(boundary)
+            if boundary.get("type") == "decision_deferral"
+            else "Deferred by the founder."
         )
         evidence = boundary.get("evidence")
-        detail = "Deferred by the founder."
-        if evidence:
+        if boundary.get("type") != "decision_deferral" and evidence:
             detail += f' Founder feedback: "{evidence}"'
 
         signature = {
