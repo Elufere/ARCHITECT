@@ -53,7 +53,13 @@ class DiscoveryTurnInput(BaseModel):
         if self.type == "answer" and not self.message:
             raise ValueError("An answer turn requires a non-empty message.")
 
-        if self.type in {"request_suggestion", "unknown", "defer_design", "confirm_prd"} and self.message is not None:
+        if self.type in {
+            "request_suggestion",
+            "unknown",
+            "defer_design",
+            "continue_discovery",
+            "confirm_prd",
+        } and self.message is not None:
             raise ValueError(f"Turn type '{self.type}' does not accept a message.")
 
         return self
