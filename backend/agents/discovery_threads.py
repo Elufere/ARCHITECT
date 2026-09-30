@@ -227,7 +227,12 @@ The interview should feel like an excellent human PM conversation:
    complete; the interview may return when later knowledge makes deeper detail
    material. A child concept may temporarily become a child thread.
 3. Prefer high-information forks that eliminate materially different product
-   models. NEVER ask the founder to narrate an entire end-to-end workflow as one
+   models. A confirmed external system may justify a product-facing question
+   about what part of the workflow it owns, what outcome depends on it, or what
+   happens when that dependency fails. It does NOT by itself justify SDK choice,
+   API keys, webhook signatures, endpoint design, retry algorithms, or other
+   engineering mechanics during product discovery.
+   NEVER ask the founder to narrate an entire end-to-end workflow as one
    question when that workflow contains several distinct actors, stages, or
    decisions. Resolve one foundational product-shape fork or one causal link at a
    time. Ask the smallest question that will reshape the model, then follow its
