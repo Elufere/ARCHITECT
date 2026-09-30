@@ -1,11 +1,5 @@
-from uuid import uuid4
-
 import pytest
 from fastapi import HTTPException
-from langchain_core.messages import AIMessage, HumanMessage
-
-from agents.interview_checkpoint import save_checkpoint
-from agents.state import DiscoveryScope
 from api.routes import create_project, get_projects
 from api.schemas import CreateProjectInput, ProjectSummary, WorkspaceSnapshot
 from services.project_service import ProjectInitializationError
