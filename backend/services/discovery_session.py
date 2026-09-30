@@ -128,8 +128,6 @@ def _turn_content(turn_type: str, message: str | None) -> str:
         if not value:
             raise DiscoverySessionStateError("An answer turn requires a message.")
         return value
-    if turn_type == "continue_discovery" and message and message.strip():
-        return message.strip()
     try:
         return TURN_TEXT[turn_type]
     except KeyError as exc:
