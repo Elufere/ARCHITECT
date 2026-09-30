@@ -237,12 +237,21 @@ founder meant."""),
     return clarification_reply(state)
 
 
+STRUCTURED_TURN_INTENTS = {
+    "request_suggestion": "advice_request",
+    "unknown": "uncertainty",
+    "defer_design": "design_deferral",
+    "continue_discovery": "continue_discovery",
+}
+
+
 def conversation_manager_node(state: AgentState) -> dict:
     messages = state.get("messages", [])
     if not messages or not isinstance(messages[-1], HumanMessage):
         return {"conversation_intent": None, "is_correction": False}
 
-    intent = classify_turn(messages[-1].content)
+    structured_turn = (messages[-1].additional_kwargs or {}).get("architect_turn_type")
+    intent = STRUCTURED_TURN_INTENTS.get(structured_turn) or classify_turn(messages[-1].content)
     if (
         intent == "product_information"
         and looks_like_founder_question(messages[-1].content)
@@ -251,6 +260,10 @@ def conversation_manager_node(state: AgentState) -> dict:
         intent = "clarification"
     update = {"conversation_intent": intent, "is_correction": intent == "correction",
               "question_retry_count": 0}
+    if intent == "continue_discovery":
+        # This is explicit founder control state, not a product fact. It becomes
+        # important once PRD completion requires founder confirmation.
+        return {**update, "awaiting_confirmation": False}
     if intent == "clarification":
         return {
             **update,
@@ -298,8 +311,8 @@ def conversation_manager_node(state: AgentState) -> dict:
         }
         if intent == "design_deferral":
             boundary["instruction"] = (
-                "Founder delegates UI/interface/navigation/design implementation details "
-                "to the designer. Do not ask the founder to specify those details unless "
+                "Founder delegates UI/interface/navigation/design or implementation details "
+                "to design/engineering. Do not ask the founder to specify those details unless "
                 "a concrete product decision cannot be made without them."
             )
         else:
