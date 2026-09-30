@@ -4,6 +4,8 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agents.conversation_manager import conversation_manager_node
+from langgraph.graph import END
+
 from agents.graph import route_after_conversation_manager
 from agents.interview_checkpoint import load_checkpoint, save_checkpoint
 from agents.llm_errors import LLMCallFailed
@@ -172,7 +174,7 @@ def test_structured_defer_design_forces_control_intent_without_text_regex():
     assert "design/engineering" in update["discovery_boundaries"][-1]["instruction"]
 
 
-def test_structured_unknown_and_continue_discovery_replan_instead_of_becoming_facts():
+def test_structured_unknown_replans_and_continue_discovery_waits_for_missing_area():
     unknown_state = create_initial_discovery_state("Idea", session_id=str(uuid4()))
     unknown_state["messages"].append(AIMessage(content="What should happen?"))
     unknown_state["messages"].append(
@@ -187,7 +189,7 @@ def test_structured_unknown_and_continue_discovery_replan_instead_of_becoming_fa
     assert route_after_conversation_manager({**unknown_state, **unknown_update}) == "plan_threads"
 
     continue_state = create_initial_discovery_state("Idea", session_id=str(uuid4()))
-    continue_state["awaiting_confirmation"] = True
+    continue_state["prd_confirmation_pending"] = True
     continue_state["messages"].append(AIMessage(content="Anything else?"))
     continue_state["messages"].append(
         HumanMessage(
@@ -198,8 +200,12 @@ def test_structured_unknown_and_continue_discovery_replan_instead_of_becoming_fa
 
     continue_update = conversation_manager_node(continue_state)
     assert continue_update["conversation_intent"] == "continue_discovery"
-    assert continue_update["awaiting_confirmation"] is False
-    assert route_after_conversation_manager({**continue_state, **continue_update}) == "plan_threads"
+    assert continue_update["prd_confirmation_pending"] is False
+    assert continue_update["ready_to_compile"] is False
+    assert continue_update["messages"][-1].content == (
+        "Sure. What product decision or area do you want to add or revisit?"
+    )
+    assert route_after_conversation_manager({**continue_state, **continue_update}) == END
 
 
 def test_discovery_turn_input_validation_and_normalization():
@@ -209,8 +215,15 @@ def test_discovery_turn_input_validation_and_normalization():
     continuation = DiscoveryTurnInput(type="continue_discovery")
     assert continuation.message is None
 
+    confirmation = DiscoveryTurnInput(type="confirm_prd")
+    assert confirmation.message is None
+
     with pytest.raises(ValueError):
         DiscoveryTurnInput(type="answer", message="   ")
 
     with pytest.raises(ValueError):
         DiscoveryTurnInput(type="unknown", message="extra")
+    with pytest.raises(ValueError):
+        DiscoveryTurnInput(type="continue_discovery", message="fees")
+    with pytest.raises(ValueError):
+        DiscoveryTurnInput(type="confirm_prd", message="yes")
