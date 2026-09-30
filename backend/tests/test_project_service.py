@@ -2,9 +2,14 @@ import pytest
 from langchain_core.messages import AIMessage
 
 from agents.interview_checkpoint import load_checkpoint, save_checkpoint
+from agents.llm_errors import LLMCallFailed
 from api.schemas import CreateProjectInput
-from services.project_repository import create_project_record, get_project
-from services.project_service import create_project_workspace, list_project_summaries
+from services.project_repository import create_project_record, get_project, list_projects
+from services.project_service import (
+    ProjectInitializationError,
+    create_project_workspace,
+    list_project_summaries,
+)
 from services.discovery_session import create_initial_discovery_state
 
 
@@ -69,6 +74,41 @@ def test_create_project_workspace_persists_project_and_session_before_initial_di
         "founder",
         "architect",
     ]
+
+
+
+
+def test_initial_discovery_failure_keeps_project_and_founder_idea_for_retry(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("ARCHITECT_SESSION_DIR", str(tmp_path / "sessions"))
+    monkeypatch.setenv("ARCHITECT_PROJECT_DIR", str(tmp_path / "projects"))
+
+    import services.project_service as service
+
+    def fail_advance(session_id):
+        raise LLMCallFailed(
+            "initial.discovery",
+            retryable=True,
+            failure_kind="connection",
+        )
+
+    monkeypatch.setattr(service, "advance_discovery_to_waiting", fail_advance)
+
+    with pytest.raises(ProjectInitializationError) as exc:
+        create_project_workspace(
+            name="Escrow App",
+            description="A buyer and seller escrow product.",
+        )
+
+    projects = list_projects()
+    assert len(projects) == 1
+    assert projects[0].id == exc.value.project_id
+
+    state = load_checkpoint(projects[0].discovery_session_id)
+    assert state["raw_idea"] == "A buyer and seller escrow product."
+    assert state["messages"][0].content == "A buyer and seller escrow product."
+    assert exc.value.retryable is True
 
 
 def test_list_projects_derives_status_from_linked_checkpoint_and_sorts_by_live_update(
