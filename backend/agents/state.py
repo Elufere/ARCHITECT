@@ -185,6 +185,9 @@ class AgentState(TypedDict):
     relevant_context: List[str]
     conversation_intent: Optional[str]
     is_correction: bool
+    founder_requested_completion: bool
+    completion_request_evidence: Optional[str]
+    completion_arbitration_complete: bool
 
     turn_count: int
     question_retry_count: int
