@@ -108,7 +108,8 @@ PATTERNS = {
         re.I,
     ),
     "objection": re.compile(
-        r"\b(i told you already|already told you|you asked (?:me )?already|"
+        r"\b(i told you already|already told you|i answered (?:this|that|the question) already|"
+        r"answered (?:this|that|the question) already|you asked (?:me )?already|"
         r"stop asking|you keep asking|you are asking irrelevant questions|"
         r"you're asking irrelevant questions|irrelevant questions?|"
         r"that(?:'s| is) irrelevant|this is irrelevant|not relevant)\b", re.I
@@ -118,8 +119,16 @@ PATTERNS = {
 
 
 def classify_turn(content: str) -> str:
+    normalized = content.replace("’", "'")
+    # Explicit interview feedback about repetition is control state. Check it
+    # before generic correction phrases such as "I said", which commonly appear
+    # inside "I answered this already, and I said ...".
+    if PATTERNS["objection"].search(normalized):
+        return "objection"
     for intent, pattern in PATTERNS.items():
-        if pattern.search(content.replace("’", "'")):
+        if intent == "objection":
+            continue
+        if pattern.search(normalized):
             return intent
     return "product_information"
 
