@@ -136,6 +136,9 @@ def load_checkpoint(session_id):
     state.setdefault("question_retry_count", 0)
     state.setdefault("question_retry_exhausted", False)
     state.setdefault("answer_followup", None)
+    state.setdefault("founder_requested_completion", False)
+    state.setdefault("completion_request_evidence", None)
+    state.setdefault("completion_arbitration_complete", False)
 
     # Migrate pre-confirmation checkpoints safely. Older planner versions used
     # awaiting_confirmation as an automatic compile trigger; never treat that
