@@ -231,6 +231,10 @@ def _thread_decision_repeat_count(state: AgentState, candidate: QuestionCandidat
     )
 
 
+def _normalized_objective(value: str | None) -> str:
+    return " ".join((value or "").strip().lower().split())
+
+
 def _control_boundary_block_reason(
     state: AgentState,
     candidate: QuestionCandidate,
@@ -273,6 +277,12 @@ def _control_boundary_block_reason(
                 boundary.get("decision_key")
                 and candidate.decision_key
                 and boundary.get("decision_key") == candidate.decision_key
+            ),
+            bool(
+                boundary.get("objective")
+                and candidate.objective
+                and _normalized_objective(boundary.get("objective"))
+                == _normalized_objective(candidate.objective)
             ),
         ))
         if not matches:
