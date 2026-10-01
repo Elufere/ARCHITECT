@@ -537,6 +537,11 @@ def all_required_gaps_resolved(state):
 
 
 def all_discovery_resolved(state: AgentState) -> bool:
+    if state.get("founder_requested_completion"):
+        return bool(
+            state.get("completion_arbitration_complete")
+            and consistency_resolved(state)
+        )
     return (
         not state.get("open_inquiries", [])
         and active_requirements_resolved(state)
@@ -631,7 +636,11 @@ def _refresh_inquiry_frontier(state: AgentState) -> tuple[AgentState, dict]:
     reintroducing schema traversal.
     """
     from agents.inquiries import identify_open_inquiries
-    from agents.question_candidates import build_question_candidates, filter_question_candidates
+    from agents.question_candidates import (
+        arbitrate_completion_candidates,
+        build_question_candidates,
+        filter_question_candidates,
+    )
     from agents.question_priority import prioritize_question_candidates
 
     inquiries = identify_open_inquiries(state)
@@ -645,6 +654,11 @@ def _refresh_inquiry_frontier(state: AgentState) -> tuple[AgentState, dict]:
         "question_candidates": [item.model_dump(mode="json") for item in candidates],
     }
     eligible, decisions = filter_question_candidates(with_candidates, candidates)
+    eligible, decisions, completion_complete = arbitrate_completion_candidates(
+        with_candidates,
+        eligible,
+        decisions,
+    )
     with_eligible = {
         **with_candidates,
         "eligible_question_candidates": [
@@ -668,6 +682,7 @@ def _refresh_inquiry_frontier(state: AgentState) -> tuple[AgentState, dict]:
             candidate_id: score.model_dump(mode="json")
             for candidate_id, score in scores.items()
         },
+        "completion_arbitration_complete": completion_complete,
     }
     return {**with_eligible, **updates}, updates
 
@@ -761,13 +776,18 @@ def interview_planner_node(state: AgentState) -> dict:
             **_plan_candidate(state, selected),
         }
 
+    completion_ready = bool(
+        state.get("founder_requested_completion")
+        and state.get("completion_arbitration_complete")
+    )
+
     open_inquiries = state.get("open_inquiries", [])
-    if open_inquiries:
+    if open_inquiries and not completion_ready:
         raise RuntimeError(
             "Open product inquiries exist but none survived candidate eligibility/prioritization"
         )
 
-    if not active_requirements_resolved(state):
+    if not active_requirements_resolved(state) and not completion_ready:
         blocked = [
             requirement.id
             for requirement in state.get("active_requirements", {}).values()
