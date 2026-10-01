@@ -1277,6 +1277,34 @@ def discovery_thread_node(state: AgentState) -> dict:
     if not state.get("thread_planning_enabled", False):
         return {}
 
+    if state.get("founder_requested_completion"):
+        # Founder closure is a strong stopping preference. Do not invent a fresh
+        # model frontier after it. Existing foundational inquiries, validation
+        # blockers, and active requirements will be arbitrated downstream.
+        scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+        relevant_requirements = []
+        for requirement in state.get("active_requirements", {}).values():
+            if hasattr(requirement, "scope"):
+                requirement_scope = requirement.scope
+                requirement_status = getattr(requirement.status, "value", requirement.status)
+                requirement_id = requirement.id
+            else:
+                requirement_scope = requirement.get("scope")
+                requirement_status = requirement.get("status")
+                requirement_id = requirement.get("id")
+            if getattr(requirement_scope, "value", requirement_scope) != scope.value:
+                continue
+            if requirement_status != "ACTIVE":
+                continue
+            if requirement_id:
+                relevant_requirements.append(requirement_id)
+        return {
+            "thread_frontier": None,
+            "thread_relevant_requirement_ids": list(dict.fromkeys(relevant_requirements)),
+            "completion_arbitration_complete": False,
+            "question_retry_exhausted": False,
+        }
+
     # Contradictions and explicit pending followups must be resolved before
     # ordinary conversational trajectory is reconsidered.
     if state.get("validation_candidate_blocking") or state.get("answer_followup"):
