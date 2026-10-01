@@ -6,12 +6,16 @@ consistency validation.
 """
 from __future__ import annotations
 
+import json
 from enum import Enum
 from typing import Dict, List, Optional
 
+from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from agents.inquiries import InquirySource, ProductInquiry
+from agents.llm import get_structured_model
+from agents.llm_errors import raise_if_llm_failure
 from agents.requirement_coverage import (
     RequirementCoverageRecord,
     RequirementCoverageStatus,
@@ -62,12 +66,34 @@ class CandidateBlockReason(str, Enum):
     RECENTLY_ASKED_SAME_TARGET = "RECENTLY_ASKED_SAME_TARGET"
     REPEATED_THREAD_DECISION = "REPEATED_THREAD_DECISION"
     EXPLICITLY_DEFERRED_DECISION = "EXPLICITLY_DEFERRED_DECISION"
+    EXPLICITLY_REJECTED_DECISION = "EXPLICITLY_REJECTED_DECISION"
+    FOUNDER_CLOSURE_NONBLOCKING = "FOUNDER_CLOSURE_NONBLOCKING"
 
 
 class CandidateEligibilityDecision(BaseModel):
     candidate_id: str
     eligible: bool
     reasons: List[CandidateBlockReason] = Field(default_factory=list)
+
+
+class CompletionRequirementArbitration(BaseModel):
+    blocking_candidate_ids: List[str] = Field(default_factory=list)
+    nonblocking_candidate_ids: List[str] = Field(default_factory=list)
+    reasons: Dict[str, str] = Field(default_factory=dict)
+
+
+_completion_requirement_model = None
+
+
+def completion_requirement_model():
+    global _completion_requirement_model
+    if _completion_requirement_model is None:
+        _completion_requirement_model = get_structured_model(
+            call_name="question_candidates.completion_arbitration",
+            schema=CompletionRequirementArbitration,
+            max_tokens=700,
+        )
+    return _completion_requirement_model
 
 
 ELIGIBLE_COVERAGE_STATUSES = {
@@ -205,35 +231,171 @@ def _thread_decision_repeat_count(state: AgentState, candidate: QuestionCandidat
     )
 
 
-def _matches_active_deferral(state: AgentState, candidate: QuestionCandidate) -> bool:
+def _control_boundary_block_reason(
+    state: AgentState,
+    candidate: QuestionCandidate,
+) -> CandidateBlockReason | None:
+    """Hard-block decisions the founder already deferred, rejected, or closed."""
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
     scope_value = getattr(scope, "value", scope)
     for boundary in state.get("discovery_boundaries", []) or []:
-        if not isinstance(boundary, dict):
+        if not isinstance(boundary, dict) or boundary.get("reopened_at_turn"):
             continue
-        if boundary.get("type") != "decision_deferral" or boundary.get("reopened_at_turn"):
+        boundary_type = boundary.get("type")
+        if boundary_type not in {
+            "decision_deferral",
+            "design_deferral",
+            "implementation_deferred",
+            "rejected_inquiry",
+            "product_scope_closed",
+        }:
             continue
         if boundary.get("scope") and boundary.get("scope") != scope_value:
             continue
-        if (
-            boundary.get("requirement_key")
-            and candidate.requirement_key
-            and boundary.get("requirement_key") == candidate.requirement_key
-        ):
-            return True
-        if (
-            boundary.get("requirement_id")
-            and candidate.requirement_id
-            and boundary.get("requirement_id") == candidate.requirement_id
-        ):
-            return True
-        if (
-            boundary.get("decision_key")
-            and candidate.decision_key
-            and boundary.get("decision_key") == candidate.decision_key
-        ):
-            return True
-    return False
+
+        matches = any((
+            bool(
+                boundary.get("requirement_key")
+                and candidate.requirement_key
+                and boundary.get("requirement_key") == candidate.requirement_key
+            ),
+            bool(
+                boundary.get("requirement_id")
+                and candidate.requirement_id
+                and boundary.get("requirement_id") == candidate.requirement_id
+            ),
+            bool(
+                boundary.get("inquiry_id")
+                and candidate.inquiry_id
+                and boundary.get("inquiry_id") == candidate.inquiry_id
+            ),
+            bool(
+                boundary.get("decision_key")
+                and candidate.decision_key
+                and boundary.get("decision_key") == candidate.decision_key
+            ),
+        ))
+        if not matches:
+            continue
+
+        if boundary_type in {
+            "decision_deferral",
+            "design_deferral",
+            "implementation_deferred",
+        }:
+            return CandidateBlockReason.EXPLICITLY_DEFERRED_DECISION
+        return CandidateBlockReason.EXPLICITLY_REJECTED_DECISION
+    return None
+
+
+COMPLETION_ARBITRATION_INSTRUCTION = """The founder has explicitly said product
+discovery is sufficiently covered and wants to finish. Review ONLY the supplied
+already-activated REQUIREMENT candidates and decide which, if any, are materially
+blocking before a PRD confirmation can be requested.
+
+Keep a requirement BLOCKING only when leaving it unresolved would make the
+currently confirmed product materially incoherent or ambiguous about a core
+product rule already implicated by the founder's model. Examples can include
+money movement/finality, irreversible state transitions, authorization, a
+material compliance constraint, or a high-risk exception that is already part of
+the confirmed workflow.
+
+Mark NONBLOCKING when it is optional depth, hypothetical completeness, UI/content
+detail, implementation mechanics, speculative limits, polish, or another detail
+that can safely remain unresolved in this PRD. Founder closure is a strong
+stopping preference: do not keep asking merely because more detail is possible.
+
+Do not invent new requirements, facts, risks, or scenarios. Do not reinterpret a
+deferred/rejected item as blocking. Classify every supplied candidate exactly
+once, using its exact candidate id. reasons may briefly explain each choice."""
+
+
+def arbitrate_completion_candidates(
+    state: AgentState,
+    candidates: List[QuestionCandidate],
+    decisions: Dict[str, CandidateEligibilityDecision],
+) -> tuple[
+    List[QuestionCandidate],
+    Dict[str, CandidateEligibilityDecision],
+    bool,
+]:
+    if not state.get("founder_requested_completion"):
+        return candidates, decisions, False
+
+    requirements = [
+        candidate
+        for candidate in candidates
+        if candidate.source == InquirySource.REQUIREMENT
+    ]
+    always_blocking = [
+        candidate
+        for candidate in candidates
+        if candidate.source != InquirySource.REQUIREMENT
+    ]
+
+    blocking_requirement_ids: set[str] = set()
+    if requirements:
+        payload = {
+            "founder_completion_evidence": state.get("completion_request_evidence"),
+            "confirmed_product_model": state.get("product_model", {}),
+            "active_control_boundaries": state.get("discovery_boundaries", [])[-30:],
+            "requirement_candidates": [
+                {
+                    "candidate_id": candidate.id,
+                    "requirement_id": candidate.requirement_id,
+                    "objective": candidate.objective,
+                    "reason": candidate.reason,
+                    "target_facets": candidate.target_facets,
+                    "architecture_impact": candidate.architecture_impact,
+                    "business_risk": candidate.business_risk,
+                }
+                for candidate in requirements
+            ],
+        }
+        try:
+            result = completion_requirement_model().invoke([
+                SystemMessage(content=COMPLETION_ARBITRATION_INSTRUCTION),
+                HumanMessage(content=json.dumps(payload, ensure_ascii=False, default=str)),
+            ])
+            review = (
+                result
+                if isinstance(result, CompletionRequirementArbitration)
+                else CompletionRequirementArbitration.model_validate(result)
+            )
+        except Exception as exc:
+            raise_if_llm_failure(exc)
+            raise ValueError("Completion requirement arbitration failed") from exc
+
+        expected = {candidate.id for candidate in requirements}
+        blocking = set(review.blocking_candidate_ids)
+        nonblocking = set(review.nonblocking_candidate_ids)
+        if blocking & nonblocking or blocking | nonblocking != expected:
+            raise ValueError(
+                "Completion arbitration must classify every requirement candidate exactly once"
+            )
+        blocking_requirement_ids = blocking
+
+        for candidate in requirements:
+            if candidate.id in blocking_requirement_ids:
+                continue
+            existing = decisions[candidate.id]
+            decisions[candidate.id] = existing.model_copy(update={
+                "eligible": False,
+                "reasons": [
+                    *existing.reasons,
+                    CandidateBlockReason.FOUNDER_CLOSURE_NONBLOCKING,
+                ],
+            })
+
+    eligible = [
+        *always_blocking,
+        *[
+            candidate
+            for candidate in requirements
+            if candidate.id in blocking_requirement_ids
+        ],
+    ]
+    return eligible, decisions, not eligible
 
 
 def _requirement_reasons(
@@ -318,8 +480,9 @@ def filter_question_candidates(
         if candidate.source == InquirySource.REQUIREMENT:
             reasons.extend(_requirement_reasons(state, candidate))
 
-        if _matches_active_deferral(state, candidate):
-            reasons.append(CandidateBlockReason.EXPLICITLY_DEFERRED_DECISION)
+        boundary_reason = _control_boundary_block_reason(state, candidate)
+        if boundary_reason is not None:
+            reasons.append(boundary_reason)
 
         signature = _candidate_signature(candidate)
         repeat_count = _thread_decision_repeat_count(state, candidate)
@@ -365,6 +528,11 @@ def filter_question_candidates(
 
 def question_candidate_filter_node(state: AgentState) -> dict:
     eligible, decisions = filter_question_candidates(state)
+    eligible, decisions, completion_complete = arbitrate_completion_candidates(
+        state,
+        eligible,
+        decisions,
+    )
     return {
         "eligible_question_candidates": [
             candidate.model_dump(mode="json")
@@ -374,4 +542,5 @@ def question_candidate_filter_node(state: AgentState) -> dict:
             candidate_id: decision.model_dump(mode="json")
             for candidate_id, decision in decisions.items()
         },
+        "completion_arbitration_complete": completion_complete,
     }
