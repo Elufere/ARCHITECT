@@ -10,10 +10,16 @@ from agents.conversation_language import clarification_reply, clarification_ques
 from agents.llm import get_chat_model, get_structured_model
 from agents.llm_errors import raise_if_llm_failure
 from agents.discovery_deferrals import (
+    DeferralKind,
+    FreeTextDeferralReview,
     apply_deferral,
     apply_reopen,
     review_free_text_deferral,
     should_review_free_text_deferral,
+)
+from agents.discovery_completion import (
+    review_completion_intent,
+    should_review_completion_intent,
 )
 
 
@@ -261,6 +267,34 @@ def conversation_manager_node(state: AgentState) -> dict:
     intent = STRUCTURED_TURN_INTENTS.get(structured_turn) or classify_turn(messages[-1].content)
 
     control_updates = {}
+
+    if intent == "design_deferral":
+        previous_question = next(
+            (
+                message.content
+                for message in reversed(messages[:-1])
+                if isinstance(message, AIMessage)
+            ),
+            "",
+        )
+        control_updates = apply_deferral(
+            state,
+            FreeTextDeferralReview(
+                action="defer",
+                primary_control_intent=True,
+                kind=DeferralKind.DESIGN_IMPLEMENTATION,
+                decision_summary=(
+                    state.get("current_objective")
+                    or final_question_text(previous_question)
+                    or "Current design / implementation decision"
+                ),
+                reason=(
+                    "Founder explicitly delegated this decision to design or engineering."
+                ),
+            ),
+            messages[-1].content,
+        )
+
     if (
         not structured_turn
         and intent in {"product_information", "uncertainty", "correction"}
@@ -275,6 +309,21 @@ def conversation_manager_node(state: AgentState) -> dict:
             control_updates = apply_reopen(state, review)
             if review.primary_control_intent:
                 intent = "reopen_deferral"
+
+    if (
+        not structured_turn
+        and intent in {"product_information", "confirmation", "uncertainty"}
+        and should_review_completion_intent(state, messages[-1].content)
+    ):
+        completion = review_completion_intent(state, messages[-1].content)
+        if completion.wants_to_finish_discovery:
+            intent = "close_discovery"
+            control_updates = {
+                **control_updates,
+                "founder_requested_completion": True,
+                "completion_request_evidence": messages[-1].content,
+                "completion_arbitration_complete": False,
+            }
 
     if (
         intent == "product_information"
@@ -303,6 +352,9 @@ def conversation_manager_node(state: AgentState) -> dict:
             "awaiting_confirmation": False,
             "prd_confirmation_pending": False,
             "ready_to_compile": False,
+            "founder_requested_completion": False,
+            "completion_request_evidence": None,
+            "completion_arbitration_complete": False,
             "messages": [
                 AIMessage(
                     content=(
@@ -336,6 +388,14 @@ def conversation_manager_node(state: AgentState) -> dict:
             "That is fine—I’ll keep it as an open decision and continue with the parts that are known."
         ))]}
 
+    if intent == "close_discovery":
+        return {
+            **update,
+            "founder_requested_completion": True,
+            "completion_request_evidence": messages[-1].content,
+            "completion_arbitration_complete": False,
+        }
+
     if intent == "decision_deferral":
         return {
             **update,
@@ -352,7 +412,10 @@ def conversation_manager_node(state: AgentState) -> dict:
             ))],
         }
 
-    if intent in ("design_deferral", "objection"):
+    if intent == "design_deferral":
+        return update
+
+    if intent == "objection":
         boundaries = list(state.get("discovery_boundaries", []))
         previous_question = next(
             (
@@ -362,28 +425,26 @@ def conversation_manager_node(state: AgentState) -> dict:
             ),
             "",
         )
+        selected = state.get("selected_inquiry") or {}
+        requirement = state.get("selected_requirement_candidate") or {}
         boundary = {
-            "type": "design_deferral" if intent == "design_deferral" else "rejected_inquiry",
+            "type": "rejected_inquiry",
             "scope": getattr(state.get("discovery_scope"), "value", state.get("discovery_scope")),
             "source_turn": state.get("turn_count", 0),
             "evidence": messages[-1].content,
             "question": previous_question,
             "thread_id": state.get("active_discovery_thread"),
-            "decision_key": (state.get("selected_inquiry") or {}).get("decision_key"),
+            "decision_key": selected.get("decision_key"),
+            "inquiry_id": selected.get("inquiry_id") or selected.get("id"),
+            "requirement_key": selected.get("requirement_key") or requirement.get("requirement_key"),
+            "requirement_id": selected.get("requirement_id") or requirement.get("requirement_id"),
             "objective": state.get("current_objective"),
         }
-        if intent == "design_deferral":
-            boundary["instruction"] = (
-                "Founder delegates UI/interface/navigation/design or implementation details "
-                "to design/engineering. Do not ask the founder to specify those details unless "
-                "a concrete product decision cannot be made without them."
-            )
-        else:
-            boundary["instruction"] = (
-                "Founder rejected the immediately preceding inquiry as irrelevant or repeated. "
-                "Do not retry, paraphrase, or deepen that inquiry; choose a materially different "
-                "product decision."
-            )
+        boundary["instruction"] = (
+            "Founder rejected the immediately preceding inquiry as irrelevant or repeated. "
+            "Do not retry, paraphrase, or deepen that inquiry; choose a materially different "
+            "product decision."
+        )
         boundaries.append(boundary)
         return {**update, "discovery_boundaries": boundaries[-50:]}
 
