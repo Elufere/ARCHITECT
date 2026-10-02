@@ -1,7 +1,11 @@
 """Project-facing PRD generation service."""
 from __future__ import annotations
 
-from agents.diagnostic_log import diagnostic_session
+from agents.diagnostic_log import (
+    diagnostic_session,
+    log_messages_since,
+    log_state_snapshot,
+)
 from agents.graph import build_graph
 from agents.interview_checkpoint import load_checkpoint, save_checkpoint, session_lock
 from agents.interview_planner import all_discovery_resolved
@@ -111,7 +115,17 @@ def generate_project_prd(project_id: str) -> WorkspaceSnapshot:
             project_id=project.id,
             operation="prd_generation",
         ):
+            before = load_checkpoint(project.discovery_session_id)
+            before_count = len(before.get("messages", []))
+            log_state_snapshot(before, label="before PRD generation")
             _run_with_session_lock(project.discovery_session_id, operation)
+            after = load_checkpoint(project.discovery_session_id)
+            log_messages_since(
+                after,
+                start_index=before_count,
+                label="NEW CONVERSATION MESSAGES",
+            )
+            log_state_snapshot(after, label="after PRD generation")
     except LLMCallFailed as exc:
         raise PrdGenerationProcessingError(
             project.id,
