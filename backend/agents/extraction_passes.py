@@ -190,6 +190,9 @@ Critical distinctions:
   do NOT emit workflow_trigger unless the source explicitly says this starts the process.
 - 'Money is released when the transaction is successfully completed' describes
   release after completion; it does NOT by itself define what makes the transaction successful.
+- 'A list is complete when every item is marked bought' is a workflow_completion
+  condition. It is NOT a workflow_end_state merely because the word "complete"
+  appears. An end state describes the resulting status/situation after completion.
 - 'can', 'may', or 'should be able to' is ordinary capability unless the source
   also states an authorization boundary.
 - When the founder explicitly describes the application as being "for" named
