@@ -18,6 +18,23 @@ class PRDAuditError(RuntimeError):
     """An unavailable or incomplete verifier cannot approve a draft."""
 
 
+CATEGORY_COMPATIBILITY_GROUPS = (
+    frozenset({
+        "CORE_WORKFLOW.completion_condition",
+        "CORE_WORKFLOW.end_state",
+    }),
+)
+
+
+def compatible_categories(categories: set[str]) -> set[str]:
+    """Expand only explicitly sanctioned overlapping semantic categories."""
+    expanded = set(categories)
+    for group in CATEGORY_COMPATIBILITY_GROUPS:
+        if expanded & group:
+            expanded.update(group)
+    return expanded
+
+
 def check_context_budget(messages, schema, output_tokens):
     # UTF-8 bytes conservatively upper-bound ordinary text tokens. Include the
     # structured schema and reserve chat overhead/output rather than allowing
@@ -153,8 +170,15 @@ def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier
         if len(refs) != len(set(refs)) or any(ref not in source_map for ref in refs):
             raise PRDValidationError(f"{claim_id}: duplicate or unknown source fact ID.")
         categories = {f"{source_map[ref].topic}.{source_map[ref].key}" for ref in refs}
-        if claim["category"] not in definitions or claim["category"] not in categories:
-            raise PRDValidationError(f"{claim_id}: category {claim['category']} is not supported by the cited fact categories {sorted(categories)}.")
+        compatible_source_categories = compatible_categories(categories)
+        if (
+            claim["category"] not in definitions
+            or claim["category"] not in compatible_source_categories
+        ):
+            raise PRDValidationError(
+                f"{claim_id}: category {claim['category']} is not supported by "
+                f"the cited fact categories {sorted(categories)}."
+            )
     cited = {ref for _, claim in claims for ref in claim["source_fact_ids"]}
     if set(source_map) - cited:
         raise PRDValidationError(f"Confirmed facts omitted from the draft: {sorted(set(source_map) - cited)}.")
@@ -165,9 +189,13 @@ def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier
     for source in sources:
         observed = independent_categories(classifier, dict(evidence=source.evidence,
             source_question=source.source_question), definitions, cache)
-        if f"{source.topic}.{source.key}" not in observed:
-            raise PRDValidationError(f"{source.fact_id}: source evidence does not independently support {source.topic}.{source.key}; observed categories: {sorted(observed)}.")
-        source_meanings[source.fact_id] = observed
+        stored_category = f"{source.topic}.{source.key}"
+        if stored_category not in compatible_categories(set(observed)):
+            raise PRDValidationError(
+                f"{source.fact_id}: source evidence does not independently support "
+                f"{stored_category}; observed categories: {sorted(observed)}."
+            )
+        source_meanings[source.fact_id] = compatible_categories(set(observed))
     verdicts = []
     for claim_id, claim in claims:
         refs = set(claim["source_fact_ids"])
@@ -177,8 +205,16 @@ def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier
         observed = independent_categories(classifier, text, definitions, cache)
         source_categories = {f"{source_map[ref].topic}.{source_map[ref].key}" for ref in refs}
         supported_meanings = set().union(*(source_meanings[ref] for ref in refs))
-        if claim["category"] not in observed or not observed.issubset(supported_meanings):
-            raise PRDValidationError(f"{claim_id}: independently classified as {sorted(observed)}, which does not match the declared/cited categories {sorted(source_categories)}.")
+        observed_compatible = compatible_categories(set(observed))
+        if (
+            claim["category"] not in observed_compatible
+            or not set(observed).issubset(supported_meanings)
+        ):
+            raise PRDValidationError(
+                f"{claim_id}: independently classified as {sorted(observed)}, "
+                f"which does not match the declared/cited categories "
+                f"{sorted(source_categories)}."
+            )
         payload = dict(claim_id=claim_id, claim=claim,
             field_definition=definitions[claim["category"]],
             cited_facts=[source_map[ref].model_dump(mode="json") for ref in claim["source_fact_ids"]],
