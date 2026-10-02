@@ -101,6 +101,11 @@ Then check every part of the generated text, name, description, conditions,
 actor_ids and validation criterion. Reject any added or changed behavior.
 Preserve source categories, actor ownership, capacities, thresholds, boundaries,
 polarity, exceptions and qualifiers. Missing a relevant condition also fails.
+NARROW OVERLAP RULE: CORE_WORKFLOW.completion_condition and
+CORE_WORKFLOW.end_state may overlap when the cited founder evidence itself
+explicitly supports the generated meaning. Do not reject solely because one of
+those two compatible labels is stored on the source while the other is declared
+on the claim; still reject any behavior or meaning not supported by the quote.
 Approval authority does NOT imply exclusive visibility or ownership. Permissions
 do NOT follow from ordinary capabilities. Preserve > versus >= and the amount.
 The declared category must match the actual claim, not just its source ID.
