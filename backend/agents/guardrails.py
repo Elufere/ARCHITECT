@@ -104,6 +104,27 @@ def questions_are_semantic_duplicates(first: str, second: str) -> bool:
     return " ".join(first.lower().split()) == " ".join(second.lower().split())
 
 
+def _core_actor_question_matches_objective(question: str) -> bool:
+    text = " ".join((question or "").lower().split())
+    identity_shape = bool(
+        re.search(
+            r"\bwho\b.*\b(?:use|uses|using|interact|users?|people|roles?|participants?)\b"
+            r"|\bwho\s+else\b"
+            r"|\banyone\s+else\b"
+            r"|\b(?:other|additional)\s+(?:users?|people|roles?|participants?)\b",
+            text,
+        )
+    )
+    neighboring_behavior = bool(
+        re.search(
+            r"\b(?:manage|view|edit|delete|create|pay|approve|cancel|share|"
+            r"access)\b[^?]{0,80}\b(?:list|order|transaction|record|item|data|account)s?\b",
+            text,
+        )
+    )
+    return identity_shape and not neighboring_behavior
+
+
 def delivered_prior_questions(messages: list) -> list[str]:
     """Return only delivered interview questions, excluding advisory prose/drafts."""
     questions = []
@@ -497,11 +518,37 @@ def evaluate_question(state: dict) -> dict:
         print("===== END EARLY GUARDRAIL REJECT =====\n")
         return {"messages": [SystemMessage(content=USER_SCOPE_ROLE_REJECTION)]}
 
+    selected_inquiry = state.get("selected_inquiry") or {}
+    selected_inquiry_id = str(
+        selected_inquiry.get("inquiry_id")
+        or selected_inquiry.get("id")
+        or ""
+    )
+    current_question = final_question_text(last_message.content)
+    if (
+        selected_inquiry_id.endswith("|model.core_actors")
+        and not _core_actor_question_matches_objective(current_question)
+    ):
+        logger.warning(
+            "Generated core-actor question drifted into neighboring behavior. Forcing retry."
+        )
+        return {
+            "messages": [
+                SystemMessage(
+                    content=(
+                        "CRITICAL ERROR: The selected objective is actor identity only. "
+                        "Ask only who directly uses/interacts with the product or whether "
+                        "any other actors exist. Do not ask about permissions, ownership, "
+                        "access scope, list/data visibility, or actor capabilities."
+                    )
+                )
+            ]
+        }
+
     # --------------------------------------------------------
     # Check 2: Deterministic duplicate-question check
     # --------------------------------------------------------
     prior_ai_questions = delivered_prior_questions(messages)
-    current_question = final_question_text(last_message.content)
     duplicate = next(
         (question for question in prior_ai_questions
          if questions_are_semantic_duplicates(current_question, question)),
