@@ -170,8 +170,9 @@ def test_structured_defer_design_forces_control_intent_without_text_regex():
     update = conversation_manager_node(state)
 
     assert update["conversation_intent"] == "design_deferral"
-    assert update["discovery_boundaries"][-1]["type"] == "design_deferral"
-    assert "design/engineering" in update["discovery_boundaries"][-1]["instruction"]
+    assert update["discovery_boundaries"][-1]["type"] == "decision_deferral"
+    assert update["discovery_boundaries"][-1]["kind"] == "design_implementation"
+    assert "intentionally unresolved" in update["discovery_boundaries"][-1]["instruction"]
 
 
 def test_structured_unknown_replans_and_continue_discovery_waits_for_missing_area():
