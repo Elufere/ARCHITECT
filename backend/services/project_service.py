@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from agents.diagnostic_log import diagnostic_session
 from agents.interview_checkpoint import checkpoint_path, load_checkpoint, save_checkpoint
 from agents.llm_errors import ExtractionFailed, LLMCallFailed
 from api.schemas import ProjectSummary, WorkspaceSnapshot
@@ -65,7 +66,12 @@ def create_project_workspace(*, name: str, description: str) -> WorkspaceSnapsho
         raise
 
     try:
-        advance_discovery_to_waiting(project.discovery_session_id)
+        with diagnostic_session(
+            project.discovery_session_id,
+            project_id=project.id,
+            operation="project_initialization",
+        ):
+            advance_discovery_to_waiting(project.discovery_session_id)
     except LLMCallFailed as exc:
         _mark_initialization_failure(project.discovery_session_id)
         raise ProjectInitializationError(
