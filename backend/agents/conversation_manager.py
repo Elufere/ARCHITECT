@@ -304,6 +304,23 @@ def conversation_manager_node(state: AgentState) -> dict:
             messages[-1].content,
         )
 
+    # Completion intent has priority over free-text deferral. A founder asking
+    # to finish/generate the PRD must never be reinterpreted as "decide later".
+    if (
+        not structured_turn
+        and intent in {"product_information", "confirmation", "uncertainty", "correction"}
+        and should_review_completion_intent(state, messages[-1].content)
+    ):
+        completion = review_completion_intent(state, messages[-1].content)
+        if completion.wants_to_finish_discovery:
+            intent = "close_discovery"
+            control_updates = {
+                **control_updates,
+                "founder_requested_completion": True,
+                "completion_request_evidence": messages[-1].content,
+                "completion_arbitration_complete": False,
+            }
+
     if (
         not structured_turn
         and intent in {"product_information", "uncertainty", "correction"}
@@ -318,21 +335,6 @@ def conversation_manager_node(state: AgentState) -> dict:
             control_updates = apply_reopen(state, review)
             if review.primary_control_intent:
                 intent = "reopen_deferral"
-
-    if (
-        not structured_turn
-        and intent in {"product_information", "confirmation", "uncertainty"}
-        and should_review_completion_intent(state, messages[-1].content)
-    ):
-        completion = review_completion_intent(state, messages[-1].content)
-        if completion.wants_to_finish_discovery:
-            intent = "close_discovery"
-            control_updates = {
-                **control_updates,
-                "founder_requested_completion": True,
-                "completion_request_evidence": messages[-1].content,
-                "completion_arbitration_complete": False,
-            }
 
     if (
         intent == "product_information"
