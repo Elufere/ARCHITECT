@@ -1,5 +1,6 @@
 """HTTP routes for the product-facing Architect API."""
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 
 from api.schemas import (
     CreateProjectInput,
@@ -21,7 +22,12 @@ from services.prd_generation import (
     PrdGenerationStateError,
     generate_project_prd,
 )
-from services.project_repository import ProjectNotFoundError, ProjectRepositoryError
+from agents.diagnostic_log import diagnostic_log_path, session_log_exists
+from services.project_repository import (
+    ProjectNotFoundError,
+    ProjectRepositoryError,
+    get_project,
+)
 from services.project_service import (
     ProjectInitializationError,
     create_project_workspace,
@@ -166,3 +172,27 @@ def generate_prd(project_id: str) -> WorkspaceSnapshot:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except WorkspaceUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+
+@router.get("/projects/{project_id}/debug-log")
+def download_project_debug_log(project_id: str):
+    """Download the complete terminal-style diagnostic log for one Project."""
+    try:
+        project = get_project(project_id)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ProjectRepositoryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if not session_log_exists(project.discovery_session_id):
+        raise HTTPException(
+            status_code=404,
+            detail="No diagnostic log has been recorded for this project yet.",
+        )
+
+    return FileResponse(
+        path=diagnostic_log_path(project.discovery_session_id),
+        media_type="text/plain; charset=utf-8",
+        filename=f"{project.id}-architect-debug.log",
+    )
