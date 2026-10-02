@@ -9,6 +9,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
+import logging
 import os
 from pathlib import Path
 import sys
@@ -34,6 +35,7 @@ _operation: ContextVar[str | None] = ContextVar(
 
 _write_lock = RLock()
 _install_lock = RLock()
+_log_handler = None
 
 
 def diagnostic_log_directory() -> Path:
@@ -59,6 +61,21 @@ def _append(session_id: str, content: str) -> None:
         with path.open("a", encoding="utf-8", newline="") as handle:
             handle.write(content)
             handle.flush()
+
+
+class _SessionLogHandler(logging.Handler):
+    """Duplicate standard logging records into the active session trace."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        session_id = _session_id.get()
+        if not session_id:
+            return
+        try:
+            message = self.format(record)
+            _append(session_id, message + "\n")
+        except Exception:
+            # Diagnostics must never interfere with Architect execution.
+            pass
 
 
 class _SessionTee:
@@ -103,8 +120,9 @@ class _SessionTee:
 
 
 def install_diagnostic_streams() -> None:
-    """Install stdout/stderr teeing exactly once for this Python process."""
+    """Install stream teeing and logging capture exactly once per process."""
 
+    global _log_handler
     with _install_lock:
         # Test runners, notebook shells and reloaders can replace sys.stdout or
         # sys.stderr after startup. Re-wrap the current streams when necessary.
@@ -112,6 +130,15 @@ def install_diagnostic_streams() -> None:
             sys.stdout = _SessionTee(sys.stdout)
         if not isinstance(sys.stderr, _SessionTee):
             sys.stderr = _SessionTee(sys.stderr)
+
+        if _log_handler is None:
+            handler = _SessionLogHandler()
+            handler.setLevel(logging.DEBUG)
+            handler.setFormatter(logging.Formatter(
+                "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+            ))
+            logging.getLogger().addHandler(handler)
+            _log_handler = handler
 
 
 def _stamp() -> str:
@@ -139,6 +166,7 @@ def diagnostic_session(
             "\n"
             + "=" * 88
             + f"\nARCHITECT SESSION LOG | {_stamp()}"
+            + f"\nlog_file: {diagnostic_log_path(canonical)}"
             + f"\nproject: {project_id or 'cli'}"
             + f"\nsession: {canonical}"
             + f"\noperation: {operation}"
