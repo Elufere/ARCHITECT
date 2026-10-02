@@ -6,6 +6,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from agents.diagnostic_log import install_diagnostic_streams
 from api.routes import router
 
 
@@ -13,6 +14,8 @@ def _frontend_origins() -> list[str]:
     raw = os.getenv("ARCHITECT_FRONTEND_ORIGINS", "http://localhost:5173")
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
+
+install_diagnostic_streams()
 
 app = FastAPI(
     title="Architect API",
