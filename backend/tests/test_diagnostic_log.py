@@ -1,12 +1,16 @@
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from langchain_core.messages import AIMessage, HumanMessage
 
 from agents.diagnostic_log import (
     diagnostic_log_path,
     diagnostic_session,
+    log_messages_since,
+    log_state_snapshot,
     session_log_exists,
 )
 
@@ -99,3 +103,70 @@ def test_download_debug_log_route_returns_404_before_first_log(monkeypatch):
         routes.download_project_debug_log("escrow-app-a1b2c3d4")
 
     assert exc.value.status_code == 404
+
+
+
+def test_diagnostic_log_contains_state_conversation_and_python_logging(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("ARCHITECT_LOG_DIR", str(tmp_path / "logs"))
+    session_id = str(uuid4())
+
+    with diagnostic_session(
+        session_id,
+        project_id="escrow-app-a1b2c3d4",
+        operation="discovery_turn:answer",
+    ):
+        logging.getLogger("agents.guardrails").warning(
+            "Question retry limit reached"
+        )
+        log_state_snapshot(
+            {
+                "turn_count": 8,
+                "discovery_scope": "USER_APP",
+                "checkpoint_cursor": "waiting",
+                "interview_status": "WAITING_FOR_USER",
+                "conversation_intent": "product_information",
+                "current_topic": "CORE_WORKFLOW",
+                "current_gap": "workflow_steps",
+                "current_objective": "Decide payment recovery.",
+                "active_discovery_thread": "payments",
+                "selected_inquiry": {
+                    "id": "inquiry-payment",
+                    "decision_key": "payment_failure_recovery",
+                },
+                "active_requirements": {
+                    "USER_APP|payment_recovery": {"status": "ACTIVE"}
+                },
+                "open_inquiries": [],
+                "discovery_boundaries": [],
+                "founder_requested_completion": False,
+                "completion_arbitration_complete": False,
+                "prd_confirmation_pending": False,
+                "ready_to_compile": False,
+                "prd_contract": None,
+                "extraction_status": "SUCCESS",
+            },
+            label="after discovery turn",
+        )
+        log_messages_since(
+            {
+                "messages": [
+                    HumanMessage(content="Leave this to engineering."),
+                    AIMessage(content="Understood. I will move on."),
+                ]
+            },
+            start_index=0,
+        )
+
+    content = diagnostic_log_path(session_id).read_text(encoding="utf-8")
+
+    assert "Question retry limit reached" in content
+    assert "ARCHITECT STATE AFTER DISCOVERY TURN" in content
+    assert "decision_key: payment_failure_recovery" in content
+    assert "active_requirements: 1" in content
+    assert "FOUNDER:" in content
+    assert "Leave this to engineering." in content
+    assert "ARCHITECT:" in content
+    assert "Understood. I will move on." in content
