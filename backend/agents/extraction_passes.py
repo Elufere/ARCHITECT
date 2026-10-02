@@ -118,7 +118,10 @@ independently states two different meanings.
 
 Kinds:
 - primary_actor / secondary_actor: identity or membership of a functional user
-  of the CURRENT scoped application. The founder's quote itself must establish
+  of the CURRENT scoped application. Explicit whole-set absence is also valid:
+  phrases such as "there are no other users/roles/participants" should produce
+  a secondary_actor claim with absence="none", value="none", and no role.
+  The founder's quote itself must establish
   that this person/role uses or directly interacts with the CURRENT scoped
   application. Merely participating in the business process, approving/reviewing
   something downstream, resolving a dispute, or being named in the PM's question
@@ -242,7 +245,9 @@ For every claim:
   For multiple_roles/role_transition, role is optional but SHOULD contain the
   canonical actor when the source explicitly links that actor to named capacity
   aliases; aliases then contains those capacity labels.
-- actor identity claims put the canonical actor ID in role. When the source
+- actor identity claims put the canonical actor ID in role. An explicit
+  secondary-actor whole-set absence uses role=null, absence="none", value="none",
+  and the exact absence phrase as evidence. When the source
   explicitly says one actor can act as named capacities (for example customer
   acting as buyer or seller), keep the canonical actor in role and put those
   capacity labels in aliases.
