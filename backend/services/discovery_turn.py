@@ -63,11 +63,27 @@ def submit_project_discovery_turn(
                 print("message:")
                 print(turn.message)
             print("==================================")
-            after = submit_discovery_session_turn(
-                project.discovery_session_id,
-                turn_type=turn.type,
-                message=turn.message,
-            )
+            try:
+                after = submit_discovery_session_turn(
+                    project.discovery_session_id,
+                    turn_type=turn.type,
+                    message=turn.message,
+                )
+            except Exception:
+                try:
+                    failed = load_checkpoint(project.discovery_session_id)
+                    log_messages_since(
+                        failed,
+                        start_index=before_count,
+                        label="MESSAGES SAVED BEFORE FAILURE",
+                    )
+                    log_state_snapshot(failed, label="saved state after discovery failure")
+                except Exception as snapshot_exc:
+                    print(
+                        "DIAGNOSTIC SNAPSHOT ERROR: "
+                        f"{type(snapshot_exc).__name__}: {snapshot_exc}"
+                    )
+                raise
             log_messages_since(
                 after,
                 start_index=before_count,
@@ -91,7 +107,23 @@ def retry_project_discovery(project_id: str) -> WorkspaceSnapshot:
             before = load_checkpoint(project.discovery_session_id)
             before_count = len(before.get("messages", []))
             log_state_snapshot(before, label="before discovery retry")
-            after = retry_discovery_session(project.discovery_session_id)
+            try:
+                after = retry_discovery_session(project.discovery_session_id)
+            except Exception:
+                try:
+                    failed = load_checkpoint(project.discovery_session_id)
+                    log_messages_since(
+                        failed,
+                        start_index=before_count,
+                        label="MESSAGES SAVED BEFORE RETRY FAILURE",
+                    )
+                    log_state_snapshot(failed, label="saved state after retry failure")
+                except Exception as snapshot_exc:
+                    print(
+                        "DIAGNOSTIC SNAPSHOT ERROR: "
+                        f"{type(snapshot_exc).__name__}: {snapshot_exc}"
+                    )
+                raise
             log_messages_since(
                 after,
                 start_index=before_count,
