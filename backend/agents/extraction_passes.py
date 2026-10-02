@@ -8,7 +8,7 @@ from agents.state import BUSINESS_RULES_KEYS, CONSTRAINTS_KEYS, MVP_SCOPE_KEYS, 
 from agents.extraction_contract import valid_role_id
 from agents.discovery_fields import FIELD_DEFINITIONS
 
-GENERIC_ROLES = {"user", "users", "people", "person", "demand_side", "supply_side"}
+GENERIC_ROLES = {"people", "person", "demand_side", "supply_side"}
 
 
 def absence_label(value: str) -> str | None:
