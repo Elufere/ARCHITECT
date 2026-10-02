@@ -1,6 +1,7 @@
 """Interactive PM CLI with durable input and graph-boundary recovery."""
 from uuid import uuid4
 
+from agents.diagnostic_log import diagnostic_session, install_diagnostic_streams
 from agents.state import AgentState, DiscoveryScope
 from agents.graph import build_graph
 from agents.interview_checkpoint import save_checkpoint, load_checkpoint, session_lock
@@ -125,6 +126,7 @@ def run_session(state):
 
 
 def run_cli():
+    install_diagnostic_streams()
     print("ARCHITECT - PRODUCT MANAGER\nType 'quit' to save and exit. Use '.' on a blank line to send input.")
     session_id = None
     try:
@@ -136,7 +138,11 @@ def run_cli():
             state = load_checkpoint(session_id)
             print(f"Session: {session_id}")
             try:
-                run_session(state)
+                with diagnostic_session(
+                    session_id,
+                    operation="cli_interview",
+                ):
+                    run_session(state)
             except (LLMCallFailed, ExtractionFailed) as exc:
                 print(f"\n{exc}")
                 saved = load_checkpoint(session_id)
