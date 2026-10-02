@@ -25,7 +25,24 @@ _completion_intent_model = None
 # The model below makes the actual intent decision from conversation context.
 COMPLETION_REVIEW_SHAPE = re.compile(
     r"\b(?:covered|everything|nothing|finish|finished|done|wrap|enough|"
-    r"anything\s+else|no\s+more|that'?s\s+all|all\s+good)\b|^\s*no\s*[.!]*\s*$",
+    r"anything\s+else|no\s+more|that'?s\s+all|all\s+good|"
+    r"generate\s+(?:the\s+)?prd|create\s+(?:the\s+)?prd|"
+    r"make\s+(?:the\s+)?prd)\b|^\s*no\s*[.!]*\s*$",
+    re.I,
+)
+
+EXPLICIT_FINISH_REQUEST = re.compile(
+    r"\b(?:we(?:'ve|\s+have)\s+covered\s+everything|"
+    r"covered\s+everything(?:\s+about\s+the\s+product)?|"
+    r"generate\s+(?:the\s+)?prd|create\s+(?:the\s+)?prd|"
+    r"make\s+(?:the\s+)?prd)\b",
+    re.I,
+)
+
+WRAP_UP_QUESTION = re.compile(
+    r"\b(?:anything\s+else|anything\s+more|more\s+to\s+cover|"
+    r"everything\s+important|covered\s+everything|ready\s+to\s+generate|"
+    r"before\s+i\s+generate\s+the\s+prd)\b",
     re.I,
 )
 
@@ -44,9 +61,12 @@ def completion_intent_model():
 def should_review_completion_intent(state: AgentState, founder_message: str) -> bool:
     if state.get("prd_confirmation_pending"):
         return False
-    if not founder_message.strip():
+    normalized = founder_message.replace("’", "'").strip()
+    if not normalized:
         return False
-    return bool(COMPLETION_REVIEW_SHAPE.search(founder_message.replace("’", "'")))
+    if re.fullmatch(r"no[.!]*", normalized, re.I):
+        return bool(WRAP_UP_QUESTION.search(_previous_question(state)))
+    return bool(COMPLETION_REVIEW_SHAPE.search(normalized))
 
 
 def _previous_question(state: AgentState) -> str:
@@ -80,6 +100,12 @@ def review_completion_intent(
     state: AgentState,
     founder_message: str,
 ) -> CompletionIntentReview:
+    if EXPLICIT_FINISH_REQUEST.search(founder_message.replace("’", "'")):
+        return CompletionIntentReview(
+            wants_to_finish_discovery=True,
+            reason="Founder explicitly requested discovery completion / PRD generation.",
+        )
+
     payload = {
         "previous_pm_question": _previous_question(state),
         "selected_objective": state.get("current_objective"),
