@@ -1,6 +1,7 @@
 """Project-oriented discovery turn and retry application service."""
 from __future__ import annotations
 
+from agents.diagnostic_log import diagnostic_session
 from agents.llm_errors import ExtractionFailed, LLMCallFailed
 from api.schemas import DiscoveryTurnInput, WorkspaceSnapshot
 from services.discovery_session import (
@@ -43,11 +44,16 @@ def submit_project_discovery_turn(
 ) -> WorkspaceSnapshot:
     project = get_project(project_id)
     try:
-        submit_discovery_session_turn(
+        with diagnostic_session(
             project.discovery_session_id,
-            turn_type=turn.type,
-            message=turn.message,
-        )
+            project_id=project.id,
+            operation=f"discovery_turn:{turn.type}",
+        ):
+            submit_discovery_session_turn(
+                project.discovery_session_id,
+                turn_type=turn.type,
+                message=turn.message,
+            )
     except (LLMCallFailed, ExtractionFailed) as exc:
         raise _processing_failure(project.id, exc) from exc
 
@@ -57,7 +63,12 @@ def submit_project_discovery_turn(
 def retry_project_discovery(project_id: str) -> WorkspaceSnapshot:
     project = get_project(project_id)
     try:
-        retry_discovery_session(project.discovery_session_id)
+        with diagnostic_session(
+            project.discovery_session_id,
+            project_id=project.id,
+            operation="discovery_retry",
+        ):
+            retry_discovery_session(project.discovery_session_id)
     except (LLMCallFailed, ExtractionFailed) as exc:
         raise _processing_failure(project.id, exc) from exc
 
