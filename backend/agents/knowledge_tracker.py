@@ -775,6 +775,29 @@ def _canonical_claim_role(role: str | None, state: AgentState, scope: DiscoveryS
     return canonical_role(identity) if identity else None
 
 
+def _explicit_additional_actor_absence_claim(
+    user_response: str,
+) -> NeutralClaim | None:
+    """Recover an explicit whole-set denial of additional application actors."""
+    match = re.search(
+        r"\b(?:there\s+(?:are|is)\s+)?no\s+(?:other|additional)\s+"
+        r"(?:user\s+roles?|users?|people|participants?|actors?)\b",
+        user_response,
+        re.I,
+    )
+    if not match:
+        return None
+    evidence = user_response[match.start():match.end()]
+    return NeutralClaim(
+        kind="secondary_actor",
+        value="none",
+        evidence=evidence,
+        confidence=1.0,
+        knowledge_state=KnowledgeState.CONFIRMED,
+        absence="none",
+    )
+
+
 def _explicit_whole_field_absence(evidence: str) -> bool:
     return bool(re.search(
         r"\b(?:no|none|nothing|nobody|no\s+other|only|never|not\s+applicable|"
@@ -961,6 +984,15 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
             claims.append(NeutralClaim.model_validate(raw_claim))
         except ValidationError as exc:
             print(f"CLAIM REJECTED: invalid claim schema | {exc}")
+
+    explicit_additional_absence = _explicit_additional_actor_absence_claim(
+        user_response
+    )
+    if explicit_additional_absence and not any(
+        claim.kind == "secondary_actor" and claim.absence
+        for claim in claims
+    ):
+        claims.append(explicit_additional_absence)
 
     primary_roles, secondary_roles = _existing_actor_sets(state, scope)
     accepted: list[KnowledgeItem] = []
