@@ -1,7 +1,8 @@
-import { FileText, Lightbulb, MessageSquareText } from "lucide-react";
+import { Download, FileText, Lightbulb, MessageSquareText } from "lucide-react";
 import { NavLink, Outlet, useParams } from "react-router-dom";
 
 import { useWorkspace } from "@/features/discovery/queries";
+import { projectDebugLogUrl } from "@/lib/workspaceApi";
 
 const tabs = [
   { path: "discovery", label: "Discovery", icon: MessageSquareText },
@@ -13,6 +14,7 @@ export function ProjectLayout() {
   const { projectId = "" } = useParams();
   const { data: workspace, isLoading, isError, error, refetch } =
     useWorkspace(projectId);
+  const debugLogUrl = projectDebugLogUrl(projectId);
 
   if (isLoading) {
     return <div className="p-8 text-sm text-neutral-500">Loading project…</div>;
@@ -46,8 +48,20 @@ export function ProjectLayout() {
               {workspace.project.name}
             </h1>
           </div>
-          <div className="rounded-full border border-black/8 bg-white px-3 py-1.5 text-xs text-neutral-500">
-            {workspace.project.status.replaceAll("_", " ")}
+          <div className="flex items-center gap-2">
+            {debugLogUrl && (
+              <a
+                href={debugLogUrl}
+                className="flex items-center gap-2 rounded-full border border-black/8 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 transition hover:text-neutral-950"
+                title="Download the full terminal-style diagnostic log for this project"
+              >
+                <Download size={13} />
+                Debug log
+              </a>
+            )}
+            <div className="rounded-full border border-black/8 bg-white px-3 py-1.5 text-xs text-neutral-500">
+              {workspace.project.status.replaceAll("_", " ")}
+            </div>
           </div>
         </div>
 
