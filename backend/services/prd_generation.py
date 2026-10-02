@@ -118,7 +118,23 @@ def generate_project_prd(project_id: str) -> WorkspaceSnapshot:
             before = load_checkpoint(project.discovery_session_id)
             before_count = len(before.get("messages", []))
             log_state_snapshot(before, label="before PRD generation")
-            _run_with_session_lock(project.discovery_session_id, operation)
+            try:
+                _run_with_session_lock(project.discovery_session_id, operation)
+            except Exception:
+                try:
+                    failed = load_checkpoint(project.discovery_session_id)
+                    log_messages_since(
+                        failed,
+                        start_index=before_count,
+                        label="MESSAGES SAVED BEFORE PRD FAILURE",
+                    )
+                    log_state_snapshot(failed, label="saved state after PRD failure")
+                except Exception as snapshot_exc:
+                    print(
+                        "DIAGNOSTIC SNAPSHOT ERROR: "
+                        f"{type(snapshot_exc).__name__}: {snapshot_exc}"
+                    )
+                raise
             after = load_checkpoint(project.discovery_session_id)
             log_messages_since(
                 after,
