@@ -1,0 +1,181 @@
+"""Regressions from the short grocery-list end-to-end discovery run."""
+
+import pytest
+from langchain_core.messages import AIMessage, HumanMessage
+
+import agents.conversation_manager as conversation
+import agents.discovery_completion as completion
+import agents.knowledge_tracker as tracker
+from agents.extraction_passes import NeutralClaim, canonical_role
+from agents.question_generator import _core_actor_question
+from agents.guardrails import _core_actor_question_matches_objective
+from agents.state import DiscoveryScope as S, DiscoveryTopic as T, KnowledgeState as K
+from services.discovery_session import create_initial_discovery_state
+
+
+def test_explicit_user_is_a_valid_canonical_actor_and_owns_same_turn_actions():
+    text = (
+        "I want a grocery list app for individual users. "
+        "Users can create a list and mark items as bought."
+    )
+    state = {
+        "messages": [HumanMessage(content=text)],
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [],
+        "turn_count": 0,
+    }
+    primary_roles: set[str] = set()
+    secondary_roles: set[str] = set()
+
+    actor = tracker._admit_claim_item(
+        NeutralClaim(
+            kind="primary_actor",
+            role="Users",
+            value="individual users",
+            evidence="individual users",
+            confidence=1,
+            knowledge_state=K.CONFIRMED,
+        ),
+        state,
+        S.USER_APP,
+        primary_roles,
+        secondary_roles,
+    )
+
+    assert actor is not None
+    assert actor.key == "primary_users"
+    assert actor.roles == ["user"]
+    primary_roles.update(canonical_role(role) for role in actor.roles or [])
+
+    action = tracker._admit_claim_item(
+        NeutralClaim(
+            kind="actor_action",
+            role="user",
+            value="create a list",
+            evidence="Users can create a list",
+            confidence=1,
+            knowledge_state=K.CONFIRMED,
+        ),
+        {**state, "discovered_knowledge": [actor]},
+        S.USER_APP,
+        primary_roles,
+        secondary_roles,
+    )
+
+    assert action is not None
+    assert action.key == "responsibilities"
+    assert action.role == "user"
+
+
+def test_explicit_no_other_user_roles_becomes_secondary_actor_absence():
+    text = "There are no other user roles, payments, integrations, or admin features."
+
+    claim = tracker._explicit_additional_actor_absence_claim(text)
+
+    assert claim is not None
+    assert claim.kind == "secondary_actor"
+    assert claim.absence == "none"
+    assert claim.value == "none"
+    assert claim.evidence == "There are no other user roles"
+
+
+def test_access_answer_cannot_become_primary_user_absence(monkeypatch):
+    state = {
+        "messages": [
+            AIMessage(
+                content=(
+                    "Should each user only be able to manage their own grocery lists, "
+                    "or can they view other users' lists?"
+                )
+            ),
+            HumanMessage(content="they can only manage their list"),
+        ],
+        "current_topic": T.USER_ROLES,
+        "current_gap": "primary_users",
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [],
+        "turn_count": 4,
+    }
+
+    monkeypatch.setattr(
+        tracker,
+        "semantic_decision",
+        lambda *args, **kwargs: pytest.fail(
+            "GAP_ANSWER must not run for a non-identity actor question"
+        ),
+    )
+
+    assert tracker.extract_gap_absence(
+        "they can only manage their list",
+        state,
+        S.USER_APP,
+    ) is None
+
+
+def test_core_actor_question_cannot_drift_into_access_or_capabilities():
+    state = create_initial_discovery_state("A grocery list app.")
+
+    question = _core_actor_question(state, S.USER_APP)
+
+    assert question == "Who exactly will directly use or interact with this product?"
+    assert _core_actor_question_matches_objective(question)
+    assert not _core_actor_question_matches_objective(
+        "Should each user manage only their own list or view other users' lists?"
+    )
+
+
+def test_bare_no_to_substantive_product_question_is_not_completion():
+    state = create_initial_discovery_state("A grocery list app.")
+    state["messages"].extend([
+        AIMessage(content="Should users be able to share their lists?"),
+        HumanMessage(content="no"),
+    ])
+
+    assert completion.should_review_completion_intent(state, "no") is False
+
+
+def test_bare_no_to_wrap_up_question_can_be_completion():
+    state = create_initial_discovery_state("A grocery list app.")
+    state["messages"].extend([
+        AIMessage(content="Is there anything else you want to cover?"),
+        HumanMessage(content="no"),
+    ])
+
+    assert completion.should_review_completion_intent(state, "no") is True
+
+
+def test_generate_prd_is_explicit_completion_without_model_call(monkeypatch):
+    state = create_initial_discovery_state("A grocery list app.")
+
+    monkeypatch.setattr(
+        completion,
+        "completion_intent_model",
+        lambda: pytest.fail("Explicit generate PRD intent should not need an LLM call"),
+    )
+
+    review = completion.review_completion_intent(state, "generate prd")
+
+    assert review.wants_to_finish_discovery is True
+
+
+def test_completion_request_wins_over_free_text_deferral(monkeypatch):
+    state = create_initial_discovery_state("A grocery list app.")
+    state["messages"].append(
+        HumanMessage(content="we have covered everything about the product, generate the prd")
+    )
+    state["turn_count"] = 8
+
+    monkeypatch.setattr(
+        conversation,
+        "should_review_free_text_deferral",
+        lambda current: pytest.fail(
+            "Completion request must bypass free-text deferral classification"
+        ),
+    )
+
+    update = conversation.conversation_manager_node(state)
+
+    assert update["conversation_intent"] == "close_discovery"
+    assert update["founder_requested_completion"] is True
+    assert update["completion_arbitration_complete"] is False
+    assert "messages" not in update
