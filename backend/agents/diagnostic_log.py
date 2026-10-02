@@ -233,7 +233,19 @@ def log_state_snapshot(state: dict, *, label: str) -> None:
         "active_requirements": sum(
             1
             for item in (state.get("active_requirements", {}) or {}).values()
-            if getattr(getattr(item, "status", None), "value", getattr(item, "status", None))
+            if getattr(
+                (
+                    item.get("status")
+                    if isinstance(item, dict)
+                    else getattr(item, "status", None)
+                ),
+                "value",
+                (
+                    item.get("status")
+                    if isinstance(item, dict)
+                    else getattr(item, "status", None)
+                ),
+            )
             == "ACTIVE"
         ),
         "discovery_boundaries": len(state.get("discovery_boundaries", []) or []),
