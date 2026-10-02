@@ -81,7 +81,26 @@ def create_project_workspace(*, name: str, description: str) -> WorkspaceSnapsho
             print("===== FOUNDER PROJECT IDEA =====")
             print(project.description)
             print("================================")
-            after = advance_discovery_to_waiting(project.discovery_session_id)
+            try:
+                after = advance_discovery_to_waiting(project.discovery_session_id)
+            except Exception:
+                try:
+                    failed = load_checkpoint(project.discovery_session_id)
+                    log_messages_since(
+                        failed,
+                        start_index=before_count,
+                        label="MESSAGES SAVED BEFORE INITIALIZATION FAILURE",
+                    )
+                    log_state_snapshot(
+                        failed,
+                        label="saved state after initialization failure",
+                    )
+                except Exception as snapshot_exc:
+                    print(
+                        "DIAGNOSTIC SNAPSHOT ERROR: "
+                        f"{type(snapshot_exc).__name__}: {snapshot_exc}"
+                    )
+                raise
             log_messages_since(
                 after,
                 start_index=before_count,
