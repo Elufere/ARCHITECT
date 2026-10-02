@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 import sys
+import traceback
 from threading import RLock
 from uuid import UUID
 
@@ -31,7 +32,6 @@ _operation: ContextVar[str | None] = ContextVar(
 
 _write_lock = RLock()
 _install_lock = RLock()
-_installed = False
 
 
 def diagnostic_log_directory() -> Path:
@@ -103,15 +103,13 @@ class _SessionTee:
 def install_diagnostic_streams() -> None:
     """Install stdout/stderr teeing exactly once for this Python process."""
 
-    global _installed
     with _install_lock:
-        if _installed:
-            return
+        # Test runners, notebook shells and reloaders can replace sys.stdout or
+        # sys.stderr after startup. Re-wrap the current streams when necessary.
         if not isinstance(sys.stdout, _SessionTee):
             sys.stdout = _SessionTee(sys.stdout)
         if not isinstance(sys.stderr, _SessionTee):
             sys.stderr = _SessionTee(sys.stderr)
-        _installed = True
 
 
 def _stamp() -> str:
@@ -148,6 +146,19 @@ def diagnostic_session(
         yield
     except BaseException as exc:
         status = f"failed ({type(exc).__name__}: {exc})"
+        # FastAPI often translates expected processing failures into an HTTP
+        # response, so Uvicorn may never print their traceback. Preserve it in
+        # the session log without adding noisy stack traces to normal terminal
+        # output.
+        try:
+            _append(
+                canonical,
+                "\n===== ARCHITECT CAPTURED TRACEBACK =====\n"
+                + traceback.format_exc()
+                + "===== END CAPTURED TRACEBACK =====\n",
+            )
+        except Exception:
+            pass
         raise
     finally:
         print(
