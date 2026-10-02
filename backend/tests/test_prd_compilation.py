@@ -380,3 +380,55 @@ def test_reopened_deferral_is_not_published_in_prd(monkeypatch, tmp_path):
 
     assert result["pm_is_complete"]
     assert result["prd_contract"].deferred_decisions == []
+
+
+
+def test_completion_condition_claim_can_cite_compatible_end_state_fact(
+    monkeypatch,
+    tmp_path,
+):
+    quote = "A list is complete when every item has been marked as bought."
+    source_fact = fact(
+        topic=T.CORE_WORKFLOW,
+        key="end_state",
+        value="list is complete when every item has been marked as bought",
+        evidence=quote,
+        role=None,
+    )
+
+    def make(sources):
+        return dict(
+            product_name=None,
+            elevator_pitch=[
+                dict(
+                    text="A list is complete when every item has been marked as bought.",
+                    category="CORE_WORKFLOW.completion_condition",
+                    actor_ids=[],
+                    conditions=[],
+                    source_fact_ids=[sources[0]["fact_id"]],
+                )
+            ],
+            scope=dict(in_scope=[], out_of_scope=[]),
+            personas=[],
+            non_functional_constraints=[],
+            deferred_items=[],
+            open_questions=[],
+            functional_requirements=[],
+        )
+
+    calls = setup(
+        monkeypatch,
+        tmp_path,
+        make_draft=make,
+        classify=lambda payload: ["CORE_WORKFLOW.completion_condition"],
+    )
+
+    result = pm.pm_compile_node(state(source_fact))
+
+    assert result["pm_is_complete"] is True
+    assert not result["compilation_errors"]
+    assert len(calls["audit"]) == 1
+    saved = json.loads((tmp_path / "requirements_mvp.json").read_text())
+    assert saved["elevator_pitch"][0]["category"] == (
+        "CORE_WORKFLOW.completion_condition"
+    )
