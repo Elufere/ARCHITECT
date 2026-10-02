@@ -1,9 +1,14 @@
 """Project-oriented discovery turn and retry application service."""
 from __future__ import annotations
 
-from agents.diagnostic_log import diagnostic_session
+from agents.diagnostic_log import (
+    diagnostic_session,
+    log_messages_since,
+    log_state_snapshot,
+)
 from agents.llm_errors import ExtractionFailed, LLMCallFailed
 from api.schemas import DiscoveryTurnInput, WorkspaceSnapshot
+from agents.interview_checkpoint import load_checkpoint
 from services.discovery_session import (
     DiscoverySessionBusyError,
     DiscoverySessionStateError,
@@ -49,11 +54,26 @@ def submit_project_discovery_turn(
             project_id=project.id,
             operation=f"discovery_turn:{turn.type}",
         ):
-            submit_discovery_session_turn(
+            before = load_checkpoint(project.discovery_session_id)
+            before_count = len(before.get("messages", []))
+            log_state_snapshot(before, label="before discovery turn")
+            print("===== DISCOVERY TURN REQUEST =====")
+            print(f"type: {turn.type}")
+            if turn.message is not None:
+                print("message:")
+                print(turn.message)
+            print("==================================")
+            after = submit_discovery_session_turn(
                 project.discovery_session_id,
                 turn_type=turn.type,
                 message=turn.message,
             )
+            log_messages_since(
+                after,
+                start_index=before_count,
+                label="NEW CONVERSATION MESSAGES",
+            )
+            log_state_snapshot(after, label="after discovery turn")
     except (LLMCallFailed, ExtractionFailed) as exc:
         raise _processing_failure(project.id, exc) from exc
 
@@ -68,7 +88,16 @@ def retry_project_discovery(project_id: str) -> WorkspaceSnapshot:
             project_id=project.id,
             operation="discovery_retry",
         ):
-            retry_discovery_session(project.discovery_session_id)
+            before = load_checkpoint(project.discovery_session_id)
+            before_count = len(before.get("messages", []))
+            log_state_snapshot(before, label="before discovery retry")
+            after = retry_discovery_session(project.discovery_session_id)
+            log_messages_since(
+                after,
+                start_index=before_count,
+                label="NEW CONVERSATION MESSAGES",
+            )
+            log_state_snapshot(after, label="after discovery retry")
     except (LLMCallFailed, ExtractionFailed) as exc:
         raise _processing_failure(project.id, exc) from exc
 
