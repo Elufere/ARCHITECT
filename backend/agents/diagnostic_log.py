@@ -16,6 +16,8 @@ import traceback
 from threading import RLock
 from uuid import UUID
 
+from langchain_core.messages import AIMessage, HumanMessage
+
 
 _session_id: ContextVar[str | None] = ContextVar(
     "architect_diagnostic_session_id",
@@ -174,6 +176,78 @@ def diagnostic_session(
         _operation.reset(operation_token)
         _project_id.reset(project_token)
         _session_id.reset(session_token)
+
+
+def log_state_snapshot(state: dict, *, label: str) -> None:
+    """Print a stable, compact checkpoint summary into the active diagnostic log."""
+
+    selected = state.get("selected_inquiry") or {}
+    requirement = state.get("selected_requirement_candidate") or {}
+    topic = state.get("current_topic")
+    scope = state.get("discovery_scope")
+    summary = {
+        "turn_count": state.get("turn_count"),
+        "scope": getattr(scope, "value", scope),
+        "checkpoint_cursor": state.get("checkpoint_cursor"),
+        "interview_status": state.get("interview_status"),
+        "conversation_intent": state.get("conversation_intent"),
+        "current_topic": getattr(topic, "value", topic),
+        "current_gap": state.get("current_gap"),
+        "current_objective": state.get("current_objective"),
+        "active_thread": state.get("active_discovery_thread"),
+        "decision_key": selected.get("decision_key"),
+        "inquiry_id": selected.get("inquiry_id") or selected.get("id"),
+        "requirement_id": (
+            selected.get("requirement_id")
+            or requirement.get("requirement_id")
+        ),
+        "open_inquiries": len(state.get("open_inquiries", []) or []),
+        "active_requirements": sum(
+            1
+            for item in (state.get("active_requirements", {}) or {}).values()
+            if getattr(getattr(item, "status", None), "value", getattr(item, "status", None))
+            == "ACTIVE"
+        ),
+        "discovery_boundaries": len(state.get("discovery_boundaries", []) or []),
+        "founder_requested_completion": state.get("founder_requested_completion", False),
+        "completion_arbitration_complete": state.get("completion_arbitration_complete", False),
+        "prd_confirmation_pending": state.get("prd_confirmation_pending", False),
+        "ready_to_compile": state.get("ready_to_compile", False),
+        "prd_ready": state.get("prd_contract") is not None,
+        "extraction_status": state.get("extraction_status"),
+    }
+
+    print(f"===== ARCHITECT STATE {label.upper()} =====")
+    for key, value in summary.items():
+        print(f"{key}: {value}")
+    print("==========================================")
+
+
+def log_messages_since(
+    state: dict,
+    *,
+    start_index: int = 0,
+    label: str = "NEW CONVERSATION MESSAGES",
+) -> None:
+    """Print founder/Architect messages added since a known message index."""
+
+    print(f"===== {label} =====")
+    found = False
+    for index, message in enumerate(state.get("messages", [])[start_index:], start=start_index):
+        if isinstance(message, HumanMessage):
+            role = "FOUNDER"
+        elif isinstance(message, AIMessage):
+            role = "ARCHITECT"
+        else:
+            continue
+        found = True
+        content = message.content if isinstance(message.content, str) else str(message.content)
+        print(f"[{index}] {role}:")
+        print(content)
+        print()
+    if not found:
+        print("(none)")
+    print("=" * len(f"===== {label} ====="))
 
 
 def session_log_exists(session_id: str) -> bool:
