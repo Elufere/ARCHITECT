@@ -1,5 +1,6 @@
 import {
   ArrowUp,
+  Download,
   Lightbulb,
   LoaderCircle,
   PauseCircle,
@@ -13,6 +14,7 @@ import {
   useRetryDiscovery,
   useSendDiscoveryTurn,
 } from "@/features/discovery/queries";
+import { projectDebugLogUrl } from "@/lib/workspaceApi";
 import type { WorkspaceSnapshot } from "@/types/workspace";
 
 interface Props {
@@ -24,6 +26,7 @@ export function InterviewPanel({ workspace }: Props) {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const sendTurn = useSendDiscoveryTurn(workspace.project.id);
   const retryDiscovery = useRetryDiscovery(workspace.project.id);
+  const debugLogUrl = projectDebugLogUrl(workspace.project.id);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -57,9 +60,21 @@ export function InterviewPanel({ workspace }: Props) {
               <p className="eyebrow mb-1">Product interview</p>
               <h2 className="text-lg font-semibold">Discovery</h2>
             </div>
-            <div className="flex items-center gap-2 text-xs text-neutral-400">
-              <span className="status-dot bg-emerald-500" />
-              Saved
+            <div className="flex items-center gap-3 text-xs text-neutral-400">
+              {debugLogUrl && (
+                <a
+                  href={debugLogUrl}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-black/8 px-2.5 py-1.5 font-medium text-neutral-600 hover:bg-neutral-50"
+                  title="Download the complete backend diagnostic log for this project"
+                >
+                  <Download size={13} />
+                  Debug log
+                </a>
+              )}
+              <span className="inline-flex items-center gap-2">
+                <span className="status-dot bg-emerald-500" />
+                Saved
+              </span>
             </div>
           </div>
 
