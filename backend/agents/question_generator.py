@@ -146,6 +146,33 @@ facts learned in other topics. Do not imply that incidental knowledge is absent.
 """
 
 
+def _core_actor_question(state: AgentState, scope: DiscoveryScope) -> str:
+    roles = []
+    for item in state.get("discovered_knowledge", []):
+        if (
+            item.scope == scope
+            and item.knowledge_state == KnowledgeState.CONFIRMED
+            and item.topic.value == "USER_ROLES"
+            and item.key in ("primary_users", "secondary_users")
+            and not item.absence
+        ):
+            for role in item.roles or []:
+                label = role.replace("_", " ")
+                if label not in roles:
+                    roles.append(label)
+
+    if not roles:
+        return (
+            "Who exactly will directly use or interact with this product?"
+        )
+
+    known = ", ".join(roles)
+    return (
+        f"I have {known} as confirmed product users. "
+        "Who else, if anyone, will directly use or interact with this product?"
+    )
+
+
 def question_generator_node(state: AgentState) -> dict:
     """Generates contextually appropriate questions for the current topic."""
     print(">>> GENERATE")
@@ -161,6 +188,18 @@ def question_generator_node(state: AgentState) -> dict:
     planner_source = state.get("planner_source", "model")
     selected_inquiry = state.get("selected_inquiry") or {}
     selected_requirement = state.get("selected_requirement_candidate") or {}
+
+    inquiry_id = str(
+        selected_inquiry.get("inquiry_id")
+        or selected_inquiry.get("id")
+        or ""
+    )
+    if inquiry_id.endswith("|model.core_actors"):
+        return {
+            "messages": [
+                AIMessage(content=_core_actor_question(state, discovery_scope))
+            ]
+        }
 
     if not current_topic:
         return {"messages": [SystemMessage(content="I need to understand your product better. Could you start by telling me who the primary users will be?")]}
