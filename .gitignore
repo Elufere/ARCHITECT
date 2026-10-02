@@ -8,6 +8,7 @@ __pycache__/
 
 # Runtime state
 backend/projects/
+backend/logs/
 
 # Vector DB
 backend/chroma_store/
