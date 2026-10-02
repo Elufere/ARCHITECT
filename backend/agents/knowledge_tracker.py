@@ -98,7 +98,7 @@ def validate_extraction(
         return False, "Confidence below threshold"
     if not item.value or not item.value.strip():
         return False, "Missing value"
-    generic_roles = {"user", "users", "people", "person", "demand_side", "supply_side"}
+    generic_roles = {"people", "person", "demand_side", "supply_side"}
     if item.key in ("primary_users", "secondary_users"):
         if not item.absence and (not item.roles or any(role.strip().lower() in generic_roles for role in item.roles)):
             return False, "Actor requires a functional canonical role"
@@ -293,6 +293,40 @@ def answer_context(state):
                 gap=state.get("current_gap"), scope=state.get("discovery_scope"))
 
 
+def _actor_gap_question_matches_field(state: AgentState, key: str) -> bool:
+    """Only let actor absence semantics answer a question that actually asks actor identity.
+
+    This prevents a neighboring access/capability question from becoming
+    primary_users=none merely because the planner still carried an actor gap.
+    """
+    if key not in ("primary_users", "secondary_users"):
+        return True
+
+    question = (answer_context(state).get("question") or "").lower()
+    if not question:
+        return False
+
+    if key == "primary_users":
+        if re.search(r"\b(?:besides|any\s+other|other\s+(?:users?|people|roles?|participants?))\b", question):
+            return False
+        return bool(
+            re.search(
+                r"\bwho\b.*\b(?:use|uses|using|interact|participate|users?|people|roles?)\b"
+                r"|\b(?:who|which)\s+(?:users?|people|roles?|participants?)\b"
+                r"|\b(?:primary|main)\s+users?\b",
+                question,
+            )
+        )
+
+    return bool(
+        re.search(
+            r"\b(?:besides|any\s+other|anyone\s+else|other\s+(?:users?|people|roles?|participants?)|"
+            r"additional\s+(?:users?|people|roles?|participants?))\b",
+            question,
+        )
+    )
+
+
 def extract_gap_absence(user_response, state, scope):
     gap = state.get("current_gap")
     topic = state.get("current_topic")
@@ -313,6 +347,11 @@ def extract_gap_absence(user_response, state, scope):
                 if item.scope == scope and item.topic == topic and item.key == key
                 and item.role == (role or None)]
     policy_field = topic == DiscoveryTopic.USER_ROLES and key in ("multiple_roles", "role_transitions")
+    if topic == DiscoveryTopic.USER_ROLES and not _actor_gap_question_matches_field(state, key):
+        print(
+            f"GAP ANSWER SKIPPED: active actor field {key} does not match the delivered question"
+        )
+        return None
     try:
         decision = semantic_decision("GAP_ANSWER", GapAnswer,
             (ROLE_POLICY_INSTRUCTION if policy_field else GAP_INSTRUCTION)
@@ -729,7 +768,11 @@ def _role_from_actor_evidence(state: AgentState, scope: DiscoveryScope, evidence
 def _canonical_claim_role(role: str | None, state: AgentState, scope: DiscoveryScope) -> str | None:
     if not role:
         return role
-    return canonical_actor_for_label(role, state, scope) or canonical_role(role)
+    existing = canonical_actor_for_label(role, state, scope)
+    if existing:
+        return existing
+    identity = role_identity(role)
+    return canonical_role(identity) if identity else None
 
 
 def _explicit_whole_field_absence(evidence: str) -> bool:
