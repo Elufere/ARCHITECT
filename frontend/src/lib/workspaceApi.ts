@@ -333,3 +333,8 @@ const liveApi = {
 };
 
 export const workspaceApi = useMockApi ? mockApi : liveApi;
+
+export function projectDebugLogUrl(projectId: string): string | null {
+  if (useMockApi) return null;
+  return `${API_URL}/api/projects/${encodeURIComponent(projectId)}/debug-log`;
+}
