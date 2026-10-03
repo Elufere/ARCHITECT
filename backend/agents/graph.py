@@ -44,9 +44,15 @@ def route_after_plan(state: AgentState) -> str:
 def route_after_conversation_manager(state: AgentState) -> str:
     """Only knowledge and corrections should flow into the extraction pipeline."""
     if state.get("conversation_intent") in {
-        "product_information", "correction", "advice_request"
+        "product_information", "correction"
     }:
         return "extract"
+    if state.get("conversation_intent") == "advice_request":
+        # "What do you suggest?" is interview control, not founder product
+        # knowledge. Keep the currently selected inquiry/objective and let the
+        # question generator provide options without contaminating extraction or
+        # replanning to a different decision first.
+        return "generate"
     if state.get("conversation_intent") in {
         "objection", "design_deferral", "uncertainty",
         "decision_deferral", "reopen_deferral", "close_discovery",
@@ -179,7 +185,7 @@ def build_graph() -> StateGraph:
     workflow.add_conditional_edges(
         "conversation_manager",
         route_after_conversation_manager,
-        {"extract": "extract", "plan_threads": "plan_threads", "plan": "plan", "compile_prd": "compile_prd", END: END},
+        {"extract": "extract", "plan_threads": "plan_threads", "plan": "plan", "generate": "generate", "compile_prd": "compile_prd", END: END},
     )
 
     # 3. Evidence -> model implications -> requirements -> inquiries -> candidate ranking -> plan
