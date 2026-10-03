@@ -150,7 +150,7 @@ def test_unresolved_clarification_does_not_mutate_knowledge(monkeypatch):
     assert validation_resolution_node(state) == {}
 
 
-def test_resolution_cannot_reference_unrelated_fact_id(monkeypatch):
+def test_resolution_with_unrelated_fact_id_fails_soft_after_repair(monkeypatch):
     first = fact(T.BUSINESS_RULES, "limits", "Maximum five requests")
     second = fact(T.BUSINESS_RULES, "limits", "Maximum ten requests", turn=2)
     unrelated = fact(T.CONSTRAINTS, "time_constraints", "Requests expire after one day", turn=3)
@@ -167,8 +167,7 @@ def test_resolution_cannot_reference_unrelated_fact_id(monkeypatch):
             confidence=1,
         )),
     )
-    with pytest.raises(Exception):
-        validation_resolution_node(state)
+    assert validation_resolution_node(state) == {}
 
 
 def test_low_confidence_resolution_preserves_conflict(monkeypatch):
@@ -188,3 +187,76 @@ def test_low_confidence_resolution_preserves_conflict(monkeypatch):
         )),
     )
     assert validation_resolution_node(state) == {}
+
+
+
+def test_incomplete_resolved_verdict_is_repaired_and_applied(monkeypatch):
+    old_anytime = fact(
+        T.USER_ROLES,
+        "permissions",
+        "Users can remove items anytime",
+        turn=1,
+    )
+    old_archived = fact(
+        T.USER_ROLES,
+        "permissions",
+        "Archived lists are view-only",
+        turn=2,
+    )
+    replacement_active = fact(
+        T.USER_ROLES,
+        "permissions",
+        "Users can remove items anytime only on active lists",
+        turn=3,
+    )
+    replacement_archived = fact(
+        T.USER_ROLES,
+        "permissions",
+        "Archived lists are view-only",
+        turn=3,
+    )
+    answer = (
+        "users should be able to remove items anytime only on active lists, "
+        "while archived lists are view-only"
+    )
+    state = validation_state(
+        old_anytime,
+        old_archived,
+        answer=answer,
+        extra=[replacement_active, replacement_archived],
+    )
+    calls = []
+
+    class Model:
+        def invoke(self, messages):
+            calls.append(messages)
+            if len(calls) == 1:
+                return ConflictResolutionDecision(
+                    resolved=True,
+                    superseded_fact_ids=[fact_id(old_anytime)],
+                    retained_fact_ids=[],
+                    evidence=answer,
+                    confidence=1,
+                )
+            return ConflictResolutionDecision(
+                resolved=True,
+                superseded_fact_ids=[
+                    fact_id(old_anytime),
+                    fact_id(old_archived),
+                ],
+                retained_fact_ids=[],
+                evidence=answer,
+                confidence=1,
+            )
+
+    monkeypatch.setattr(vr, "resolution_model", lambda: Model())
+
+    result = validation_resolution_node(state)
+
+    assert len(calls) == 2
+    active_ids = {fact_id(item) for item in result["discovered_knowledge"]}
+    assert fact_id(old_anytime) not in active_ids
+    assert fact_id(old_archived) not in active_ids
+    assert fact_id(replacement_active) in active_ids
+    assert fact_id(replacement_archived) in active_ids
+    assert len(result["superseded_knowledge"]) == 2
