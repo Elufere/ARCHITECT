@@ -378,10 +378,13 @@ LIFECYCLE_ACTIVATION_RULES: tuple[RequirementActivationRule, ...] = (
         id="lifecycle.removal.v1",
         description="Explicit delete/disable/archive behavior implies lifecycle rules for removal and historical effects.",
         when=(
-            FactCondition(topic=DiscoveryTopic.USER_ROLES, key="responsibilities", value_word_prefixes=("delet", "disabl", "archiv", "deactiv", "remov")),
-            FactCondition(topic=DiscoveryTopic.USER_ROLES, key="permissions", value_word_prefixes=("delet", "disabl", "archiv", "deactiv", "remov")),
-            FactCondition(topic=DiscoveryTopic.CORE_WORKFLOW, key="workflow_steps", value_word_prefixes=("delet", "disabl", "archiv", "deactiv", "remov")),
-            FactCondition(topic=DiscoveryTopic.BUSINESS_RULES, key="ownership_rules", value_word_prefixes=("delet", "disabl", "archiv", "deactiv", "remov")),
+            # "remove" is intentionally excluded. Ordinary content/list removal
+            # does not by itself imply archival, durable deletion, historical
+            # retention, restoration, or a lifecycle worth interrogating.
+            FactCondition(topic=DiscoveryTopic.USER_ROLES, key="responsibilities", value_word_prefixes=("delet", "disabl", "archiv", "deactiv")),
+            FactCondition(topic=DiscoveryTopic.USER_ROLES, key="permissions", value_word_prefixes=("delet", "disabl", "archiv", "deactiv")),
+            FactCondition(topic=DiscoveryTopic.CORE_WORKFLOW, key="workflow_steps", value_word_prefixes=("delet", "disabl", "archiv", "deactiv")),
+            FactCondition(topic=DiscoveryTopic.BUSINESS_RULES, key="ownership_rules", value_word_prefixes=("delet", "disabl", "archiv", "deactiv")),
         ),
         match_all=False,
         activates=(
