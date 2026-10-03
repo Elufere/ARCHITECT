@@ -4,6 +4,7 @@ from __future__ import annotations
 from enum import Enum
 from itertools import combinations
 import json
+import re
 from typing import Dict, Iterable, List, Sequence
 
 from langchain_core.messages import HumanMessage, SystemMessage
