@@ -246,7 +246,9 @@ LIFECYCLE_STATE_TERMS = {
 
 
 def _explicit_state_terms(item: KnowledgeItem) -> set[str]:
-    text = f"{item.value} {item.evidence} {item.source_question or ''}".lower()
+    # Deterministic compatibility must come from founder assertions themselves.
+    # source_question is useful to the semantic reviewer, but is not product evidence.
+    text = f"{item.value} {item.evidence}".lower()
     words = set(re.findall(r"[a-z]+", text))
     return words & LIFECYCLE_STATE_TERMS
 
