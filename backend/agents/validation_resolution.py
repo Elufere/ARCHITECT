@@ -117,7 +117,22 @@ def _replacement_for(previous, retained, current_turn):
         )
     ]
     if same_field:
-        return same_field[0]
+        exact = next(
+            (
+                item
+                for item in same_field
+                if item.value.strip().lower() == previous.value.strip().lower()
+            ),
+            None,
+        )
+        if exact is not None:
+            return exact
+
+        previous_words = set(previous.value.lower().split())
+        return max(
+            same_field,
+            key=lambda item: len(previous_words & set(item.value.lower().split())),
+        )
     if retained:
         return retained[0]
     if current_turn:
