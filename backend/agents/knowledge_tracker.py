@@ -798,6 +798,27 @@ def _explicit_additional_actor_absence_claim(
     )
 
 
+def _explicit_additional_actor_absence_item(
+    user_response: str,
+    scope: DiscoveryScope,
+    turn: int,
+) -> KnowledgeItem | None:
+    claim = _explicit_additional_actor_absence_claim(user_response)
+    if claim is None:
+        return None
+    fact, topic = claim_to_fact(
+        claim,
+        primary_roles=set(),
+        secondary_roles=set(),
+    )
+    item = normalize_fact(fact, topic, scope, turn)
+    valid, reason = validate_extraction(item, user_response, None)
+    if not valid:
+        print(f"EXPLICIT ACTOR ABSENCE REJECTED: {reason}")
+        return None
+    return item
+
+
 def _explicit_whole_field_absence(evidence: str) -> bool:
     return bool(re.search(
         r"\b(?:no|none|nothing|nobody|no\s+other|only|never|not\s+applicable|"
@@ -1545,6 +1566,29 @@ def knowledge_tracker_node(state: AgentState) -> dict:
             print(
                 f"CLAIM ADMISSION: {len(extracted_items)} fact(s) accepted "
                 "without semantic grounding"
+            )
+
+        # Whole-set actor absence is explicit control-grade founder evidence.
+        # Preserve it deterministically even if the semantic grounding model
+        # omitted/rejected the synthetic candidate. Silence never enters here.
+        explicit_actor_absence = _explicit_additional_actor_absence_item(
+            user_response,
+            current_scope,
+            state.get("turn_count", 0),
+        )
+        if (
+            explicit_actor_absence is not None
+            and not any(
+                item.topic == DiscoveryTopic.USER_ROLES
+                and item.key == "secondary_users"
+                and item.absence
+                for item in extracted_items
+            )
+        ):
+            extracted_items.append(explicit_actor_absence)
+            print(
+                "DETERMINISTIC ACTOR ABSENCE COMMIT CANDIDATE:",
+                explicit_actor_absence.model_dump(mode="json"),
             )
 
         # Never reinterpret historical denials as this turn's answer. Only a
