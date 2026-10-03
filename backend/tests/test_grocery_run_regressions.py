@@ -6,6 +6,12 @@ from langchain_core.messages import AIMessage, HumanMessage
 import agents.conversation_manager as conversation
 import agents.discovery_completion as completion
 import agents.knowledge_tracker as tracker
+import agents.discovery_threads as threads
+from agents.graph import route_after_conversation_manager
+from agents.discovery_threads import DiscoveryThreadPlan, ThreadFrontierInquiry
+from agents.requirement_activation import reconcile_active_requirements, LIFECYCLE_ACTIVATION_RULES
+from agents.requirements import requirement_store_key
+from agents.state import KnowledgeItem
 from agents.extraction_passes import NeutralClaim, canonical_role
 from agents.question_generator import _core_actor_question
 from agents.guardrails import _core_actor_question_matches_objective
@@ -179,3 +185,144 @@ def test_completion_request_wins_over_free_text_deferral(monkeypatch):
     assert update["founder_requested_completion"] is True
     assert update["completion_arbitration_complete"] is False
     assert "messages" not in update
+
+
+
+def test_advice_request_routes_directly_to_generator_not_extraction():
+    state = {
+        "conversation_intent": "advice_request",
+        "current_objective": "Clarify whether removal has restrictions.",
+        "selected_inquiry": {"id": "current-question"},
+    }
+
+    assert route_after_conversation_manager(state) == "generate"
+
+
+def test_ordinary_remove_action_does_not_activate_archival_lifecycle():
+    action = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="responsibilities",
+        role="individual_user",
+        value="add or remove items",
+        evidence="Users can add or remove items",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+
+    store = reconcile_active_requirements(
+        {},
+        [action],
+        S.USER_APP,
+        rules=LIFECYCLE_ACTIVATION_RULES,
+    )
+
+    assert requirement_store_key(
+        S.USER_APP,
+        "lifecycle.removal_behavior",
+    ) not in store
+
+
+def test_low_signal_crud_depth_is_rejected_before_semantic_assessment(monkeypatch):
+    action = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="responsibilities",
+        role="individual_user",
+        value="add or remove items",
+        evidence="Users can add or remove items",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+    plan = DiscoveryThreadPlan(
+        thread_id="list_management",
+        thread_label="List management",
+        thread_objective="Understand list management.",
+        frontier=ThreadFrontierInquiry(
+            decision_key="item_removal_rules",
+            topic=T.BUSINESS_RULES,
+            objective="Clarify rules and conditions for removing list items.",
+            question_hint="Can users remove items anytime or are there restrictions?",
+            reason="Removal rules and limits are not specified.",
+        ),
+    )
+    state = {
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [action],
+        "captured_observations": [],
+        "discovery_boundaries": [],
+    }
+
+    monkeypatch.setattr(
+        threads,
+        "inquiry_assessment_model",
+        lambda: pytest.fail(
+            "Low-signal CRUD depth should be rejected before an assessor call"
+        ),
+    )
+
+    problem = threads._semantic_frontier_problem(
+        plan,
+        state,
+        S.USER_APP,
+    )
+
+    assert problem is not None
+    assert "LOW_MARGINAL_VALUE" in problem
+
+
+def test_explicit_no_other_users_is_recovered_after_grounding_rejection(monkeypatch):
+    text = (
+        "I want a grocery list app for individual users. "
+        "There are no other user roles."
+    )
+    primary = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="primary_users",
+        value="individual users",
+        evidence="individual users",
+        roles=["individual_user"],
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+
+    monkeypatch.setattr(
+        tracker,
+        "extract_passes",
+        lambda *_: type(
+            "Batch",
+            (list,),
+            {"grounding_required": True, "concepts": [], "external_systems": [],
+             "observations": [], "observation_candidates": {}},
+        )([primary]),
+    )
+    monkeypatch.setattr(
+        tracker,
+        "ground_items",
+        lambda items, *_: [item for item in items if item.key != "secondary_users"],
+    )
+    monkeypatch.setattr(tracker, "extract_gap_absence", lambda *_: None)
+
+    state = {
+        "messages": [HumanMessage(content=text)],
+        "discovery_scope": S.USER_APP,
+        "current_topic": None,
+        "current_gap": None,
+        "discovered_knowledge": [],
+        "superseded_knowledge": [],
+        "fact_acquisition": {},
+        "turn_count": 0,
+    }
+
+    result = tracker.knowledge_tracker_node(state)
+
+    assert any(
+        item.key == "secondary_users"
+        and item.absence == "none"
+        and item.evidence == "There are no other user roles"
+        for item in result["discovered_knowledge"]
+    )
