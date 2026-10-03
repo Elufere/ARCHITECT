@@ -391,7 +391,21 @@ The interview should feel like an excellent human PM conversation:
       discovery questions.
     feedback.evidence must quote the latest founder answer and feedback.instruction
     must describe the conversational boundary without inventing a product fact.
-16. Before choosing the next frontier, perform BREADTH ARBITRATION:
+16. ORDINARY ACTION SUFFICIENCY:
+    A confirmed ordinary content-management action such as create/add/remove/edit/
+    rename/mark/view is already meaningful product behavior. Do NOT automatically
+    expand it into questions about restrictions, confirmation, undo, restoration,
+    historical retention, permanent deletion, locking, or detailed lifecycle merely
+    because those details could exist. Ask such depth only when founder evidence
+    already introduces a material state distinction, irreversible outcome,
+    retention/history requirement, authorization/security boundary, compliance/
+    business risk, or another grounded consequence that changes the product model.
+    "We do not know whether remove has undo" is not by itself a discovery gap.
+    For a simple product whose actors, core actions, completion condition, and
+    exclusions are already coherent, prefer stopping/confirmation over inventing
+    policy around every CRUD action.
+
+17. Before choosing the next frontier, perform BREADTH ARBITRATION:
     - identify the best next uncertainty inside the active thread;
     - identify the best materially unresolved decision outside that thread using
       confirmed product structure, paused threads, and eligible requirements;
@@ -741,6 +755,15 @@ DEPTH / MARGINAL VALUE:
 Product discovery is not an exhaustive interrogation. "Something is still
 unknown" is NOT enough reason to keep asking inside the same thread.
 
+Treat ordinary CRUD/content-management actions as sufficiently specified at the
+action level unless founder evidence introduces a material distinction. For
+example, knowing that a user may add/remove/mark list items does NOT justify
+asking about removal restrictions, permanent-vs-restorable deletion, undo,
+history retention, locking, or post-completion edit mechanics solely because
+those details are unspecified. In that situation set should_move_on=true and
+material_product_consequence=false. The product can still be represented in a
+PRD without those invented policy decisions.
+
 A thread is coherent enough to pause when its governing product shape can be
 represented without guessing: the important actors/entities, the core relation
 or rule, and the material state/decision currently being discussed are clear
@@ -793,6 +816,60 @@ Unknown does not mean worth asking.
 """
 
 
+CRUD_ACTION_PATTERN = re.compile(
+    r"\b(?:create|add|remove|edit|rename|mark|view|check|uncheck)\w*\b",
+    re.I,
+)
+CRUD_DEPTH_PATTERN = re.compile(
+    r"\b(?:rules?|restrictions?|conditions?|limits?|undo|restore|restoration|"
+    r"recover|recovery|permanent(?:ly)?|history|historical|retention|retain|"
+    r"archive|archived|lock|locked|confirmation|confirm|after\s+completion|"
+    r"completed\s+(?:state|list|item))\b",
+    re.I,
+)
+MATERIAL_DEPTH_SIGNAL_PATTERN = re.compile(
+    r"\b(?:archive|archived|delete|deleted|deletion|disable|disabled|"
+    r"restore|restoration|history|historical|retain|retention|irreversible|"
+    r"approval|permission|only\s+.*\s+can|cannot|can't|must\s+not|"
+    r"compliance|legal|regulat|security|locked|lock|active\s+state|"
+    r"completed\s+(?:state|list)|undo)\b",
+    re.I,
+)
+
+
+def _low_signal_crud_depth_frontier(
+    plan: DiscoveryThreadPlan,
+    state: AgentState,
+    scope: DiscoveryScope,
+) -> bool:
+    """Reject speculative policy depth around an already-known ordinary action."""
+    frontier = plan.frontier
+    if frontier is None:
+        return False
+    proposal = " ".join(
+        filter(None, [frontier.objective, frontier.question_hint, frontier.reason])
+    )
+    if not (
+        CRUD_ACTION_PATTERN.search(proposal)
+        and CRUD_DEPTH_PATTERN.search(proposal)
+    ):
+        return False
+
+    founder_text = " ".join(
+        item.value + " " + item.evidence
+        for item in state.get("discovered_knowledge", [])
+        if item.scope == scope
+        and item.knowledge_state == KnowledgeState.CONFIRMED
+    )
+    founder_text += " " + " ".join(
+        str(item.get("evidence") or "")
+        for item in state.get("captured_observations", [])
+        if item.get("scope") == scope.value
+        and item.get("admission_status") != "SEMANTIC_REJECTED"
+    )
+    return MATERIAL_DEPTH_SIGNAL_PATTERN.search(founder_text) is None
+
+
 def _semantic_frontier_problem(
     plan: DiscoveryThreadPlan,
     state: AgentState,
@@ -802,6 +879,16 @@ def _semantic_frontier_problem(
     frontier = plan.frontier
     if frontier is None:
         return None
+
+    if _low_signal_crud_depth_frontier(plan, state, scope):
+        return (
+            "LOW_MARGINAL_VALUE: The frontier invents policy depth around an "
+            "already-confirmed ordinary content-management action without founder "
+            "evidence of a material state, authorization, retention, compliance, "
+            "or irreversible consequence. Treat the action as sufficiently "
+            "specified for product discovery and move to a materially different "
+            "decision or finish."
+        )
 
     for boundary in state.get("discovery_boundaries", []) or []:
         if not isinstance(boundary, dict):
