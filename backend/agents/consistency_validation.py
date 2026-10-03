@@ -82,6 +82,12 @@ Do NOT label as contradiction when:
 Examples:
 - "buyers may cancel before approval" and "buyers cannot cancel after approval"
   are compatible.
+- A later state-qualified rule can refine a previously broad answer. Use each
+  fact's source_question and source_turn as interpretation context: if the broad
+  answer was given before a later lifecycle state was introduced, do not call
+  the pair contradictory merely because the newer rule narrows behavior in that
+  newly introduced state. Require explicit evidence that the old rule was meant
+  to apply across that state too.
 - "maximum 5 active requests" and "maximum 10 active requests" for the same actor
   and same conditions are contradictory unless one is explicitly historical or
   scoped differently.
@@ -232,6 +238,33 @@ def _deterministic_absence_conflicts(
     return list(unique.values())
 
 
+LIFECYCLE_STATE_TERMS = {
+    "draft", "pending", "active", "approved", "rejected", "cancelled",
+    "canceled", "completed", "closed", "archived", "deleted", "disabled",
+    "expired", "shipped", "funded", "paid", "unpaid",
+}
+
+
+def _explicit_state_terms(item: KnowledgeItem) -> set[str]:
+    text = f"{item.value} {item.evidence} {item.source_question or ''}".lower()
+    words = set(re.findall(r"[a-z]+", text))
+    return words & LIFECYCLE_STATE_TERMS
+
+
+def _deterministically_disjoint_conditions(
+    first: KnowledgeItem,
+    second: KnowledgeItem,
+) -> bool:
+    """Facts scoped to different explicit lifecycle states are compatible."""
+    first_states = _explicit_state_terms(first)
+    second_states = _explicit_state_terms(second)
+    return bool(
+        first_states
+        and second_states
+        and first_states.isdisjoint(second_states)
+    )
+
+
 def _semantic_pair_candidates(
     knowledge: Sequence[KnowledgeItem],
     scope: DiscoveryScope,
@@ -245,6 +278,8 @@ def _semantic_pair_candidates(
     pairs = []
     for first, second in combinations(confirmed, 2):
         if first.value.strip().lower() == second.value.strip().lower():
+            continue
+        if _deterministically_disjoint_conditions(first, second):
             continue
         if _same_semantic_bucket(first, second) or _configured_cross_field_pair(first, second):
             pairs.append((first, second))
