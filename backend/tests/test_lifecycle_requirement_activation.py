@@ -225,3 +225,20 @@ def test_ordinary_workflow_end_without_state_language_does_not_create_core_lifec
     store = lifecycle_only([trigger, steps, end])
     assert requirement_store_key(S.USER_APP, "lifecycle.start_state_behavior") not in store
     assert requirement_store_key(S.USER_APP, "lifecycle.state_transition_behavior") not in store
+
+
+
+def test_ordinary_remove_word_does_not_imply_delete_archive_lifecycle():
+    remove = fact(
+        T.USER_ROLES,
+        "responsibilities",
+        "Users can add or remove items from a grocery list",
+        role="user",
+    )
+
+    store = lifecycle_only([remove])
+
+    assert requirement_store_key(
+        S.USER_APP,
+        "lifecycle.removal_behavior",
+    ) not in store
