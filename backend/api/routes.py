@@ -1,5 +1,5 @@
 """HTTP routes for the product-facing Architect API."""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import FileResponse
 
 from api.schemas import (
@@ -31,6 +31,7 @@ from services.project_repository import (
 from services.project_service import (
     ProjectInitializationError,
     create_project_workspace,
+    delete_project_workspace,
     list_project_summaries,
 )
 from services.workspace import (
@@ -76,6 +77,19 @@ def create_project(input: CreateProjectInput) -> WorkspaceSnapshot:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except WorkspaceUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.delete("/projects/{project_id}", status_code=204)
+def delete_project(project_id: str) -> Response:
+    try:
+        delete_project_workspace(project_id)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except DiscoverySessionBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ProjectRepositoryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return Response(status_code=204)
 
 
 @router.get(
