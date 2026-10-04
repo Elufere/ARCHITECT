@@ -33,7 +33,7 @@ export function ProjectLayout() {
     if (!confirmed) return;
 
     deleteProject.mutate(projectId, {
-      onSuccess: () => navigate("/projects", { replace: true }),
+      onSuccess: () => navigate("/", { replace: true }),
     });
   };
 
