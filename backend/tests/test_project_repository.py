@@ -10,6 +10,7 @@ from services.project_repository import (
     ProjectNotFoundError,
     ProjectSessionNotFoundError,
     create_project_record,
+    delete_project_record,
     find_project_by_session,
     get_project,
     list_projects,
@@ -118,3 +119,33 @@ def test_unknown_project_is_not_found(tmp_path, monkeypatch):
 
     with pytest.raises(ProjectNotFoundError):
         get_project("unknown-project")
+
+
+
+def test_delete_project_record_removes_project_metadata_only(tmp_path, monkeypatch):
+    monkeypatch.setenv("ARCHITECT_SESSION_DIR", str(tmp_path / "sessions"))
+    monkeypatch.setenv("ARCHITECT_PROJECT_DIR", str(tmp_path / "projects"))
+
+    session_id = str(uuid4())
+    save_checkpoint(_minimal_state(session_id))
+    project = create_project_record(
+        name="Delete me",
+        description="Disposable project",
+        discovery_session_id=session_id,
+    )
+
+    deleted = delete_project_record(project.id)
+
+    assert deleted == project
+    with pytest.raises(ProjectNotFoundError):
+        get_project(project.id)
+    # Repository deletion owns Project metadata only; service-level deletion
+    # removes the linked session/log artifacts.
+    assert find_project_by_session(session_id) is None
+
+
+def test_delete_unknown_project_is_not_found(tmp_path, monkeypatch):
+    monkeypatch.setenv("ARCHITECT_PROJECT_DIR", str(tmp_path / "projects"))
+
+    with pytest.raises(ProjectNotFoundError):
+        delete_project_record("unknown-project")
