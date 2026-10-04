@@ -227,3 +227,23 @@ def update_project_metadata(
         updated = ProjectRecord.model_validate(updated.model_dump())
         _write_project(updated)
         return updated
+
+
+
+def delete_project_record(project_id: str) -> ProjectRecord:
+    """Delete one persisted Project record and return the deleted metadata."""
+
+    with _repository_lock():
+        current = get_project(project_id)
+        path = project_path(current.id)
+        try:
+            path.unlink()
+        except FileNotFoundError as exc:
+            raise ProjectNotFoundError(
+                f"Project '{project_id}' was not found."
+            ) from exc
+        except OSError as exc:
+            raise ProjectRepositoryError(
+                f"Project '{project_id}' could not be deleted safely."
+            ) from exc
+        return current
