@@ -4,11 +4,17 @@ from __future__ import annotations
 from datetime import datetime
 
 from agents.diagnostic_log import (
+    diagnostic_log_path,
     diagnostic_session,
     log_messages_since,
     log_state_snapshot,
 )
-from agents.interview_checkpoint import checkpoint_path, load_checkpoint, save_checkpoint
+from agents.interview_checkpoint import (
+    checkpoint_path,
+    load_checkpoint,
+    save_checkpoint,
+    session_lock,
+)
 from agents.llm_errors import ExtractionFailed, LLMCallFailed
 from api.schemas import ProjectSummary, WorkspaceSnapshot
 from services.discovery_session import (
@@ -17,6 +23,8 @@ from services.discovery_session import (
 )
 from services.project_repository import (
     create_project_record,
+    delete_project_record,
+    get_project,
     list_projects,
 )
 from services.workspace import build_project_summary, build_workspace_snapshot
@@ -134,3 +142,43 @@ def list_project_summaries() -> list[ProjectSummary]:
         key=lambda item: datetime.fromisoformat(item.updatedAt.replace("Z", "+00:00")),
         reverse=True,
     )
+
+
+
+def delete_project_workspace(project_id: str) -> None:
+    """Delete a Project and best-effort remove its private session artifacts.
+
+    The session lock prevents deletion while Architect is processing the project.
+    The Project record is removed first so a successful delete can never leave a
+    broken project visible in the workspace if ancillary cleanup later fails.
+    """
+
+    project = get_project(project_id)
+    session_id = project.discovery_session_id
+    lock_path = checkpoint_path(session_id).with_suffix(".lock")
+
+    with session_lock(session_id):
+        delete_project_record(project.id)
+
+        for artifact in (
+            checkpoint_path(session_id),
+            diagnostic_log_path(session_id),
+        ):
+            try:
+                artifact.unlink(missing_ok=True)
+            except OSError as exc:
+                # The Project itself is already deleted. Do not resurrect it
+                # because a stale local diagnostic/session artifact could not be
+                # removed; surface the cleanup issue in server logs instead.
+                print(
+                    "PROJECT DELETE CLEANUP WARNING: "
+                    f"{artifact} | {type(exc).__name__}: {exc}"
+                )
+
+    try:
+        lock_path.unlink(missing_ok=True)
+    except OSError as exc:
+        print(
+            "PROJECT DELETE CLEANUP WARNING: "
+            f"{lock_path} | {type(exc).__name__}: {exc}"
+        )
