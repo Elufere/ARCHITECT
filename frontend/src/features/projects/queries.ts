@@ -26,3 +26,22 @@ export function useCreateProject() {
     },
   });
 }
+
+
+
+export function useDeleteProject() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (projectId: string) => workspaceApi.deleteProject(projectId),
+    onSuccess: (_result, projectId) => {
+      queryClient.removeQueries({ queryKey: ["workspace", projectId], exact: true });
+      queryClient.setQueryData(
+        ["projects"],
+        (current: { id: string }[] | undefined) =>
+          current?.filter((project) => project.id !== projectId) ?? [],
+      );
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
+  });
+}
