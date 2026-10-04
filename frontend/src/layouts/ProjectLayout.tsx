@@ -1,7 +1,14 @@
-import { Download, FileText, Lightbulb, MessageSquareText } from "lucide-react";
-import { NavLink, Outlet, useParams } from "react-router-dom";
+import {
+  Download,
+  FileText,
+  Lightbulb,
+  MessageSquareText,
+  Trash2,
+} from "lucide-react";
+import { NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
 
 import { useWorkspace } from "@/features/discovery/queries";
+import { useDeleteProject } from "@/features/projects/queries";
 import { projectDebugLogUrl } from "@/lib/workspaceApi";
 
 const tabs = [
@@ -12,9 +19,23 @@ const tabs = [
 
 export function ProjectLayout() {
   const { projectId = "" } = useParams();
+  const navigate = useNavigate();
+  const deleteProject = useDeleteProject();
   const { data: workspace, isLoading, isError, error, refetch } =
     useWorkspace(projectId);
   const debugLogUrl = projectDebugLogUrl(projectId);
+
+  const handleDelete = () => {
+    if (!workspace) return;
+    const confirmed = window.confirm(
+      `Delete "${workspace.project.name}"? This permanently removes its discovery session and debug log.`,
+    );
+    if (!confirmed) return;
+
+    deleteProject.mutate(projectId, {
+      onSuccess: () => navigate("/projects", { replace: true }),
+    });
+  };
 
   if (isLoading) {
     return <div className="p-8 text-sm text-neutral-500">Loading project…</div>;
@@ -59,6 +80,16 @@ export function ProjectLayout() {
                 Debug log
               </a>
             )}
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleteProject.isPending}
+              className="flex items-center gap-2 rounded-full border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-wait disabled:opacity-50"
+              title="Delete project"
+            >
+              <Trash2 size={13} />
+              {deleteProject.isPending ? "Deleting…" : "Delete"}
+            </button>
             <div className="rounded-full border border-black/8 bg-white px-3 py-1.5 text-xs text-neutral-500">
               {workspace.project.status.replaceAll("_", " ")}
             </div>
@@ -85,6 +116,14 @@ export function ProjectLayout() {
           ))}
         </nav>
       </header>
+
+      {deleteProject.isError && (
+        <div className="border-b border-red-200 bg-red-50 px-6 py-2 text-xs text-red-700">
+          {deleteProject.error instanceof Error
+            ? deleteProject.error.message
+            : "Project could not be deleted."}
+        </div>
+      )}
 
       <div className="min-h-0 flex-1">
         <Outlet context={workspace} />
