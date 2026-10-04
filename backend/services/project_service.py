@@ -18,6 +18,7 @@ from agents.interview_checkpoint import (
 from agents.llm_errors import ExtractionFailed, LLMCallFailed
 from api.schemas import ProjectSummary, WorkspaceSnapshot
 from services.discovery_session import (
+    DiscoverySessionBusyError,
     advance_discovery_to_waiting,
     create_discovery_session,
 )
@@ -157,23 +158,30 @@ def delete_project_workspace(project_id: str) -> None:
     session_id = project.discovery_session_id
     lock_path = checkpoint_path(session_id).with_suffix(".lock")
 
-    with session_lock(session_id):
-        delete_project_record(project.id)
+    try:
+        with session_lock(session_id):
+            delete_project_record(project.id)
 
-        for artifact in (
-            checkpoint_path(session_id),
-            diagnostic_log_path(session_id),
-        ):
-            try:
-                artifact.unlink(missing_ok=True)
-            except OSError as exc:
-                # The Project itself is already deleted. Do not resurrect it
-                # because a stale local diagnostic/session artifact could not be
-                # removed; surface the cleanup issue in server logs instead.
-                print(
-                    "PROJECT DELETE CLEANUP WARNING: "
-                    f"{artifact} | {type(exc).__name__}: {exc}"
-                )
+            for artifact in (
+                checkpoint_path(session_id),
+                diagnostic_log_path(session_id),
+            ):
+                try:
+                    artifact.unlink(missing_ok=True)
+                except OSError as exc:
+                    # The Project itself is already deleted. Do not resurrect it
+                    # because a stale local diagnostic/session artifact could not be
+                    # removed; surface the cleanup issue in server logs instead.
+                    print(
+                        "PROJECT DELETE CLEANUP WARNING: "
+                        f"{artifact} | {type(exc).__name__}: {exc}"
+                    )
+    except RuntimeError as exc:
+        if str(exc) == "This interview is already open in another process":
+            raise DiscoverySessionBusyError(
+                "This project is currently being processed and cannot be deleted yet."
+            ) from exc
+        raise
 
     try:
         lock_path.unlink(missing_ok=True)
