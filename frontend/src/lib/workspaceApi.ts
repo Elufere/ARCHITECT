@@ -182,6 +182,17 @@ const mockApi = {
     return workspace;
   },
 
+  async deleteProject(projectId: string) {
+    await wait(150);
+    const store = loadStore();
+    const exists = store.projects.some((project) => project.id === projectId);
+    if (!exists) throw new Error("Project not found");
+
+    store.projects = store.projects.filter((project) => project.id !== projectId);
+    delete store.workspaces[projectId];
+    saveStore(store);
+  },
+
   async getWorkspace(projectId: string) {
     await wait(120);
     const workspace = loadStore().workspaces[projectId];
@@ -314,6 +325,10 @@ const liveApi = {
     request<WorkspaceSnapshot>("/api/projects", {
       method: "POST",
       body: JSON.stringify(input),
+    }),
+  deleteProject: (projectId: string) =>
+    request<void>(`/api/projects/${projectId}`, {
+      method: "DELETE",
     }),
   getWorkspace: (projectId: string) =>
     request<WorkspaceSnapshot>(`/api/projects/${projectId}/workspace`),
