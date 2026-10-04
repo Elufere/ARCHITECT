@@ -1,13 +1,20 @@
 import pytest
 from langchain_core.messages import AIMessage
 
-from agents.interview_checkpoint import load_checkpoint, save_checkpoint
+from agents.diagnostic_log import diagnostic_log_path
+from agents.interview_checkpoint import checkpoint_path, load_checkpoint, save_checkpoint
 from agents.llm_errors import LLMCallFailed
 from api.schemas import CreateProjectInput
-from services.project_repository import create_project_record, get_project, list_projects
+from services.project_repository import (
+    ProjectNotFoundError,
+    create_project_record,
+    get_project,
+    list_projects,
+)
 from services.project_service import (
     ProjectInitializationError,
     create_project_workspace,
+    delete_project_workspace,
     list_project_summaries,
 )
 from services.discovery_session import create_initial_discovery_state
@@ -161,3 +168,68 @@ def test_create_project_input_rejects_blank_values():
         CreateProjectInput(name="   ", description="idea")
     with pytest.raises(ValueError):
         CreateProjectInput(name="Project", description="   ")
+
+
+
+def test_delete_project_workspace_removes_project_session_and_debug_log(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("ARCHITECT_SESSION_DIR", str(tmp_path / "sessions"))
+    monkeypatch.setenv("ARCHITECT_PROJECT_DIR", str(tmp_path / "projects"))
+    monkeypatch.setenv("ARCHITECT_LOG_DIR", str(tmp_path / "logs"))
+
+    state = _checkpoint("Disposable idea")
+    project = create_project_record(
+        name="Disposable",
+        description="Disposable idea",
+        discovery_session_id=state["session_id"],
+    )
+    log_path = diagnostic_log_path(project.discovery_session_id)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("debug trace", encoding="utf-8")
+
+    assert checkpoint_path(project.discovery_session_id).exists()
+    assert log_path.exists()
+
+    delete_project_workspace(project.id)
+
+    with pytest.raises(ProjectNotFoundError):
+        get_project(project.id)
+    assert not checkpoint_path(project.discovery_session_id).exists()
+    assert not log_path.exists()
+    assert not checkpoint_path(project.discovery_session_id).with_suffix(".lock").exists()
+
+
+def test_delete_project_workspace_refuses_busy_session_without_removing_project(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("ARCHITECT_SESSION_DIR", str(tmp_path / "sessions"))
+    monkeypatch.setenv("ARCHITECT_PROJECT_DIR", str(tmp_path / "projects"))
+
+    state = _checkpoint("Busy idea")
+    project = create_project_record(
+        name="Busy",
+        description="Busy idea",
+        discovery_session_id=state["session_id"],
+    )
+
+    import services.project_service as service
+
+    class BusyLock:
+        def __enter__(self):
+            raise RuntimeError("This interview is already open in another process")
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(service, "session_lock", lambda session_id: BusyLock())
+
+    from services.discovery_session import DiscoverySessionBusyError
+
+    with pytest.raises(DiscoverySessionBusyError):
+        delete_project_workspace(project.id)
+
+    assert get_project(project.id) == project
+    assert checkpoint_path(project.discovery_session_id).exists()
