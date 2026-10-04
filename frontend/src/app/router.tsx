@@ -42,6 +42,26 @@ function RouteErrorPage() {
   );
 }
 
+function NotFoundPage() {
+  return (
+    <div className="grid h-full place-items-center p-8">
+      <div className="surface max-w-md p-7 text-center">
+        <p className="eyebrow mb-2">404</p>
+        <h1 className="text-xl font-semibold tracking-tight">Page not found</h1>
+        <p className="mt-2 text-sm leading-6 text-neutral-500">
+          The page you opened does not exist or may have been removed.
+        </p>
+        <Link
+          to="/"
+          className="mt-5 inline-flex rounded-lg bg-neutral-950 px-4 py-2 text-sm font-medium text-white"
+        >
+          Back to projects
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export const router = createBrowserRouter([
   {
     element: <AppShell />,
@@ -60,7 +80,7 @@ export const router = createBrowserRouter([
           { path: "prd", element: <PrdPage /> },
         ],
       },
-      { path: "*", element: <RouteErrorPage /> },
+      { path: "*", element: <NotFoundPage /> },
     ],
   },
 ]);
