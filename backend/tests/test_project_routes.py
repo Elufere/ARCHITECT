@@ -2,6 +2,7 @@ import pytest
 from fastapi import HTTPException
 from api.routes import (
     create_project,
+    delete_project,
     generate_prd,
     get_projects,
     retry_discovery,
@@ -213,3 +214,51 @@ def test_generate_prd_route_maps_processing_failure_to_503(monkeypatch):
     assert exc.value.detail["projectId"] == "escrow-app-a1b2c3d4"
     assert exc.value.detail["retryable"] is True
     assert exc.value.detail["message"] == "Verifier rejected unsupported claim."
+
+
+
+def test_delete_project_route_returns_204(monkeypatch):
+    import api.routes as routes
+
+    deleted = []
+    monkeypatch.setattr(
+        routes,
+        "delete_project_workspace",
+        lambda project_id: deleted.append(project_id),
+    )
+
+    response = delete_project("escrow-app-a1b2c3d4")
+
+    assert response.status_code == 204
+    assert deleted == ["escrow-app-a1b2c3d4"]
+
+
+def test_delete_project_route_maps_missing_project_to_404(monkeypatch):
+    import api.routes as routes
+
+    def missing(project_id):
+        raise ProjectNotFoundError(f"Project '{project_id}' was not found.")
+
+    monkeypatch.setattr(routes, "delete_project_workspace", missing)
+
+    with pytest.raises(HTTPException) as exc:
+        delete_project("missing-project")
+
+    assert exc.value.status_code == 404
+
+
+def test_delete_project_route_maps_busy_session_to_409(monkeypatch):
+    import api.routes as routes
+    from services.discovery_session import DiscoverySessionBusyError
+
+    def busy(project_id):
+        raise DiscoverySessionBusyError(
+            "This project is currently being processed and cannot be deleted yet."
+        )
+
+    monkeypatch.setattr(routes, "delete_project_workspace", busy)
+
+    with pytest.raises(HTTPException) as exc:
+        delete_project("escrow-app-a1b2c3d4")
+
+    assert exc.value.status_code == 409
