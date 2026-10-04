@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { workspaceApi } from "@/lib/workspaceApi";
-import type { CreateProjectInput } from "@/types/workspace";
+import type { CreateProjectInput, ProjectSummary } from "@/types/workspace";
 
 export function useProjects() {
   return useQuery({
@@ -38,7 +38,7 @@ export function useDeleteProject() {
       queryClient.removeQueries({ queryKey: ["workspace", projectId], exact: true });
       queryClient.setQueryData(
         ["projects"],
-        (current: { id: string }[] | undefined) =>
+        (current: ProjectSummary[] | undefined) =>
           current?.filter((project) => project.id !== projectId) ?? [],
       );
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
