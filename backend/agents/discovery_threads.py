@@ -296,7 +296,7 @@ product-level.
 def _latest_human(state: AgentState) -> str:
     return next(
         (
-            message.content
+            message_text(message.content)
             for message in reversed(state.get("messages", []))
             if isinstance(message, HumanMessage)
         ),
@@ -395,7 +395,7 @@ def _observation_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]
             "source_turn": observation.get("source_turn"),
             "admission_status": observation.get("admission_status"),
         })
-    return result[-80:]
+    return result[-30:]
 
 
 def _requirement_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]:
@@ -431,18 +431,20 @@ def _requirement_payload(state: AgentState, scope: DiscoveryScope) -> list[dict]
 
 
 def _recent_conversation(state: AgentState) -> list[dict]:
+    # The planner already receives durable product knowledge. Only a short local
+    # conversational window is needed for continuity and pronoun resolution.
     result = []
-    for message in state.get("messages", [])[-8:]:
+    for message in state.get("messages", [])[-4:]:
         if isinstance(message, HumanMessage):
-            result.append({"speaker": "founder", "text": message.content})
+            result.append({"speaker": "founder", "text": message_text(message.content)})
         elif isinstance(message, AIMessage):
-            result.append({"speaker": "pm", "text": message.content})
+            result.append({"speaker": "pm", "text": message_text(message.content)})
     return result
 
 
 def _history_payload(state: AgentState) -> list[dict]:
     result = []
-    for entry in state.get("requirement_question_history", [])[-30:]:
+    for entry in state.get("requirement_question_history", [])[-12:]:
         result.append({
             "turn": entry.get("turn"),
             "thread_id": entry.get("thread_id"),
@@ -471,7 +473,132 @@ def _gap_guidance_payload(
             "items": entry.get("items", []),
             "instruction": entry.get("instruction"),
         })
-    return result[-20:]
+    return result[-8:]
+
+
+def _compact_product_snapshot(
+    state: AgentState,
+    scope: DiscoveryScope,
+) -> dict:
+    """Planner-facing semantic state without provenance/evidence duplication.
+
+    Full evidence remains in graph state and is used by extraction/validation.
+    The expensive reasoning model only needs the current product contract.
+    """
+    grouped_facts: dict[str, list[str]] = {}
+    for item in state.get("discovered_knowledge", []):
+        if (
+            item.scope != scope
+            or item.knowledge_state != KnowledgeState.CONFIRMED
+            or item.absence
+        ):
+            continue
+        actor = item.role or ",".join(item.roles or [])
+        key = f"{item.topic.value}.{item.key}" + (f"[{actor}]" if actor else "")
+        values = grouped_facts.setdefault(key, [])
+        value = str(item.value).strip()
+        if value and value not in values:
+            values.append(value)
+            if len(values) > 8:
+                del values[0]
+
+    compact_concepts: list[dict] = []
+    seen_concepts: set[tuple] = set()
+    for raw in state.get("product_concepts", []) or []:
+        try:
+            concept = raw if isinstance(raw, ProductConcept) else ProductConcept.model_validate(raw)
+        except Exception:
+            continue
+        if concept.scope != scope:
+            continue
+        item = {
+            "kind": concept.kind.value,
+            "subject": concept.subject,
+            "relation": concept.relation,
+            "object": concept.object,
+            "value": concept.value,
+        }
+        signature = tuple(item.values())
+        if signature in seen_concepts:
+            continue
+        seen_concepts.add(signature)
+        compact_concepts.append(item)
+    compact_concepts = compact_concepts[-30:]
+
+    systems = []
+    for raw in state.get("external_systems", []) or []:
+        try:
+            system = raw if isinstance(raw, ExternalSystem) else ExternalSystem.model_validate(raw)
+        except Exception:
+            continue
+        if system.scope != scope:
+            continue
+        systems.append({
+            "name": system.name,
+            "statements": [
+                statement.value
+                for statement in system.statements[-6:]
+                if statement.value.strip()
+            ],
+        })
+
+    return {
+        "facts_by_category": grouped_facts,
+        "product_concepts": compact_concepts,
+        "external_systems": systems[-10:],
+    }
+
+
+def _compact_threads(state: AgentState) -> list[dict]:
+    raw_threads = state.get("discovery_threads", {}) or {}
+    active = state.get("active_discovery_thread")
+    items: list[dict] = []
+    for thread_id, raw in raw_threads.items():
+        data = (
+            raw.model_dump(mode="json")
+            if hasattr(raw, "model_dump")
+            else dict(raw)
+            if isinstance(raw, dict)
+            else {}
+        )
+        if not data:
+            continue
+        items.append({
+            "id": thread_id,
+            "label": data.get("label"),
+            "objective": data.get("objective"),
+            "status": getattr(data.get("status"), "value", data.get("status")),
+            "last_active_turn": data.get("last_active_turn", 0),
+            "active": thread_id == active,
+        })
+    items.sort(
+        key=lambda item: (not item["active"], -(item["last_active_turn"] or 0))
+    )
+    return items[:6]
+
+
+def _planner_observations(
+    state: AgentState,
+    scope: DiscoveryScope,
+) -> list[dict]:
+    """Keep only recent observations that add evidence beyond canonical state."""
+    observations = _observation_payload(state, scope)
+    useful = [
+        item
+        for item in observations
+        if item.get("admission_status") not in {"ADMITTED", "CONCEPT"}
+    ]
+    # Also retain a few latest observations for continuity/debugging.
+    latest = observations[-6:]
+    merged: list[dict] = []
+    seen = set()
+    for item in [*useful[-12:], *latest]:
+        identity = item.get("id")
+        if identity in seen:
+            continue
+        seen.add(identity)
+        merged.append(item)
+    return merged[-16:]
 
 
 def _thread_activity_payload(state: AgentState) -> dict:
@@ -1391,27 +1518,25 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
     backlog = _requirement_payload(state, scope)
     payload = {
         "scope": scope.value,
-        "raw_idea": state.get("raw_idea", ""),
-        "latest_user_answer": _latest_human(state),
+        "raw_idea": (state.get("raw_idea", "") or "")[:1500],
+        "latest_user_answer": _latest_human(state)[:2500],
         "latest_conversation_intent": state.get("conversation_intent"),
         "discovery_boundaries": [
-            item for item in state.get("discovery_boundaries", [])[-50:]
+            item for item in state.get("discovery_boundaries", [])[-16:]
             if not item.get("scope") or item.get("scope") == scope.value
         ],
         "recent_conversation": _recent_conversation(state),
         "new_confirmed_facts_this_turn": _latest_turn_facts(state, scope),
         "new_product_concepts_this_turn": _latest_turn_concepts(state, scope),
         "new_external_systems_this_turn": _latest_turn_external_systems(state, scope),
-        "confirmed_product_facts": _fact_payload(state, scope),
-        "confirmed_product_concepts": _concept_payload(state, scope),
-        "confirmed_external_systems": _external_system_payload(state, scope),
-        "captured_observations": _observation_payload(state, scope),
+        "product_snapshot": _compact_product_snapshot(state, scope),
+        "noncanonical_recent_evidence": _planner_observations(state, scope),
         "founder_gap_guidance": _gap_guidance_payload(state, scope),
-        "current_threads": state.get("discovery_threads", {}),
+        "current_threads": _compact_threads(state),
         "active_thread_id": state.get("active_discovery_thread"),
         "delivered_question_history": _history_payload(state),
         "thread_activity": _thread_activity_payload(state),
-        "eligible_requirement_backlog": backlog,
+        "eligible_requirement_backlog": backlog[:12],
     }
     messages = [
         SystemMessage(content=THREAD_PLANNER_INSTRUCTION),
