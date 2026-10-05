@@ -118,7 +118,10 @@ independently states two different meanings.
 
 Kinds:
 - primary_actor / secondary_actor: identity or membership of a functional user
-  of the CURRENT scoped application. Explicit whole-set absence is also valid:
+  of the CURRENT scoped application. For a positive actor claim, value should be
+  the short canonical actor label (for example "user", "customer", "seller"),
+  not a generated explanatory sentence such as "A user is a functional user".
+  Explicit whole-set absence is also valid:
   phrases such as "there are no other users/roles/participants" should produce
   a secondary_actor claim with absence="none", value="none", and no role.
   The founder's quote itself must establish
@@ -243,17 +246,24 @@ proposition.
 
 For every claim:
 - evidence MUST be one exact contiguous, case-sensitive substring of latest_response;
+- use the SMALLEST literal span that independently supports the claim. Do not cite
+  an entire multi-claim sentence when a shorter exact substring proves the claim.
+  This is important because evidence is later used for semantic PRD validation.
+- for a positive actor identity that is explicitly named, prefer the shortest
+  exact actor phrase ("A user", "Customers", "the seller") rather than the whole
+  sentence containing all of that actor's actions.
+- for an action in a coordinated sentence, use the shortest exact clause that
+  preserves both actor/meaning when possible. A longer shared sentence is allowed
+  ONLY when shortening would require rewriting a pronoun, inserting an omitted
+  noun, or otherwise creating text the founder did not literally write.
 - when latest_response is a short/contextual answer such as "yes", "no",
   "delete immediately", "latest to oldest", or a pronoun-led fragment, evidence
   MUST be copied from latest_response itself. NEVER copy or paraphrase wording
   from the previous PM question into evidence. The previous question may resolve
   what the short answer means, but it is source_question context, not evidence.
-- when a coordinated sentence states several actions (for example "create X,
-  edit or delete it, and mark it complete"), each claim may cite the SAME longer
-  exact founder sentence/clause when a shorter exact span would require rewriting
-  a pronoun or omitted noun. Do not reconstruct "edit X" if the founder literally
-  said "edit or delete it".
-- value must preserve only what that evidence states, including conditions/negation;
+- value must preserve ONLY the atomic proposition represented by this claim,
+  including conditions/negation. Do not copy unrelated clauses from a compound
+  sentence into value;
 - role is REQUIRED for primary_actor, secondary_actor, actor_action,
   authorization_boundary, and desired_outcome. Use one canonical actor ID.
   For multiple_roles/role_transition, role is optional but SHOULD contain the
