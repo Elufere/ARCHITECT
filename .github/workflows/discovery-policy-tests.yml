@@ -1,0 +1,42 @@
+name: Discovery policy regression tests
+
+on:
+  push:
+    branches:
+      - feature/model-driven-understanding-recap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: discovery-policy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  focused:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+      - name: Compile discovery modules
+        run: python -m compileall -q agents/discovery_threads.py tests/test_discovery_threads.py
+      - name: Run focused Todo discovery regressions
+        run: >
+          python -m pytest -q tests/test_discovery_threads.py
+          -k "null_frontier_rejected_when_product_has_no_founder_outcome
+          or null_frontier_rejected_when_created_entity_shape_is_undefined
+          or foundational_completion_guard_releases_once_outcome_and_entity_shape_exist
+          or completed_task_editability_is_not_hard_rejected_as_crud_depth"
