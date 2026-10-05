@@ -819,6 +819,8 @@ def _explicit_product_scope_exclusion_claim(
     sentence_end = user_response.find(".", match.end())
     if sentence_end == -1:
         sentence_end = len(user_response)
+    else:
+        sentence_end += 1
     evidence = user_response[sentence_start:sentence_end].strip()
     if not evidence:
         return None
