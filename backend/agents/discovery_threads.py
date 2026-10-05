@@ -1430,6 +1430,91 @@ Do not change the proposed frontier."""),
     return None
 
 
+def _completion_sufficiency_problem(
+    state: AgentState,
+    scope: DiscoveryScope,
+) -> str | None:
+    """Return a minimal semantic reason discovery cannot safely finish yet.
+
+    This is intentionally not a field checklist. It protects only foundational
+    product-definition anchors whose absence makes a PRD describe an implementable
+    guess rather than the founder's intended product.
+    """
+    knowledge = [
+        item
+        for item in state.get("discovered_knowledge", [])
+        if item.scope == scope
+        and item.knowledge_state == KnowledgeState.CONFIRMED
+        and not item.absence
+    ]
+
+    has_actor_or_capability = any(
+        item.topic == DiscoveryTopic.USER_ROLES
+        and item.key in {"primary_users", "responsibilities"}
+        for item in knowledge
+    )
+    has_explicit_outcome = any(
+        item.topic == DiscoveryTopic.USER_GOALS
+        and item.key in {"primary_user_goals", "secondary_user_goals", "motivations"}
+        for item in knowledge
+    )
+    if has_actor_or_capability and not has_explicit_outcome:
+        return (
+            "DISCOVERY_INCOMPLETE: The product has confirmed users/capabilities but "
+            "no explicit founder-provided user outcome or product goal. Ask one "
+            "founder-facing question about the main outcome/job-to-be-done before "
+            "considering PRD confirmation."
+        )
+
+    concepts = []
+    for raw in state.get("product_concepts", []) or []:
+        try:
+            item = raw if isinstance(raw, ProductConcept) else ProductConcept.model_validate(raw)
+        except Exception:
+            continue
+        if item.scope == scope:
+            concepts.append(item)
+
+    created_entity = any(
+        item.key in {"responsibilities", "workflow_steps", "must_have_features"}
+        and bool(re.search(r"\b(?:create|add|make|submit)\w*\b", f"{item.value} {item.evidence}", re.I))
+        for item in knowledge
+    )
+    entities = {
+        concept.subject.strip().lower()
+        for concept in concepts
+        if concept.kind == ProductConceptKind.ENTITY
+    }
+    has_non_state_attribute = any(
+        concept.kind == ProductConceptKind.ATTRIBUTE
+        and (concept.relation or "").strip().lower() not in {
+            "status", "state", "lifecycle", "phase"
+        }
+        for concept in concepts
+    )
+    has_creation_validation = any(
+        item.key == "validation_rules"
+        or (
+            item.key in {"responsibilities", "workflow_steps", "must_have_features"}
+            and re.search(
+                r"\b(?:field|title|name|description|required|optional|attribute|information)\w*\b",
+                f"{item.value} {item.evidence}",
+                re.I,
+            )
+        )
+        for item in knowledge
+    )
+    if created_entity and entities and not (has_non_state_attribute or has_creation_validation):
+        return (
+            "DISCOVERY_INCOMPLETE: The founder can create/manage a core product "
+            "entity, but the entity's usable information/shape has not been defined. "
+            "Ask one product-level question about what information that created "
+            "record/object needs to contain. Do not ask database/schema internals."
+        )
+
+    return None
+
+
 def _plan_problem(
     plan: DiscoveryThreadPlan,
     state: AgentState,
@@ -1482,6 +1567,14 @@ def _plan_problem(
         )
         if semantic_problem is not None:
             return semantic_problem
+    if frontier is None:
+        sufficiency_problem = _completion_sufficiency_problem(
+            state,
+            state.get("discovery_scope", DiscoveryScope.USER_APP),
+        )
+        if sufficiency_problem is not None:
+            return sufficiency_problem
+
     if frontier is None and backlog and not plan.relevant_requirement_ids:
         return (
             "The plan has no model frontier and no relevant requirement, but eligible "
