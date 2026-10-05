@@ -1,4 +1,6 @@
 """HTTP routes for the product-facing Architect API."""
+import os
+
 from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import FileResponse
 
@@ -192,6 +194,11 @@ def generate_prd(project_id: str) -> WorkspaceSnapshot:
 @router.get("/projects/{project_id}/debug-log")
 def download_project_debug_log(project_id: str):
     """Download the complete terminal-style diagnostic log for one Project."""
+    if os.getenv("ARCHITECT_ENABLE_DEBUG_LOG_DOWNLOAD", "true").lower() not in {
+        "1", "true", "yes", "on"
+    }:
+        raise HTTPException(status_code=404, detail="Debug logs are not publicly available.")
+
     try:
         project = get_project(project_id)
     except ProjectNotFoundError as exc:
