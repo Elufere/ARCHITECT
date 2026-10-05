@@ -139,6 +139,11 @@ not a reopen.
 Return action="none" when the founder answers the product question, asks for
 clarification/advice, rejects an irrelevant question, says something is not
 applicable/out of scope, or is merely uncertain without authorizing postponement.
+A list of unresolved questions/areas the founder says still need clarification
+is also action="none". Naming what remains unknown is NOT postponing it, even if
+the previous PM message asked what area to add or revisit. Never convert an
+open-gap list into a deferral unless the founder explicitly says to postpone,
+park, delegate, skip, or decide that specific matter later.
 
 For action="defer":
 - decision_summary identifies the concrete unresolved decision being postponed,
