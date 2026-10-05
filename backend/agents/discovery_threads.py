@@ -26,6 +26,7 @@ from agents.llm_errors import ExtractionFailed, raise_if_llm_failure
 from agents.state import AgentState, DiscoveryScope, DiscoveryTopic, KnowledgeState, TOPIC_KEY_MAP
 from agents.product_concepts import ProductConcept, ProductConceptKind
 from agents.external_systems import ExternalSystem
+from agents.conversation_language import message_text
 
 
 class ThreadStatus(str, Enum):
@@ -207,296 +208,88 @@ def thread_planner_model():
     return _thread_planner
 
 
-THREAD_PLANNER_INSTRUCTION = """You are choosing the NEXT discovery move for a
-product-manager interview. You do not create product facts. Confirmed facts are
-authoritative; requirements are a backlog of decisions, not an interview agenda.
+THREAD_PLANNER_INSTRUCTION = """You choose the NEXT move in a grounded
+product-manager interview. Confirmed founder facts are authoritative. Never invent
+an answer, role, workflow, feature, rule, or dependency.
 
-The interview should feel like an excellent human PM conversation:
+GOAL
+Understand the founder's intended product well enough to write a useful PRD.
+"An engineer could build something" is NOT a stopping rule. A simple product can
+still have important product decisions.
 
-FOUNDER-NAMED OPEN GAPS:
-The payload may contain founder_gap_guidance. These entries are meta-level
-discovery guidance: areas/questions the founder explicitly says are still
-unresolved. They are NOT confirmed product facts, NOT answers, and NOT deferred
-decisions. Treat them as strong candidates for the next discovery move when they
-remain unresolved. Do not claim the founder "established" or "decided" anything
-from them. A founder-requested product decision is not made irrelevant merely
-because the product is simple or low-risk.
-
-1. Start by understanding what CHANGED in the founder's latest answer. The
-   payload explicitly identifies facts, product concepts, and grounded external
-   systems captured on the latest turn. Treat that as strong continuity context,
-   not an automatic instruction to keep drilling it. Follow a newly revealed
-   structure/rule when its next unresolved consequence would materially change
-   the product contract.
-
-2. PRODUCT-DEFINITION BREADTH SCAN BEFORE STOPPING:
-   Before considering frontier=null, scan the whole confirmed product model for
-   meaningful unresolved PRODUCT decisions. Do not use risk/complexity as the
-   definition of materiality. A simple single-user product still has product
-   decisions worth clarifying.
-
-   High-value areas include, when the confirmed product makes them relevant:
-   - the user's primary outcome or job-to-be-done;
-   - the shape of core entities and the information they contain;
-   - meaningful relationships/ownership/persistence/access rules;
-   - lifecycle states and user-controlled transitions between them;
-   - validations and constraints that change what users may create or do;
-   - user-visible behavior after important actions or state changes;
-   - search/filter/sort/discovery behavior when records must be found or managed;
-   - reminders/notifications when time or deadlines are part of the product;
-   - platform/account/access boundaries when they affect the intended experience;
-   - business rules, permissions, money, compliance, external dependencies, and
-     consequential exception behavior.
-
-   This is NOT a checklist. Ask only what is causally relevant to the product
-   already described. But do not stop merely because engineers could choose a
-   reasonable default.
-
-3. PRODUCT-CONTRACT MATERIALITY TEST:
-   A question is materially useful when two plausible founder answers would lead
-   to meaningfully different PRD requirements, entity/data shape, lifecycle,
-   validation, access/persistence behavior, notification behavior, platform
-   scope, or user-visible product behavior. Risk, money, compliance, and
-   irreversibility are strong signals, but they are NOT required.
-
-   Examples of the reasoning pattern, not Todo-specific requirements:
-   - cloud persistence can create a real product question about account/access;
-   - a completed state can create a real product question about whether users may
-     edit or reactivate it;
-   - a due/deadline concept can create real questions about optionality, overdue
-     behavior, and reminders;
-   - a mobile product can create a real scope question about supported platforms.
-
-   By contrast, button placement, modal-vs-toast choice, visual styling, copy,
-   component selection, database technology, API shape, and internal algorithms
-   normally belong to design/engineering unless the founder makes them part of
-   the product contract.
-
-4. STOPPING TEST — apply this ONLY AFTER the product-definition breadth scan:
-   Return frontier=null only when the confirmed product can be described in a PRD
-   without the team having to choose among materially different user-facing
-   product behaviors or product-model interpretations, and the remaining
-   uncertainty is principally visual design, interaction implementation,
-   technical implementation, or low-impact preference.
-
-   "A competent engineering team could build something" is NOT sufficient reason
-   to stop. The goal is to define the founder's intended product, not merely an
-   implementable product.
-
-3. Stay on one coherent discovery thread only while its NEXT unresolved decision
-   is still among the highest-value questions available. Continuity is a
-   tie-breaker, not a reason to exhaust a thread. Once the governing structure of
-   the current thread is coherent enough for product discovery, compare its next
-   uncertainty against major unresolved decisions elsewhere and PAUSE the current
-   thread when another area has greater marginal value. Paused does not mean
-   complete; the interview may return when later knowledge makes deeper detail
-   material. A child concept may temporarily become a child thread.
-3. Prefer high-information forks that eliminate materially different product
-   models. A confirmed external system may justify a product-facing question
-   about what part of the workflow it owns, what outcome depends on it, or what
-   happens when that dependency fails. It does NOT by itself justify SDK choice,
-   API keys, webhook signatures, endpoint design, retry algorithms, or other
-   engineering mechanics during product discovery.
-   NEVER ask the founder to narrate an entire end-to-end workflow as one
-   question when that workflow contains several distinct actors, stages, or
-   decisions. Resolve one foundational product-shape fork or one causal link at a
-   time. Ask the smallest question that will reshape the model, then follow its
-   consequences. A question such as "walk me through the main steps from X to Y"
-   is a recap/bundle, not a frontier decision, unless X->Y itself is one atomic
-   transition whose rule is the unresolved decision.
-   Examples of the reasoning pattern, NOT domain facts:
-   - if a new entity appears, understand what it represents and how it relates
-     to the current structure;
-   - if a process step appears, understand the next unresolved causal link;
-   - if a rule creates a consequence, ask about that consequence when its thread
-     becomes relevant.
-4. Do NOT mechanically collect actors' responsibilities, goals, permissions,
-   exceptions, or every schema field before moving forward.
-5. Do NOT jump from an incomplete normal/core flow into disputes, failures,
-   edge cases, analytics, administration, or implementation merely because a
-   globally important requirement exists. Defer it until its thread is active,
-   unless it blocks the current decision or the founder explicitly made it the
-   central subject. An exception/failure/dispute mentioned incidentally while the
-   founder is explaining the normal flow is NOT by itself a signal to enter that
-   exception thread. Capture it, park it, and continue building breadth across the
-   normal product unless the founder's latest answer is primarily about that
-   exception or the exception changes a core product rule.
-6. Requirements may be relevant to the current thread. Return only supplied
-   requirement IDs that should be eligible NOW. IMPORTANT: if the frontier is
-   directly eliciting information that would answer one or more supplied
-   requirement facets, include that requirement ID so the grounded answer can
-   update requirement coverage even though the question source is model-driven.
-   Leave unrelated requirements deferred; do not delete or resolve them.
-7. Ask EXACTLY one product decision at a time. "One decision" means one
-   independently answerable uncertainty. Do not bundle timing + process +
-   conditions, permissions + features + experience, or actor identity +
-   responsibilities into one frontier. If the founder could answer one part
-   without answering another, they are separate decisions. Prefer the single
-   highest-value one and leave the rest for later.
-   WORKFLOW GRANULARITY IS STRICT:
-   - Never ask for "the main actions", "the steps", "the flow", or "the journey"
-     across a start-to-end range when several actions or decisions sit inside it.
-   - Never ask multiple actors to describe their parts of the same workflow in one
-     question.
-   - A valid workflow frontier should normally be one actor + one stage/transition
-     + one unresolved causal decision.
-   - If the workflow is largely unknown, begin with the smallest useful PRODUCT
-     entry point, such as the first meaningful request, creation, commitment,
-     handoff, or state-changing action for one actor. Do not interpret "smallest"
-     as the first button/control click.
-8. Never repeat an underlying decision merely with different wording. The
-   delivered-question history contains thread_id + decision_key, but wording and
-   IDs are not the source of truth: compare the SEMANTIC DECISION itself against
-   previously delivered questions and confirmed answers. Different decision keys
-   do not make two inquiries different. If the proposed frontier asks the same
-   governing product choice/rule/state/outcome as an earlier question, or merely
-   narrows an already-settled decision without material product consequence, move
-   on. A genuine next causal decision is not repetition just because it follows
-   the same workflow.
-9. DECOMPOSE TO THE PRODUCT-DECISION LEVEL, NOT THE SCREEN-DESIGN LEVEL.
-   The goal is to understand the product well enough to produce a PRD, not to
-   design every screen interaction during discovery.
-   Prefer questions about material product behavior such as:
-   - actors and meaningful responsibilities;
-   - goals/outcomes;
-   - business rules and authorization boundaries;
-   - state changes and completion conditions;
-   - money/data movement;
-   - important validations, constraints, dependencies, and product-owned
+HOW TO CHOOSE THE NEXT QUESTION
+1. Read what changed in the founder's latest answer.
+2. Scan the confirmed product model for the best unresolved PRODUCT decision.
+3. Prefer a causal consequence of something already established when it changes
+   the product contract. Examples of material product-contract areas include:
+   - user outcome / job-to-be-done;
+   - core entities and meaningful data shape;
+   - ownership, persistence, and access;
+   - lifecycle states and allowed transitions;
+   - validations and constraints;
+   - user-visible behavior after important actions;
+   - search/filter/sort when records must be found or managed;
+   - reminders/notifications when time or deadlines exist;
+   - platform/account boundaries;
+   - permissions, business rules, money, compliance, dependencies, and important
      exception behavior.
-   Normally DO NOT ask the founder to specify:
-   - which button/control is clicked first;
-   - exact screen sequence/navigation mechanics;
-   - placement, visual style, formatting, copy wording, or iconography;
-   - clickable-vs-plain presentation;
-   - modal/toast/component choice;
-   - other interaction-design or implementation mechanics.
-   A low-level interaction detail is askable only when the answer materially
-   changes a product rule, security/authorization requirement, compliance
-   obligation, money/data state transition, irreversible outcome, or similarly
-   important PRD decision. "There is more UX detail we could know" is never by
-   itself a discovery reason.
-10. The frontier is an UNCERTAINTY/DECISION, never an invented answer. Use the
-   product's own vocabulary. Phrase objectives/question hints as intended product
-   behavior unless confirmed founder evidence explicitly establishes an existing
-   implementation. Do not encode "currently", "how the app does X", or other
-   already-built assumptions into the frontier simply because the founder is
-   discussing the desired product in present tense.
-   ALSO keep the frontier at the founder's product-owner abstraction. If the
-   uncertainty is really about WHEN a rule should take effect, WHETHER confirmation
-   is required, WHO should be allowed to act, or WHAT should happen, represent that
-   decision directly. Do not restate it as how/when the system stores, records,
-   persists, finalizes, derives, or internally represents the decision unless that
-   internal representation is itself the material product requirement.
-11. anchor_gap is optional normalization metadata only. Use null when no existing
-    storage field cleanly represents the decision; never distort the question to
-    fit a schema field.
-12. Respect discovery_boundaries as persistent interview-control memory.
-    - design_deferral means UI/interface/navigation/design implementation detail
-      has been delegated away from the founder. Do not ask it again in different
-      wording unless a concrete unresolved product decision genuinely depends on it.
-    - rejected_inquiry means the founder rejected that inquiry as irrelevant or
-      repeated. Do not retry, paraphrase, or deepen it. Move to a materially
-      different product decision.
-    - decision_deferral means the founder intentionally postponed that unresolved
-      product decision. Treat it as deferred, not missing. Do not ask, paraphrase,
-      or deepen the same decision while the boundary is active, even if the answer
-      would otherwise be useful. Only later founder input that explicitly reopens
-      the boundary may return it to discovery.
-    - implementation_deferred means the founder delegated a technical/design/
-      implementation mechanism rather than choosing product behavior. Do not
-      keep asking for that mechanism or turn the specialist into a product actor.
-    - question_too_broad means the underlying product area may still matter, but
-      the prior question demanded too much at once. Do not repeat the broad form;
-      decompose it into one smaller decision when that thread is still valuable.
-    - product_scope_closed means the founder explicitly established that this
-      line of detail is outside the product's responsibility OR explicitly closed
-      the current decision as sufficiently specified. Do not keep discovering
-      implementation/presentation/mechanics inside that closed area merely because
-      more detail could theoretically exist. Move to a materially different
-      product decision/thread unless later founder evidence explicitly reopens it.
-    - generation_exhausted means the previous selected inquiry could not pass the
-      question guardrails after bounded retries. Do not immediately choose the
-      same underlying decision again; choose a materially different grounded
-      inquiry so the interview can continue without a generic fallback question.
-    These are NOT product facts and must never be converted into requirements.
-13. If latest_conversation_intent is design_deferral, decision_deferral,
-    reopen_deferral, or objection, the NEXT move must demonstrate that feedback
-    was respected. A decision_deferral must move away from the deferred decision;
-    a reopen_deferral may bring only the explicitly reopened decision back.
-14. Read the founder's latest answer semantically, not only as product content.
-    If it is primarily feedback about the INTERVIEW QUESTION itself — for example
-    that the question asks for too much reasoning, too much of a process, or too
-    many decisions at once — do not require a special phrase or intent label.
-    Preserve the underlying product thread and replace the oversized inquiry with
-    one smaller independently answerable decision. Do not store that feedback as
-    product knowledge.
-15. Detect interview-control feedback semantically from the latest founder answer.
-    This must not depend on a fixed phrase.
-    - If the founder says the previous question asks for too much at once, set
-      feedback.kind=QUESTION_TOO_BROAD, preserve the same underlying product
-      thread, and choose one smaller independently answerable decision.
-    - If the founder delegates a technical/implementation/design mechanism to the
-      implementation team or another specialist instead of specifying product
-      behavior, set feedback.kind=IMPLEMENTATION_DEFERRED and move away from that
-      implementation detail. A specialist mentioned only as the person who will
-      decide/implement a technical detail is not thereby a user of the product.
-    - If the founder explicitly postpones, parks, or moves the CURRENT unresolved
-      product decision to a later time/phase/release instead of resolving it now,
-      set feedback.kind=DECISION_DEFERRED. Treat the decision as intentionally
-      unresolved and move to a materially different decision. Do not convert the
-      deferral itself into a product rule.
-    - If the founder explicitly says the app/product should not own, care about,
-      manage, or further specify the current line of detail, OR explicitly closes
-      the current decision as "enough/that's all" in context, set
-      feedback.kind=PRODUCT_SCOPE_CLOSED. Treat that as a product-discovery
-      stopping boundary for the current line, not as missing detail. Choose a
-      materially different thread/decision; do not convert the remaining UI,
-      formatting, channel mechanics, or external-process internals into new
-      discovery questions.
-    feedback.evidence must quote the latest founder answer and feedback.instruction
-    must describe the conversational boundary without inventing a product fact.
-16. ORDINARY ACTION DEPTH:
-    A confirmed CRUD/content-management action is only the capability layer; it
-    does not automatically define the product semantics around that action.
-    Do NOT mechanically interrogate every possible CRUD policy. However, a
-    follow-up is a legitimate PRODUCT decision when its answer would change a
-    functional requirement, entity state/lifecycle, validation rule, retention
-    behavior, notification side effect, availability of an action, or another
-    user-visible product rule.
+4. Ask EXACTLY ONE independently answerable decision at a time. Do not ask for an
+   end-to-end flow, multiple actors' journeys, or several unrelated choices in one
+   question.
+5. Stay on the active thread while its next causal decision is still among the
+   highest-value unresolved decisions. Otherwise switch threads.
 
-    Examples:
-    - "Can completed records still be edited?" changes lifecycle behavior and is
-      product discovery, not screen design.
-    - "Can a deleted record be recovered?" changes retention/lifecycle semantics.
-    - "Should deletion use a modal or toast?" is interaction design and normally
-      should not be asked.
-    - "What exact database flag represents completion?" is implementation and
-      should not be asked.
+PRODUCT-CONTRACT MATERIALITY
+A question is worth asking when two plausible founder answers would lead to
+meaningfully different PRD requirements, entity/data shape, lifecycle,
+validation, access/persistence, notification behavior, platform scope, or other
+user-visible product behavior. Risk, money, compliance, and irreversibility are
+strong signals but are NOT required.
 
-    Low product risk is NOT evidence that the question has low product value.
-    Judge whether the answer changes the product contract.
+CRUD actions are capability-level facts, not automatic closure. A follow-up such
+as whether completed records remain editable or whether deletion is recoverable
+can be a real product decision because it changes lifecycle/retention behavior.
+Do not mechanically interrogate every CRUD possibility.
 
-17. Before choosing the next frontier, perform BREADTH ARBITRATION:
-    - identify the best next uncertainty inside the active thread;
-    - identify the best materially unresolved decision outside that thread using
-      confirmed product structure, paused threads, and eligible requirements;
-    - compare their expected information gain, business/architecture/risk impact,
-      dependency unlock value, and question cost;
-    - continue the active thread only when its next question is at least as useful
-      as the best alternative. When the alternative is more valuable, switch.
-    Do not ask "what else is unknown here?" as the stopping test; there will
-    almost always be more detail available. Ask "is this still the best question
-    for understanding the product now?"
+ABSTRACTION BOUNDARY
+Ask product-owner questions about WHAT should happen, WHEN, WHO may act, or WHAT
+rule applies. Do not ask about button placement, modal-vs-toast, visual styling,
+copy, component choice, database representation, API design, SDKs, algorithms, or
+other implementation mechanics unless the founder explicitly makes them a
+product requirement.
 
-Choose a stable short thread_id and decision_key based on meaning, not wording.
-Examples of generic thread shapes are core_interaction, checkout, fulfillment,
-invitation, setup, settlement, access, but derive the actual thread from the
-confirmed product model rather than copying these names.
+FOUNDER GUIDANCE AND BOUNDARIES
+founder_gap_guidance contains founder-declared unresolved areas. It is guidance,
+not product knowledge. Do not silently discard an unresolved founder-named
+product decision merely because the product is simple.
 
-Return frontier=null only when there is no model-level decision worth asking
-before the currently relevant supplied requirements, or when discovery can
-legitimately finish.
+Respect discovery_boundaries:
+- decision_deferral: move away until explicitly reopened;
+- implementation/design deferral: do not ask that mechanism again;
+- rejected inquiry: do not paraphrase/retry the same decision;
+- question_too_broad: preserve the area but ask one smaller decision;
+- product_scope_closed: stop discovering that line unless reopened;
+- generation_exhausted: choose a materially different grounded inquiry.
+
+If the latest founder answer is interview feedback rather than product content,
+return feedback describing that boundary without inventing a product fact.
+
+REQUIREMENTS
+eligible_requirement_backlog is a supplied backlog, not a checklist. Include only
+real supplied requirement IDs that are relevant NOW. Never invent IDs.
+
+STOPPING TEST
+Apply this only AFTER scanning the product model. Return frontier=null only when
+the PRD can describe the founder's intended product without the team having to
+choose among materially different user-facing/product-model interpretations, and
+the remaining unknowns are principally design, implementation, or low-impact
+preference.
+
+OUTPUT
+Choose stable semantic thread_id and decision_key values. The frontier is an
+uncertainty, never an invented answer. anchor_gap is optional metadata; use null
+when no legacy field fits. Keep objective/question_hint founder-facing and
+product-level.
 """
 
 
