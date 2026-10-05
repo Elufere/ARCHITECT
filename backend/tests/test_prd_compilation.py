@@ -855,7 +855,6 @@ def test_compiler_payload_includes_machine_readable_section_obligations():
         {
             "fact_id": sources[0].fact_id,
             "category": "BUSINESS_RULES.approval_rules",
-            "value": "Orders over $100 require manager approval",
             "required_section": "functional_requirements",
         }
     ]
