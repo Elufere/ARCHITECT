@@ -245,6 +245,47 @@ def save_verified_prd(contract, path):
             temporary.unlink()
 
 
+def compiler_required_coverage(sources):
+    """Machine-readable section obligations for every immutable source."""
+    obligations = []
+    for source in sources:
+        category = f"{source.topic}.{source.key}"
+        if (
+            source.topic == "USER_ROLES"
+            and source.key == "primary_users"
+            and not source.absence
+        ):
+            section = "personas"
+        elif source.topic == "MVP_SCOPE" and source.key == "out_of_scope":
+            section = "scope.out_of_scope"
+        elif (
+            source.topic in {
+                "CORE_WORKFLOW",
+                "BUSINESS_RULES",
+                "EXCEPTIONS",
+                "EDGE_CASES",
+                "PRODUCT_MODEL",
+            }
+            or category in {
+                "USER_ROLES.responsibilities",
+                "USER_ROLES.permissions",
+                "USER_ROLES.multiple_roles",
+                "USER_ROLES.role_transitions",
+                "MVP_SCOPE.must_have_features",
+            }
+        ):
+            section = "functional_requirements"
+        else:
+            section = "appropriate_sourced_section"
+        obligations.append({
+            "fact_id": source.fact_id,
+            "category": category,
+            "value": source.value,
+            "required_section": section,
+        })
+    return obligations
+
+
 def compiler_source_payload(sources):
     """Minimize compile prompt size without weakening downstream verification.
 
@@ -278,6 +319,7 @@ def pm_compile_node(state: AgentState) -> dict:
         payload = dict(
             discovery_scope=scope.value,
             confirmed_facts=compiler_source_payload(sources),
+            required_source_coverage=compiler_required_coverage(sources),
         )
         category_cache = {}
         for attempt in range(MAX_COMPILE_ATTEMPTS):
@@ -329,7 +371,9 @@ def pm_compile_node(state: AgentState) -> dict:
                         "must always be an exact canonical TOPIC.key from the cited "
                         "source facts; USER_APP/ADMIN_DASHBOARD are scope labels and "
                         "must never be used as category. Split broad multi-category "
-                        "claims into atomic claims rather than inventing a category."
+                        "claims into atomic claims rather than inventing a category. "
+                        "Use required_source_coverage as a checklist: every fact_id "
+                        "must be cited in its required_section in the COMPLETE draft."
                     )
         raise PRDValidationError(errors[-1])
     except Exception as exc:
