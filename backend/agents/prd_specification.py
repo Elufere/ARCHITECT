@@ -362,6 +362,30 @@ def _group_text(category: str, sources: list[SourceFact]) -> str:
     if category == "PRODUCT_MODEL.entity":
         return _join_items(values) + "."
 
+    if category == "PRODUCT_MODEL.ownership":
+        return "Ownership: " + _join_items(values) + "."
+
+    if category == "PRODUCT_MODEL.persistence":
+        return "Persistence & access: " + _join_items(values) + "."
+
+    if category == "PRODUCT_MODEL.boundary":
+        return "Data boundary: " + _join_items(values) + "."
+
+    if category == "PRODUCT_MODEL.state":
+        subjects = {_singular(source.subject or "") for source in sources if source.subject}
+        subject = next(iter(subjects)) if len(subjects) == 1 else None
+        prefix = f"{_humanize(subject)} states: " if subject else "States: "
+        return prefix + _join_items([
+            source.object.strip() if source.object else source.value.strip()
+            for source in sources
+        ]) + "."
+
+    if category == "PRODUCT_MODEL.transition":
+        return "State transition: " + _join_items(values) + "."
+
+    if category == "PRODUCT_MODEL.operation_rule":
+        return "Operation rule: " + _join_items(values) + "."
+
     if category.startswith("CORE_WORKFLOW."):
         return "Workflow: " + _join_items(values) + "."
 
