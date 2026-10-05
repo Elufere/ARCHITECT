@@ -775,6 +775,28 @@ def _canonical_claim_role(role: str | None, state: AgentState, scope: DiscoveryS
     return canonical_role(identity) if identity else None
 
 
+EXPLICIT_PRODUCT_SCOPE_EXCLUSION_PATTERN = re.compile(
+    r"\b(?:no|without|exclude(?:d|s)?|not\s+include(?:d)?)\b[^.]{0,160}"
+    r"\b(?:features?|functionality|integrations?|payments?|"
+    r"admin\s+(?:features?|dashboard|portal|tool)|support\s+for)\b",
+    re.I,
+)
+
+
+def _recover_unclassified_scope_exclusion(
+    claim: NeutralClaim,
+) -> NeutralClaim:
+    """Promote only explicit product-capability exclusions from unclassified."""
+    if claim.kind != "unclassified":
+        return claim
+    if not EXPLICIT_PRODUCT_SCOPE_EXCLUSION_PATTERN.search(claim.value):
+        return claim
+    return NeutralClaim.model_validate({
+        **claim.model_dump(mode="python"),
+        "kind": "mvp_out_of_scope",
+    })
+
+
 def _explicit_additional_actor_absence_claim(
     user_response: str,
 ) -> NeutralClaim | None:
@@ -1019,7 +1041,8 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
     claims = []
     for raw_claim in payload.items:
         try:
-            claims.append(NeutralClaim.model_validate(raw_claim))
+            claim = NeutralClaim.model_validate(raw_claim)
+            claims.append(_recover_unclassified_scope_exclusion(claim))
         except ValidationError as exc:
             print(f"CLAIM REJECTED: invalid claim schema | {exc}")
 
