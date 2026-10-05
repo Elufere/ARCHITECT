@@ -195,12 +195,22 @@ def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier
         observed = independent_categories(classifier, dict(evidence=source.evidence,
             source_question=source.source_question), definitions, cache)
         stored_category = f"{source.topic}.{source.key}"
-        if stored_category not in compatible_categories(set(observed)):
+        # Short exact evidence spans such as "individual users" or "create a
+        # list" may be semantically valid but too fragmentary for the blind
+        # category classifier to assign a taxonomy label. Treat [] as an
+        # abstention, not as proof that grounded discovery was wrong. A non-empty
+        # conflicting classification still fails, and the per-claim semantic
+        # auditor below independently checks evidence/value/category support.
+        if observed and stored_category not in compatible_categories(set(observed)):
             raise PRDValidationError(
-                f"{source.fact_id}: source evidence does not independently support "
+                f"{source.fact_id}: source evidence conflicts with stored category "
                 f"{stored_category}; observed categories: {sorted(observed)}."
             )
-        source_meanings[source.fact_id] = compatible_categories(set(observed))
+        source_meanings[source.fact_id] = (
+            compatible_categories(set(observed))
+            if observed
+            else compatible_categories({stored_category})
+        )
     verdicts = []
     for claim_id, claim in claims:
         refs = set(claim["source_fact_ids"])
@@ -220,10 +230,31 @@ def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier
                 f"which does not match the declared/cited categories "
                 f"{sorted(source_categories)}."
             )
-        payload = dict(claim_id=claim_id, claim=claim,
+        payload = dict(
+            claim_id=claim_id,
+            claim=claim,
             field_definition=definitions[claim["category"]],
-            cited_facts=[source_map[ref].model_dump(mode="json") for ref in claim["source_fact_ids"]],
-            other_confirmed_facts=[fact.model_dump(mode="json") for fact in sources if fact.fact_id not in refs])
+            cited_facts=[
+                source_map[ref].model_dump(mode="json")
+                for ref in claim["source_fact_ids"]
+            ],
+            # Non-cited facts are contradiction context only. Keep their
+            # semantics but omit repeated evidence/source-question provenance so
+            # every claim audit does not resend the whole interview.
+            other_confirmed_facts=[
+                {
+                    "fact_id": fact.fact_id,
+                    "topic": fact.topic,
+                    "key": fact.key,
+                    "value": fact.value,
+                    "role": fact.role,
+                    "roles": fact.roles,
+                    "absence": fact.absence,
+                }
+                for fact in sources
+                if fact.fact_id not in refs
+            ],
+        )
         try:
             messages = [SystemMessage(content=AUDIT_INSTRUCTION),
                         HumanMessage(content=json.dumps(payload, ensure_ascii=False))]
