@@ -770,3 +770,104 @@ def test_persona_behavior_prose_edits_cannot_change_provenance():
     assert changed.category == original.category
     assert changed.actor_ids == original.actor_ids
     assert changed.source_fact_ids == original.source_fact_ids
+
+
+
+def test_todo_secondary_user_absence_cannot_block_prd_save(monkeypatch, tmp_path):
+    primary = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="primary_users",
+        value="user",
+        evidence="A user can create tasks, edit or delete them, and mark them as completed",
+        roles=["user"],
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+    no_secondary = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="secondary_users",
+        value="none",
+        evidence="There are no other user roles, payments, integrations, or admin features",
+        roles=[],
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+        absence="none",
+    )
+    actions = [
+        KnowledgeItem(
+            topic=T.USER_ROLES,
+            scope=S.USER_APP,
+            key="responsibilities",
+            value=value,
+            evidence="A user can create tasks, edit or delete them, and mark them as completed",
+            role="user",
+            confidence=1,
+            knowledge_state=K.CONFIRMED,
+            source_turn=0,
+        )
+        for value in (
+            "create tasks",
+            "edit tasks",
+            "delete tasks",
+            "mark tasks as completed",
+        )
+    ]
+    exclusions = [
+        KnowledgeItem(
+            topic=T.MVP_SCOPE,
+            scope=S.USER_APP,
+            key="out_of_scope",
+            value=value,
+            evidence="There are no other user roles, payments, integrations, or admin features",
+            confidence=1,
+            knowledge_state=K.CONFIRMED,
+            source_turn=0,
+        )
+        for value in ("payments", "integrations", "admin features")
+    ]
+    concept = ProductConcept(
+        kind=ProductConceptKind.ENTITY,
+        scope=S.USER_APP,
+        subject="task",
+        value="Tasks can be either active or completed",
+        evidence="Tasks can be either active or completed",
+        confidence=1,
+        source_turn=0,
+    )
+    initial = state(primary, no_secondary, *actions, *exclusions)
+    initial["product_concepts"] = [concept.model_dump(mode="json")]
+
+    install_prose(monkeypatch, parsed={"edits": []})
+    monkeypatch.setattr(pm, "OUTPUT_DIR", tmp_path)
+
+    result = pm.pm_compile_node(initial)
+
+    assert result["pm_is_complete"] is True
+    assert result["compilation_errors"] == []
+    contract = result["prd_contract"]
+    absent_source = next(
+        source for source in contract.source_facts
+        if source.key == "secondary_users"
+    )
+    assert absent_source.fact_id in contract.constraint_source_ids
+    assert [persona.name for persona in contract.personas] == ["User"]
+    assert {
+        requirement.description
+        for requirement in contract.functional_requirements
+    } >= {
+        "create tasks",
+        "edit tasks",
+        "delete tasks",
+        "mark tasks as completed",
+        "Tasks can be either active or completed",
+    }
+    assert {item.text for item in contract.scope.out_of_scope} == {
+        "payments",
+        "integrations",
+        "admin features",
+    }
+    assert (tmp_path / "requirements_mvp.json").exists()
