@@ -915,12 +915,29 @@ def _admit_claim_item(
     aliases = list(claim.aliases)
 
     if claim.kind in ("primary_actor", "secondary_actor"):
-        # Identity claims may legitimately introduce a new canonical actor.
-        resolved_role = _canonical_claim_role(claim.role, state, scope)
-        if not resolved_role:
-            resolved_role = _actor_role_from_claim_text(claim.value)
-        if resolved_role and not aliases:
-            aliases = _aliases_from_actor_claim(claim.value)
+        actor_absence = claim.absence or absence_label(claim.value)
+        if actor_absence:
+            # "none"/"not applicable" is a whole-set actor absence, never an
+            # actor identity. Normalize it before role/alias inference so a
+            # model-emitted value="none" cannot accidentally become role/alias
+            # metadata and fail ActorFact validation.
+            resolved_role = None
+            aliases = []
+            claim = claim.model_copy(
+                update={
+                    "absence": actor_absence,
+                    "value": "none" if actor_absence == "none" else "not applicable",
+                    "role": None,
+                    "aliases": [],
+                }
+            )
+        else:
+            # Identity claims may legitimately introduce a new canonical actor.
+            resolved_role = _canonical_claim_role(claim.role, state, scope)
+            if not resolved_role:
+                resolved_role = _actor_role_from_claim_text(claim.value)
+            if resolved_role and not aliases:
+                aliases = _aliases_from_actor_claim(claim.value)
     elif claim.kind in ("multiple_roles", "role_transition"):
         # Role-policy claims may enrich an existing actor with explicit capacity
         # aliases, but must never create membership on their own.
