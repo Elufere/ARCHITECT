@@ -230,7 +230,19 @@ external dependencies, ownership, or another consequential product boundary.
    not an automatic instruction to
    keep drilling it. Follow the newly revealed structure/rule only when its NEXT
    uncertainty still beats the best grounded alternative elsewhere.
-2. Stay on one coherent discovery thread only while its NEXT unresolved decision
+2. GLOBAL BREADTH SCAN BEFORE DEPTH:
+   Before staying inside the current thread, scan the whole confirmed product
+   model for materially unresolved PRODUCT-SHAPE questions in this order:
+   - actor model and the user's primary outcome;
+   - core entities/capabilities and their meaningful relationships;
+   - the normal lifecycle's important start/change/completion decisions;
+   - authorization, ownership, money, compliance, or consequential business rules;
+   - MVP scope and important external dependencies.
+   Prefer an unresolved macro decision over another refinement of a known CRUD
+   action. If those product-shape areas are already coherent and only conventional
+   defaults remain, return frontier=null and move to PRD confirmation.
+
+3. Stay on one coherent discovery thread only while its NEXT unresolved decision
    is still among the highest-value questions available. Continuity is a
    tie-breaker, not a reason to exhaust a thread. Once the governing structure of
    the current thread is coherent enough for product discovery, compare its next
@@ -857,6 +869,13 @@ CREATION_SHAPE_PATTERN = re.compile(
     r"provide|enter|required|validation)\w*\b",
     re.I,
 )
+ENTRY_POINT_PATTERN = re.compile(
+    r"\b(?:first\s+(?:meaningful\s+)?action|initial\s+action|entry\s+point|"
+    r"how\s+(?:does|should).{0,30}\b(?:start|begin)|what.{0,30}\b(?:start|begin)"
+    r"|trigger.{0,20}(?:workflow|interaction))\b",
+    re.I,
+)
+
 MATERIAL_COMPLEXITY_PATTERN = re.compile(
     r"\b(?:payment|pay|paid|money|fund|escrow|approval|approve|authoriz|"
     r"permission|compliance|legal|regulat|security|identity|verification|"
@@ -965,6 +984,23 @@ def _low_signal_crud_depth_frontier(
     proposal = " ".join(
         filter(None, [frontier.objective, frontier.question_hint, frontier.reason])
     )
+    low_risk = _low_risk_single_actor_context(state, scope)
+
+    # Asking for the start/entry point is a recap when a low-risk product already
+    # has an explicit create/add responsibility. The planner should lift to a
+    # different product-shape uncertainty or stop instead.
+    if low_risk and ENTRY_POINT_PATTERN.search(proposal):
+        has_known_entry_action = any(
+            item.scope == scope
+            and item.knowledge_state == KnowledgeState.CONFIRMED
+            and not item.absence
+            and item.key in {"responsibilities", "workflow_steps"}
+            and re.search(r"\b(?:create|add|submit|start|begin)\w*\b", item.value, re.I)
+            for item in state.get("discovered_knowledge", [])
+        )
+        if has_known_entry_action:
+            return True
+
     if not (
         CRUD_ACTION_PATTERN.search(proposal)
         and CRUD_DEPTH_PATTERN.search(proposal)
