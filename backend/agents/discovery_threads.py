@@ -1022,15 +1022,21 @@ CRUD_ACTION_FAMILIES = {
 
 def _crud_action_families(text: str) -> set[str]:
     words = re.findall(r"[a-z]+", (text or "").lower())
-    return {
-        family
-        for family, prefixes in CRUD_ACTION_FAMILIES.items()
-        if any(
-            word.startswith(prefix)
-            for word in words
-            for prefix in prefixes
-        )
-    }
+    families: set[str] = set()
+    for index, word in enumerate(words):
+        # "completed" frequently describes the state of a task/item rather than
+        # an action: "edit completed tasks", "delete completed items". Do not
+        # let that adjective manufacture a COMPLETE action family.
+        if (
+            word == "completed"
+            and index + 1 < len(words)
+            and words[index + 1] in {"task", "tasks", "item", "items", "list", "lists"}
+        ):
+            continue
+        for family, prefixes in CRUD_ACTION_FAMILIES.items():
+            if any(word.startswith(prefix) for prefix in prefixes):
+                families.add(family)
+    return families
 
 
 def _known_ordinary_crud_action(
