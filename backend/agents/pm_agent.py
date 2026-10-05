@@ -31,6 +31,7 @@ from agents.prd_validation import (
 )
 from agents.external_systems import ExternalSystem
 from agents.prd_projection import (
+    ProjectionResult,
     apply_prose_edits,
     claim_slots,
     project_prd,
@@ -197,6 +198,28 @@ def build_deferred_decisions(state: AgentState, scope: DiscoveryScope) -> list[D
             downstream_consequence=boundary.get("downstream_consequence"),
             requirement_id=boundary.get("requirement_id"),
         ))
+
+    for obligation in state.get("founder_obligations", []) or []:
+        if not isinstance(obligation, dict) or obligation.get("status") != "DEFERRED":
+            continue
+        raw_scope = getattr(obligation.get("scope"), "value", obligation.get("scope"))
+        if raw_scope and raw_scope != scope.value:
+            continue
+        identity = obligation.get("id")
+        decision = obligation.get("description")
+        evidence = obligation.get("evidence")
+        if not identity or not decision or not evidence or identity in seen:
+            continue
+        seen.add(identity)
+        result.append(DeferredDecision(
+            id=str(identity),
+            kind="decision",
+            decision=str(decision),
+            evidence=str(evidence),
+            source_turn=int(obligation.get("source_turn", 0)),
+            resolution_stage="product_discovery",
+            downstream_consequence="Remains an explicit open product decision in this PRD.",
+        ))
     return result
 
 
@@ -230,6 +253,27 @@ def pm_compile_node(state: AgentState) -> dict:
         sources = build_source_snapshot(state)
 
         projection = project_prd(sources)
+        deferred_open_questions = [
+            str(item.get("description"))
+            for item in (state.get("founder_obligations", []) or [])
+            if isinstance(item, dict)
+            and item.get("status") == "DEFERRED"
+            and item.get("description")
+            and (
+                not item.get("scope")
+                or getattr(item.get("scope"), "value", item.get("scope")) == scope.value
+            )
+        ]
+        if deferred_open_questions:
+            projection = ProjectionResult(
+                draft=projection.draft.model_copy(
+                    update={
+                        "open_questions": list(dict.fromkeys(deferred_open_questions))
+                    }
+                ),
+                visible_source_ids=projection.visible_source_ids,
+                constraint_source_ids=projection.constraint_source_ids,
+            )
         validate_projection(projection, sources)
         product_model = build_product_model(sources)
         feature_specifications = build_feature_specifications(
