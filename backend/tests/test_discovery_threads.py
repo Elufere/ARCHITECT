@@ -690,3 +690,32 @@ def test_material_payment_context_does_not_trigger_low_risk_crud_suppression():
         _simple_todo_depth_state(material=True),
         S.USER_APP,
     ) is False
+
+
+
+def test_known_create_action_blocks_redundant_entry_point_question():
+    plan = _frontier(
+        "task_entry_point",
+        "Clarify the first meaningful action in the task workflow.",
+        "What is the first meaningful action the user takes to begin managing tasks?",
+    )
+
+    assert threads._low_signal_crud_depth_frontier(
+        plan,
+        _simple_todo_depth_state(),
+        S.USER_APP,
+    ) is True
+
+
+def test_low_risk_product_rejects_completion_timing_microdecision():
+    plan = _frontier(
+        "task_creation_completion_interaction",
+        "Clarify completion timing during task creation.",
+        "Can the user mark a task completed immediately during creation?",
+    )
+
+    assert threads._low_signal_crud_depth_frontier(
+        plan,
+        _simple_todo_depth_state(),
+        S.USER_APP,
+    ) is True
