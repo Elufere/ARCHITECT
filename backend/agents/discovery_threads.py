@@ -861,7 +861,8 @@ CRUD_DEPTH_PATTERN = re.compile(
     r"historical|retention|retain|archive|archived|lock|locked|confirmation|"
     r"confirm|reopen|revers(?:e|ible|ibility)|side\s+effects?|additional\s+"
     r"behavio[u]?r|what\s+happens\s+next|display|interactions?|after\s+"
-    r"completion|completed\s+(?:state|list|item|task))\b",
+    r"completion|completed\s+(?:state|list|item|task)|timing|immediately|"
+    r"during\s+creation|at\s+creation)\b",
     re.I,
 )
 CREATION_SHAPE_PATTERN = re.compile(
