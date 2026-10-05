@@ -649,8 +649,67 @@ def test_low_risk_app_rejects_interaction_design_frontiers(
     objective,
     hint,
 ):
-    state = _simple_todo_depth_state()
-    plan = _frontier(decision_key, objective, hint)
+    primary = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="primary_users",
+        value="user",
+        evidence="A user manages tasks",
+        roles=["user"],
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+    no_secondary = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="secondary_users",
+        value="none",
+        evidence="There are no other user roles",
+        roles=[],
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+        absence="none",
+    )
+    create = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="responsibilities",
+        role="user",
+        value="create tasks",
+        evidence="A user can create tasks",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+    validation = KnowledgeItem(
+        topic=T.BUSINESS_RULES,
+        scope=S.USER_APP,
+        key="validation_rules",
+        value="The task title cannot be empty",
+        evidence="The task title cannot be empty",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=1,
+    )
+    state = {
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [primary, no_secondary, create, validation],
+        "external_systems": [],
+    }
+    plan = DiscoveryThreadPlan(
+        thread_id="core_interaction",
+        thread_label="Core interaction",
+        thread_objective="Understand task interaction.",
+        frontier=ThreadFrontierInquiry(
+            decision_key=decision_key,
+            topic=T.CORE_WORKFLOW,
+            objective=objective,
+            question_hint=hint,
+            reason="The detail is not yet specified.",
+        ),
+    )
 
     assert threads._low_signal_crud_depth_frontier(
         plan,
