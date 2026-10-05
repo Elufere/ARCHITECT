@@ -41,12 +41,14 @@ structured_llm = get_structured_model(
     call_name="pm_compile.compile",
     schema=PRDDraft,
     include_raw=True,
-    max_tokens=8192,
+    max_tokens=COMPILER_MAX_OUTPUT_TOKENS,
 )
 audit_llm = get_structured_model(call_name="pm_compile.audit", schema=ClaimVerdict, include_raw=True, max_tokens=1024)
 category_llm = get_structured_model(call_name="pm_compile.classification", schema=SemanticCategories, include_raw=True, max_tokens=1024)
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 MAX_COMPILE_ATTEMPTS = 3
+COMPILER_MAX_OUTPUT_TOKENS = 8192
+COMPILER_CONTEXT_BUDGET = 65536
 
 
 def _draft_source_references(draft: PRDDraft):
@@ -280,7 +282,6 @@ def compiler_required_coverage(sources):
         obligations.append({
             "fact_id": source.fact_id,
             "category": category,
-            "value": source.value,
             "required_section": section,
         })
     return obligations
@@ -326,7 +327,12 @@ def pm_compile_node(state: AgentState) -> dict:
             try:
                 messages = [SystemMessage(content=build_compile_prompt()),
                             HumanMessage(content=json.dumps(payload, ensure_ascii=False))]
-                check_context_budget(messages, PRDDraft, output_tokens=8192)
+                check_context_budget(
+                    messages,
+                    PRDDraft,
+                    output_tokens=COMPILER_MAX_OUTPUT_TOKENS,
+                    context_budget=COMPILER_CONTEXT_BUDGET,
+                )
                 result = structured_llm.invoke(messages)
                 parsed = result.get("parsed") if isinstance(result, dict) and "parsed" in result else result
                 if parsed is None:
