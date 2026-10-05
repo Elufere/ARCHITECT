@@ -258,7 +258,11 @@ def question_generator_node(state: AgentState) -> dict:
     validation_guidance = ""
     advice_requested = state.get("conversation_intent") == "advice_request"
     gap_guidance_turn = state.get("conversation_intent") == "gap_guidance"
-    founder_gap_guidance = list(state.get("founder_gap_guidance", []) or [])[-10:]
+    founder_gap_guidance = [
+        entry
+        for entry in (state.get("founder_gap_guidance", []) or [])
+        if not entry.get("scope") or entry.get("scope") == discovery_scope.value
+    ][-10:]
     discovery_boundaries = [
         item for item in state.get("discovery_boundaries", [])[-50:]
         if not item.get("scope") or item.get("scope") == discovery_scope.value
