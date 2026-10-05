@@ -162,14 +162,37 @@ def save_verified_prd(contract, path):
             temporary.unlink()
 
 
+def compiler_source_payload(sources):
+    """Minimize compile prompt size without weakening downstream verification.
+
+    The compiler only needs canonical fact meaning and IDs to draft sourced
+    claims. Exact evidence/provenance remains in SourceFact and is supplied to
+    the independent verifier after drafting.
+    """
+    return [
+        {
+            "fact_id": fact.fact_id,
+            "topic": fact.topic,
+            "key": fact.key,
+            "value": fact.value,
+            "role": fact.role,
+            "roles": fact.roles,
+            "absence": fact.absence,
+        }
+        for fact in sources
+    ]
+
+
 def pm_compile_node(state: AgentState) -> dict:
     """Compile, verify every claim, then save. Failure never publishes a draft."""
     errors = []
     try:
         scope = DiscoveryScope(state["discovery_scope"])
         sources = build_source_snapshot(state)
-        payload = dict(discovery_scope=scope.value,
-                       confirmed_facts=[fact.model_dump(mode="json") for fact in sources])
+        payload = dict(
+            discovery_scope=scope.value,
+            confirmed_facts=compiler_source_payload(sources),
+        )
         category_cache = {}
         for attempt in range(MAX_COMPILE_ATTEMPTS):
             try:
