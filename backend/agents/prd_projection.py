@@ -60,10 +60,21 @@ def _persona(source: SourceFact, secondary: bool = False) -> UserPersona:
         if actors
         else source.value.strip().title()
     )
-    prefix = "Secondary user" if secondary else "Primary user"
+    persona_name = name or ("Secondary user" if secondary else "User")
+    normalized_value = source.value.strip().lower()
+    normalized_name = persona_name.strip().lower()
+    if normalized_value in {normalized_name, f"a {normalized_name}", f"an {normalized_name}"}:
+        description = (
+            "Secondary product user."
+            if secondary
+            else "Primary product user."
+        )
+    else:
+        prefix = "Secondary user" if secondary else "Primary user"
+        description = f"{prefix}: {source.value.strip()}."
     return UserPersona(
-        name=name or ("Secondary user" if secondary else "User"),
-        description=f"{prefix}: {source.value.strip()}",
+        name=persona_name,
+        description=description,
         key_behaviors=[],
         category=source_category(source),
         actor_ids=actors,
