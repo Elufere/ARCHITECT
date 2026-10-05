@@ -431,16 +431,17 @@ def conversation_manager_node(state: AgentState) -> dict:
             **apply_deferral(
                 state,
                 FreeTextDeferralReview(
-                action="defer",
-                primary_control_intent=True,
-                kind=DeferralKind.DESIGN_IMPLEMENTATION,
-                decision_summary=(
-                    state.get("current_objective")
-                    or final_question_text(previous_question)
-                    or "Current design / implementation decision"
-                ),
-                reason=(
-                    "Founder explicitly delegated this decision to design or engineering."
+                    action="defer",
+                    primary_control_intent=True,
+                    kind=DeferralKind.DESIGN_IMPLEMENTATION,
+                    decision_summary=(
+                        state.get("current_objective")
+                        or final_question_text(previous_question)
+                        or "Current design / implementation decision"
+                    ),
+                    reason=(
+                        "Founder explicitly delegated this decision to design or engineering."
+                    ),
                 ),
                 messages[-1].content,
             ),
