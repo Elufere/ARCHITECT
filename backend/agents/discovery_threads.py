@@ -218,40 +218,70 @@ The payload may contain founder_gap_guidance. These entries are meta-level
 discovery guidance: areas/questions the founder explicitly says are still
 unresolved. They are NOT confirmed product facts, NOT answers, and NOT deferred
 decisions. Treat them as strong candidates for the next discovery move when they
-remain materially unresolved. Do not claim the founder "established" or "decided"
-anything from them. Do not force low-value/UI/implementation items merely because
-they appear in the list; apply the same stopping/materiality rules. When one is
-already answered by confirmed founder evidence, move to another unresolved item
-or finish.
-
-STOPPING TEST — apply this BEFORE proposing a frontier:
-Ask whether a competent product/engineering team could implement the founder's
-MVP without inventing a MATERIAL business/product decision. If yes, return
-frontier=null. Do not keep interviewing merely to choose ordinary defaults.
-A missing detail is not automatically a founder decision. Reversible choices
-about history, undo, delete permanence, confirmation prompts, display behavior,
-interaction flow, exact CRUD timing, or other conventional mechanics should
-normally be left to design/engineering unless founder evidence makes them
-material to authorization, money, compliance, multi-party coordination,
-external dependencies, ownership, or another consequential product boundary.
+remain unresolved. Do not claim the founder "established" or "decided" anything
+from them. A founder-requested product decision is not made irrelevant merely
+because the product is simple or low-risk.
 
 1. Start by understanding what CHANGED in the founder's latest answer. The
    payload explicitly identifies facts, product concepts, and grounded external
    systems captured on the latest turn. Treat that as strong continuity context,
-   not an automatic instruction to
-   keep drilling it. Follow the newly revealed structure/rule only when its NEXT
-   uncertainty still beats the best grounded alternative elsewhere.
-2. GLOBAL BREADTH SCAN BEFORE DEPTH:
-   Before staying inside the current thread, scan the whole confirmed product
-   model for materially unresolved PRODUCT-SHAPE questions in this order:
-   - actor model and the user's primary outcome;
-   - core entities/capabilities and their meaningful relationships;
-   - the normal lifecycle's important start/change/completion decisions;
-   - authorization, ownership, money, compliance, or consequential business rules;
-   - MVP scope and important external dependencies.
-   Prefer an unresolved macro decision over another refinement of a known CRUD
-   action. If those product-shape areas are already coherent and only conventional
-   defaults remain, return frontier=null and move to PRD confirmation.
+   not an automatic instruction to keep drilling it. Follow a newly revealed
+   structure/rule when its next unresolved consequence would materially change
+   the product contract.
+
+2. PRODUCT-DEFINITION BREADTH SCAN BEFORE STOPPING:
+   Before considering frontier=null, scan the whole confirmed product model for
+   meaningful unresolved PRODUCT decisions. Do not use risk/complexity as the
+   definition of materiality. A simple single-user product still has product
+   decisions worth clarifying.
+
+   High-value areas include, when the confirmed product makes them relevant:
+   - the user's primary outcome or job-to-be-done;
+   - the shape of core entities and the information they contain;
+   - meaningful relationships/ownership/persistence/access rules;
+   - lifecycle states and user-controlled transitions between them;
+   - validations and constraints that change what users may create or do;
+   - user-visible behavior after important actions or state changes;
+   - search/filter/sort/discovery behavior when records must be found or managed;
+   - reminders/notifications when time or deadlines are part of the product;
+   - platform/account/access boundaries when they affect the intended experience;
+   - business rules, permissions, money, compliance, external dependencies, and
+     consequential exception behavior.
+
+   This is NOT a checklist. Ask only what is causally relevant to the product
+   already described. But do not stop merely because engineers could choose a
+   reasonable default.
+
+3. PRODUCT-CONTRACT MATERIALITY TEST:
+   A question is materially useful when two plausible founder answers would lead
+   to meaningfully different PRD requirements, entity/data shape, lifecycle,
+   validation, access/persistence behavior, notification behavior, platform
+   scope, or user-visible product behavior. Risk, money, compliance, and
+   irreversibility are strong signals, but they are NOT required.
+
+   Examples of the reasoning pattern, not Todo-specific requirements:
+   - cloud persistence can create a real product question about account/access;
+   - a completed state can create a real product question about whether users may
+     edit or reactivate it;
+   - a due/deadline concept can create real questions about optionality, overdue
+     behavior, and reminders;
+   - a mobile product can create a real scope question about supported platforms.
+
+   By contrast, button placement, modal-vs-toast choice, visual styling, copy,
+   component selection, database technology, API shape, and internal algorithms
+   normally belong to design/engineering unless the founder makes them part of
+   the product contract.
+
+4. STOPPING TEST — apply this ONLY AFTER the product-definition breadth scan:
+   Return frontier=null only when the confirmed product can be described in a PRD
+   without the team having to choose among materially different user-facing
+   product behaviors or product-model interpretations, and the remaining
+   uncertainty is principally visual design, interaction implementation,
+   technical implementation, or low-impact preference.
+
+   "A competent engineering team could build something" is NOT sufficient reason
+   to stop. The goal is to define the founder's intended product, not merely an
+   implementable product.
 
 3. Stay on one coherent discovery thread only while its NEXT unresolved decision
    is still among the highest-value questions available. Continuity is a
@@ -426,19 +456,26 @@ external dependencies, ownership, or another consequential product boundary.
       discovery questions.
     feedback.evidence must quote the latest founder answer and feedback.instruction
     must describe the conversational boundary without inventing a product fact.
-16. ORDINARY ACTION SUFFICIENCY:
-    A confirmed ordinary content-management action such as create/add/remove/edit/
-    rename/mark/view is already meaningful product behavior. Do NOT automatically
-    expand it into questions about restrictions, confirmation, undo, restoration,
-    historical retention, permanent deletion, locking, or detailed lifecycle merely
-    because those details could exist. Ask such depth only when founder evidence
-    already introduces a material state distinction, irreversible outcome,
-    retention/history requirement, authorization/security boundary, compliance/
-    business risk, or another grounded consequence that changes the product model.
-    "We do not know whether remove has undo" is not by itself a discovery gap.
-    For a simple product whose actors, core actions, completion condition, and
-    exclusions are already coherent, prefer stopping/confirmation over inventing
-    policy around every CRUD action.
+16. ORDINARY ACTION DEPTH:
+    A confirmed CRUD/content-management action is only the capability layer; it
+    does not automatically define the product semantics around that action.
+    Do NOT mechanically interrogate every possible CRUD policy. However, a
+    follow-up is a legitimate PRODUCT decision when its answer would change a
+    functional requirement, entity state/lifecycle, validation rule, retention
+    behavior, notification side effect, availability of an action, or another
+    user-visible product rule.
+
+    Examples:
+    - "Can completed records still be edited?" changes lifecycle behavior and is
+      product discovery, not screen design.
+    - "Can a deleted record be recovered?" changes retention/lifecycle semantics.
+    - "Should deletion use a modal or toast?" is interaction design and normally
+      should not be asked.
+    - "What exact database flag represents completion?" is implementation and
+      should not be asked.
+
+    Low product risk is NOT evidence that the question has low product value.
+    Judge whether the answer changes the product contract.
 
 17. Before choosing the next frontier, perform BREADTH ARBITRATION:
     - identify the best next uncertainty inside the active thread;
@@ -754,6 +791,10 @@ Return:
   best_alternative_focus. This is DIAGNOSTIC ONLY: the planner already owns global
   breadth-vs-depth ranking, so do not invalidate an otherwise good frontier merely
   because you can imagine a somewhat better alternative.
+- low_signal_crud_hint is a NON-AUTHORITATIVE heuristic indicating that the
+  question resembles CRUD refinement in a simple context. Consider it, but do
+  not treat it as proof of low value. The product-contract delta test is
+  authoritative.
 - should_move_on=true ONLY when the proposed frontier itself is no longer worth
   asking at this discovery stage: for example it is implementation/UI detail,
   exhaustive refinement after the governing rule is already coherent, or continued
@@ -775,12 +816,16 @@ Return:
   INTERACTION_DESIGN = screen flow, button/control sequence, layout, placement,
   presentation, microcopy, clickable-vs-text, modal/toast/component choice;
   IMPLEMENTATION = technical mechanism/architecture/code/service internals.
-- material_product_consequence=true only when knowing this answer could materially
-  change the PRD's product rule, authorization/security/compliance boundary,
-  money/data movement, lifecycle/state transition, major dependency, or similarly
-  consequential behavior. If abstraction_level is INTERACTION_DESIGN or
-  IMPLEMENTATION and there is no such consequence, set should_move_on=true even
-  when the detail is unknown.
+- material_product_consequence=true when knowing this answer could materially
+  change ANY grounded product-contract element: a functional requirement,
+  user-visible capability/availability, entity/data shape, ownership/persistence,
+  validation/constraint, lifecycle/state transition, notification/reminder rule,
+  platform/access boundary, business rule, authorization/security/compliance
+  boundary, money/data movement, major dependency, or similarly meaningful PRD
+  behavior. The product does NOT need to be high-risk, multi-user, financial, or
+  irreversible for a consequence to be material. If abstraction_level is
+  INTERACTION_DESIGN or IMPLEMENTATION and the answer would not change the
+  product contract, set should_move_on=true even when the detail is unknown.
 
 CRITICAL COVERAGE RULE:
 Related context is NOT an answer. Knowing WHO the actors are does not answer WHAT
@@ -815,23 +860,18 @@ DEPTH / MARGINAL VALUE:
 Product discovery is not an exhaustive interrogation. "Something is still
 unknown" is NOT enough reason to keep asking inside the same thread.
 
-Treat ordinary CRUD/content-management actions as sufficiently specified at the
-action level unless founder evidence introduces a material distinction. For
-example, knowing that a user may add/remove/mark list items does NOT justify
-asking about removal restrictions, permanent-vs-restorable deletion, undo,
-history retention, locking, or post-completion edit mechanics solely because
-those details are unspecified. In that situation set should_move_on=true and
-material_product_consequence=false. The product can still be represented in a
-PRD without those invented policy decisions.
+Do not equate "ordinary CRUD" with "fully specified product behavior." The action
+itself may be known while an adjacent product decision remains material. Ask the
+follow-up when plausible answers would create different functional requirements,
+entity/data shape, lifecycle/state rules, validations, access/persistence rules,
+notifications, platform scope, or other user-visible product behavior.
 
-For low-risk, single-actor products with no positive secondary actors, external
-systems, money movement, authorization/compliance/security boundary, or other
-material-risk signal, be especially conservative. After the core entity shape
-and core capabilities are clear, ordinary CRUD policy differences are normally
-safe implementation/design defaults rather than founder questions. Do not call
-"data integrity" or "user experience" a material product consequence by itself.
-A material consequence must change the product contract, not merely the code or
-screen behavior.
+For simple or single-actor products, judge marginal value exactly the same way:
+by PRODUCT-CONTRACT DELTA, not by risk. Simplicity is not a reason to stop early.
+A low-risk decision may still define the product. Conversely, details that only
+change layout, wording, component choice, exact navigation choreography, or
+internal implementation remain low-value unless founder evidence makes them part
+of the product contract.
 
 A thread is coherent enough to pause when its governing product shape can be
 represented without guessing: the important actors/entities, the core relation
@@ -1173,15 +1213,11 @@ def _semantic_frontier_problem(
     if frontier is None:
         return None
 
-    if _low_signal_crud_depth_frontier(plan, state, scope):
-        return (
-            "LOW_MARGINAL_VALUE: The frontier invents policy depth around an "
-            "already-confirmed ordinary content-management action without founder "
-            "evidence of a material state, authorization, retention, compliance, "
-            "or irreversible consequence. Treat the action as sufficiently "
-            "specified for product discovery and move to a materially different "
-            "decision or finish."
-        )
+    low_signal_crud_hint = _low_signal_crud_depth_frontier(
+        plan,
+        state,
+        scope,
+    )
 
     for boundary in state.get("discovery_boundaries", []) or []:
         if not isinstance(boundary, dict):
@@ -1209,6 +1245,7 @@ def _semantic_frontier_problem(
             "question_hint": frontier.question_hint,
             "reason": frontier.reason,
         },
+        "low_signal_crud_hint": low_signal_crud_hint,
         "captured_founder_observations": _observation_payload(state, scope),
         "founder_gap_guidance": _gap_guidance_payload(state, scope),
         "discovery_boundaries": [
