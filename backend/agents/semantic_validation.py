@@ -337,6 +337,13 @@ and categories. For each evidence_id, list ONLY the TOPIC.key
 meanings explicitly expressed by that quote. Multiple meanings may coexist.
 Then return supported_ids for candidates whose own quote entails their full value,
 polarity, scope and actor. A fact appearing elsewhere cannot rescue a wrong quote.
+
+ATOMICITY CHECK: a quote may explicitly express several independent meanings, but
+each candidate VALUE must isolate only the meaning of its own candidate category.
+Reject a candidate that copies/bundles unrelated clauses from the quote into one
+category. For example, a sentence that states account ownership, cloud persistence
+and cross-device access may support several separate candidates; it does not
+support one USER_GOALS value that also asserts ownership and storage.
 Use latest_response/question only to resolve references and short answers. The
 active question is NOT a relevance gate for product knowledge: a founder may
 answer the question and volunteer adjacent facts in the same response. Judge each
