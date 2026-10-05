@@ -1,0 +1,364 @@
+"""Canonical product model and founder-facing feature specification projection.
+
+This layer sits between the immutable discovery source ledger and PRD rendering.
+It groups related grounded facts into coherent product capabilities without
+changing coverage or inventing behavior. Atomic source-linked requirements remain
+in PRDDraft for provenance/verification; feature specifications are the readable
+product document view.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import re
+
+from agents.prd_schema import (
+    FeatureSpecification,
+    PRDDraft,
+    SourceFact,
+    SourcedClaim,
+)
+
+
+WORD_RE = re.compile(r"[a-z0-9]+")
+
+CAPABILITY_FAMILIES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "persistence",
+        re.compile(
+            r"\b(?:persist|persistent|stored?|cloud|across\s+devices?|sync|"
+            r"remain\s+(?:available|saved)|account[- ]based|save(?:d)?)\b",
+            re.I,
+        ),
+    ),
+    (
+        "authentication",
+        re.compile(
+            r"\b(?:sign[- ]?in|log[- ]?in|login|register|registration|"
+            r"account\s+creation|authenticate|authentication|password|oauth)\b",
+            re.I,
+        ),
+    ),
+    (
+        "payments",
+        re.compile(
+            r"\b(?:payment|pay|billing|subscription|invoice|checkout|refund|"
+            r"escrow|fee|payout)\b",
+            re.I,
+        ),
+    ),
+    (
+        "scheduling",
+        re.compile(
+            r"\b(?:schedule|calendar|appointment|booking|session\s+time|"
+            r"availability)\b",
+            re.I,
+        ),
+    ),
+    (
+        "communication",
+        re.compile(
+            r"\b(?:message|chat|call|communicat|conversation|comment)\w*\b",
+            re.I,
+        ),
+    ),
+    (
+        "notifications",
+        re.compile(
+            r"\b(?:notification|notify|reminder|alert)\w*\b",
+            re.I,
+        ),
+    ),
+    (
+        "reporting",
+        re.compile(
+            r"\b(?:report|analytics|dashboard|metric|insight|trend)\w*\b",
+            re.I,
+        ),
+    ),
+    (
+        "submission",
+        re.compile(
+            r"\b(?:submit|submission|upload|assignment|document\s+upload)\w*\b",
+            re.I,
+        ),
+    ),
+    (
+        "approval",
+        re.compile(
+            r"\b(?:approve|approval|review|moderate|verification)\w*\b",
+            re.I,
+        ),
+    ),
+    (
+        "search",
+        re.compile(
+            r"\b(?:search|filter|discover|browse|sort)\w*\b",
+            re.I,
+        ),
+    ),
+)
+
+
+@dataclass(frozen=True)
+class CanonicalProductModel:
+    sources: tuple[SourceFact, ...]
+    visible_sources: tuple[SourceFact, ...]
+    constraint_sources: tuple[SourceFact, ...]
+    actors: tuple[str, ...]
+    entities: tuple[str, ...]
+
+
+def _words(value: str) -> set[str]:
+    return set(WORD_RE.findall((value or "").lower()))
+
+
+def _singular(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+    if normalized.endswith("ies") and len(normalized) > 4:
+        return normalized[:-3] + "y"
+    if normalized.endswith("s") and not normalized.endswith("ss") and len(normalized) > 3:
+        return normalized[:-1]
+    return normalized
+
+
+def _humanize(value: str) -> str:
+    return re.sub(r"[_\-]+", " ", value).strip().title()
+
+
+def build_product_model(sources: list[SourceFact]) -> CanonicalProductModel:
+    visible = tuple(source for source in sources if source.absence is None)
+    constraints = tuple(source for source in sources if source.absence is not None)
+
+    actors: list[str] = []
+    entities: list[str] = []
+    for source in visible:
+        for actor in [source.role, *(source.roles or [])]:
+            if actor and actor not in actors:
+                actors.append(actor)
+        if source.topic == "PRODUCT_MODEL" and source.subject:
+            subject = _singular(source.subject)
+            if subject and subject not in entities:
+                entities.append(subject)
+
+    return CanonicalProductModel(
+        sources=tuple(sources),
+        visible_sources=visible,
+        constraint_sources=constraints,
+        actors=tuple(actors),
+        entities=tuple(entities),
+    )
+
+
+def _entity_for_source(source: SourceFact, entities: tuple[str, ...]) -> str | None:
+    if source.subject:
+        return _singular(source.subject)
+
+    text_words = _words(f"{source.value} {source.evidence}")
+    for entity in entities:
+        entity_words = _words(entity)
+        plural_words = {_singular(word) for word in text_words}
+        if entity_words and entity_words <= plural_words:
+            return entity
+        # Single-token domain entities are common and should match plural forms.
+        if len(entity_words) == 1:
+            token = next(iter(entity_words))
+            if token in {_singular(word) for word in text_words}:
+                return entity
+    return None
+
+
+def _family_for_source(source: SourceFact) -> str | None:
+    text = f"{source.value} {source.evidence}"
+    for family, pattern in CAPABILITY_FAMILIES:
+        if pattern.search(text):
+            return family
+    return None
+
+
+def _bundle_key(source: SourceFact, model: CanonicalProductModel) -> tuple[str, str | None, str | None]:
+    entity = _entity_for_source(source, model.entities)
+    family = _family_for_source(source)
+
+    # Persistence/account availability is product-visible enough to deserve its
+    # own feature even when it concerns an existing entity.
+    if family in {"persistence", "authentication", "payments", "scheduling", "communication",
+                  "notifications", "reporting", "submission", "approval", "search"}:
+        return (family, entity, source.role)
+
+    if entity:
+        return ("entity_core", entity, source.role)
+
+    if source.role:
+        return ("actor_capability", None, source.role)
+
+    if source.topic == "CORE_WORKFLOW":
+        return ("workflow", None, None)
+    if source.topic in {"BUSINESS_RULES", "EXCEPTIONS", "EDGE_CASES"}:
+        return ("rules", None, None)
+    return ("product_capability", None, None)
+
+
+def _bundle_title(kind: str, entity: str | None, role: str | None) -> str:
+    subject = _humanize(entity) if entity else None
+    role_name = _humanize(role) if role else None
+
+    if kind == "persistence":
+        return f"{subject} Persistence & Access" if subject else "Persistence & Access"
+    if kind == "authentication":
+        return "Account & Authentication"
+    if kind == "payments":
+        return "Payments & Billing"
+    if kind == "scheduling":
+        return "Scheduling"
+    if kind == "communication":
+        return "Communication"
+    if kind == "notifications":
+        return "Notifications & Reminders"
+    if kind == "reporting":
+        return "Reporting & Analytics"
+    if kind == "submission":
+        return "Submission Management"
+    if kind == "approval":
+        return "Review & Approval"
+    if kind == "search":
+        return "Search & Organization"
+    if kind == "entity_core":
+        return f"{subject} Management" if subject else "Core Product Management"
+    if kind == "actor_capability":
+        return f"{role_name} Capabilities" if role_name else "User Capabilities"
+    if kind == "workflow":
+        return "Core Workflow"
+    if kind == "rules":
+        return "Product Rules & Exceptions"
+    return "Core Product Capabilities"
+
+
+def _join_items(values: list[str]) -> str:
+    cleaned = [value.strip().rstrip(".") for value in values if value.strip()]
+    if not cleaned:
+        return ""
+    if len(cleaned) == 1:
+        return cleaned[0]
+    if len(cleaned) == 2:
+        return f"{cleaned[0]} and {cleaned[1]}"
+    return ", ".join(cleaned[:-1]) + f", and {cleaned[-1]}"
+
+
+def _attribute_label(source: SourceFact) -> str:
+    if source.object:
+        return source.object.strip()
+    return source.value.strip()
+
+
+def _group_text(category: str, sources: list[SourceFact]) -> str:
+    values = [source.value.strip() for source in sources]
+    actors = [source.role for source in sources if source.role]
+    actor = actors[0] if actors and all(item == actors[0] for item in actors) else None
+
+    if category == "USER_ROLES.responsibilities":
+        prefix = f"{_humanize(actor)} can " if actor else "Users can "
+        return prefix + _join_items(values) + "."
+
+    if category == "USER_ROLES.permissions":
+        prefix = f"{_humanize(actor)} permissions: " if actor else "Permissions: "
+        return prefix + _join_items(values) + "."
+
+    if category == "PRODUCT_MODEL.attribute":
+        subjects = {_singular(source.subject or "") for source in sources if source.subject}
+        subject = next(iter(subjects)) if len(subjects) == 1 else None
+        prefix = f"{_humanize(subject)} details: " if subject else "Data details: "
+        return prefix + _join_items([_attribute_label(source) for source in sources]) + "."
+
+    if category == "PRODUCT_MODEL.entity":
+        return _join_items(values) + "."
+
+    if category.startswith("CORE_WORKFLOW."):
+        return "Workflow: " + _join_items(values) + "."
+
+    if category.startswith("BUSINESS_RULES."):
+        return "Rule: " + _join_items(values) + "."
+
+    if category.startswith("EXCEPTIONS.") or category.startswith("EDGE_CASES."):
+        return "Exception handling: " + _join_items(values) + "."
+
+    if category == "MVP_SCOPE.must_have_features":
+        return "MVP capability: " + _join_items(values) + "."
+
+    return _join_items(values) + "."
+
+
+def _actor_ids(sources: list[SourceFact]) -> list[str]:
+    result: list[str] = []
+    for source in sources:
+        for actor in [source.role, *(source.roles or [])]:
+            if actor and actor not in result:
+                result.append(actor)
+    return result
+
+
+def build_feature_specifications(
+    draft: PRDDraft,
+    model: CanonicalProductModel,
+) -> list[FeatureSpecification]:
+    requirement_by_source = {
+        ref: requirement.id
+        for requirement in draft.functional_requirements
+        for ref in requirement.source_fact_ids
+    }
+    operational = [
+        source
+        for source in model.visible_sources
+        if source.fact_id in requirement_by_source
+    ]
+
+    bundles: dict[tuple[str, str | None, str | None], list[SourceFact]] = {}
+    order: list[tuple[str, str | None, str | None]] = []
+    for source in operational:
+        key = _bundle_key(source, model)
+        if key not in bundles:
+            bundles[key] = []
+            order.append(key)
+        bundles[key].append(source)
+
+    result: list[FeatureSpecification] = []
+    for index, key in enumerate(order, start=1):
+        kind, entity, role = key
+        sources = bundles[key]
+        grouped: dict[str, list[SourceFact]] = {}
+        category_order: list[str] = []
+        for source in sources:
+            category = f"{source.topic}.{source.key}"
+            if category not in grouped:
+                grouped[category] = []
+                category_order.append(category)
+            grouped[category].append(source)
+
+        details = [
+            SourcedClaim(
+                text=_group_text(category, grouped[category]),
+                category=category,
+                actor_ids=_actor_ids(grouped[category]),
+                conditions=[],
+                source_fact_ids=[source.fact_id for source in grouped[category]],
+            )
+            for category in category_order
+        ]
+        title = _bundle_title(kind, entity, role)
+        requirement_ids = list(dict.fromkeys(
+            requirement_by_source[source.fact_id] for source in sources
+        ))
+        result.append(
+            FeatureSpecification(
+                id=f"FEATURE-{index:02d}",
+                title=title,
+                overview=(
+                    f"Defines the confirmed product behavior, data, and rules for "
+                    f"{title.lower()}."
+                ),
+                details=details,
+                requirement_ids=requirement_ids,
+                source_fact_ids=[source.fact_id for source in sources],
+            )
+        )
+
+    return result
