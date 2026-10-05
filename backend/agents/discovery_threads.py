@@ -632,7 +632,10 @@ def _gap_guidance_payload(
     for entry in state.get("founder_gap_guidance", []) or []:
         if not isinstance(entry, dict):
             continue
+        if entry.get("scope") and entry.get("scope") != scope.value:
+            continue
         result.append({
+            "scope": entry.get("scope") or scope.value,
             "source_turn": entry.get("source_turn"),
             "evidence": entry.get("evidence"),
             "items": entry.get("items", []),
