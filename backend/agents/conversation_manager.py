@@ -357,11 +357,15 @@ founder meant."""),
 
 
 EXPLICIT_DEFERRAL_AUTHORIZATION = re.compile(
-    r"\b(?:decide|discuss|handle|figure|work)\s+(?:it|that|this|them)?\s*later\b"
-    r"|\b(?:defer|postpone|park|skip)\b"
+    r"\b(?:decide|discuss|handle|figure(?:\s+out)?|work\s+on)\b"
+    r"[^.\n]{0,45}\b(?:later|another\s+time|not\s+now)\b"
+    r"|\b(?:defer|postpone|park|skip|hold\s+off)\b"
+    r"|\bput\b[^.\n]{0,30}\baside\b"
     r"|\b(?:leave|save)\s+(?:it|that|this|them)?\s*(?:for|until|to)\b"
+    r"|\bleave\b[^.\n]{0,30}\b(?:open|undecided)\b[^.\n]{0,20}\bfor\s+now\b"
     r"|\b(?:phase\s*2|later\s+(?:phase|release)|after\s+launch|not\s+now)\b"
-    r"|\b(?:come\s+back\s+to|revisit)\b[^.]{0,40}\blater\b",
+    r"|\bcome\s+back\s+to\s+(?:it|this|that|them)\b"
+    r"|\b(?:revisit)\b[^.\n]{0,40}\blater\b",
     re.I,
 )
 
