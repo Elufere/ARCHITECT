@@ -99,7 +99,7 @@ def test_short_answer_retains_its_original_question_in_snapshot():
     assert source.source_question == "Must managers approve orders over $100?"
 
 
-@pytest.mark.parametrize("mutation", ["missing", "empty", "unknown", "wrong_category", "duplicate_ref", "duplicate_req"])
+@pytest.mark.parametrize("mutation", ["missing", "empty", "unknown", "duplicate_ref", "duplicate_req"])
 def test_structural_failure_never_reaches_auditor_or_overwrites_file(monkeypatch, tmp_path, mutation):
     def corrupt(sources):
         value = draft(sources)
@@ -781,3 +781,65 @@ def test_product_concept_source_question_survives_snapshot():
     assert sources[0].source_question == (
         "What fields or information should each task have?"
     )
+
+
+
+def test_single_source_category_label_is_normalized_before_verification(
+    monkeypatch,
+    tmp_path,
+):
+    def wrong_label(sources):
+        value = draft(sources)
+        value["functional_requirements"][0]["category"] = (
+            "USER_GOALS.primary_user_goals"
+        )
+        return value
+
+    calls = setup(
+        monkeypatch,
+        tmp_path,
+        make_draft=wrong_label,
+        classify=lambda _: ["BUSINESS_RULES.approval_rules"],
+    )
+    result = pm.pm_compile_node(state())
+
+    assert result["pm_is_complete"] is True
+    assert len(calls["compile"]) == 1
+    saved = json.loads((tmp_path / "requirements_mvp.json").read_text())
+    assert (
+        saved["functional_requirements"][0]["category"]
+        == "BUSINESS_RULES.approval_rules"
+    )
+
+
+def test_category_normalization_does_not_hide_wrong_claim_meaning(
+    monkeypatch,
+    tmp_path,
+):
+    def wrong_meaning_and_label(sources):
+        value = draft(sources)
+        value["functional_requirements"][0]["category"] = (
+            "USER_GOALS.primary_user_goals"
+        )
+        value["functional_requirements"][0]["description"] = (
+            "Only managers can see orders over $100."
+        )
+        return value
+
+    def classify(payload):
+        if "evidence" in payload:
+            return ["BUSINESS_RULES.approval_rules"]
+        return ["BUSINESS_RULES.visibility_rules"]
+
+    calls = setup(
+        monkeypatch,
+        tmp_path,
+        make_draft=wrong_meaning_and_label,
+        classify=classify,
+    )
+    result = pm.pm_compile_node(state())
+
+    assert result["pm_is_complete"] is False
+    assert calls["compile"]
+    assert not calls["audit"]
+    assert "independently classified" in result["compilation_errors"][0]
