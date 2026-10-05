@@ -92,7 +92,12 @@ def validate_extraction(
     item.evidence = evidence
     if item.evidence not in user_message:
         return False, "Evidence is not an exact substring of the user message"
-    if not get_content_words(item.evidence) and not item.absence and not item_directly_answers_gap(item, current_gap):
+    if (
+        not get_content_words(item.evidence)
+        and not item.absence
+        and not item_directly_answers_gap(item, current_gap)
+        and not item.source_question
+    ):
         return False, "Evidence lacks meaningful content words"
     if item.confidence < 0.75:
         return False, "Confidence below threshold"
@@ -797,6 +802,96 @@ def _recover_unclassified_scope_exclusion(
     })
 
 
+def _explicit_product_scope_exclusion_claim(
+    user_response: str,
+) -> NeutralClaim | None:
+    """Recover an explicit feature/capability exclusion even if capture omitted it.
+
+    This is intentionally narrower than general negation parsing. Actor absence is
+    handled separately; here we only recover an explicit product-capability
+    exclusion clause such as "no payments, integrations, or admin features".
+    """
+    match = EXPLICIT_PRODUCT_SCOPE_EXCLUSION_PATTERN.search(user_response)
+    if not match:
+        return None
+
+    sentence_start = user_response.rfind(".", 0, match.start()) + 1
+    sentence_end = user_response.find(".", match.end())
+    if sentence_end == -1:
+        sentence_end = len(user_response)
+    evidence = user_response[sentence_start:sentence_end].strip()
+    if not evidence:
+        return None
+
+    candidates = []
+    for piece in re.split(r",|\bor\b|\band\b", evidence, flags=re.I):
+        normalized = re.sub(
+            r"^\s*(?:there\s+(?:are|is)\s+)?(?:no|without)\s+",
+            "",
+            piece.strip(),
+            flags=re.I,
+        ).strip(" .;:")
+        if not normalized:
+            continue
+        if re.search(
+            r"\b(?:other\s+)?(?:user\s+roles?|users?|people|participants?|actors?)\b",
+            normalized,
+            re.I,
+        ):
+            continue
+        if re.search(
+            r"\b(?:payments?|integrations?|admin\s+(?:features?|dashboard|portal|tool)|"
+            r"features?|functionality)\b",
+            normalized,
+            re.I,
+        ):
+            candidates.append(normalized)
+
+    if not candidates:
+        return None
+
+    value = "Out of scope: " + ", ".join(dict.fromkeys(candidates))
+    return NeutralClaim(
+        kind="mvp_out_of_scope",
+        value=value,
+        evidence=evidence,
+        confidence=1.0,
+        knowledge_state=KnowledgeState.CONFIRMED,
+    )
+
+
+def _literalize_semantic_claim_evidence(
+    claim: NeutralClaim,
+    user_response: str,
+) -> NeutralClaim:
+    """Preserve verbatim founder provenance without discarding a semantic candidate.
+
+    Structured capture sometimes returns a correct proposition but rewrites the
+    evidence span (especially coordinated clauses or short contextual answers).
+    Product concepts/external systems do not have a downstream semantic grounding
+    gate, so they remain strict. Canonical fact candidates may fall back to the
+    entire latest founder response, which is literal provenance; the independent
+    grounding audit must still approve the candidate meaning/category.
+    """
+    recovered = recover_evidence_span(claim.evidence, user_response)
+    if recovered is not None:
+        return claim.model_copy(update={"evidence": recovered})
+
+    if claim.kind in {
+        "product_entity",
+        "entity_relationship",
+        "entity_attribute",
+        "external_system",
+        "unclassified",
+    }:
+        return claim
+
+    literal = (user_response or "").strip()
+    if not literal:
+        return claim
+    return claim.model_copy(update={"evidence": literal})
+
+
 def _explicit_additional_actor_absence_claim(
     user_response: str,
 ) -> NeutralClaim | None:
@@ -998,7 +1093,15 @@ def _admit_claim_item(
 
     fact, topic = converted
     item = normalize_fact(fact, topic, scope, state.get("turn_count", 0))
-    valid, reason = validate_extraction(item, state["messages"][-1].content, state.get("current_gap"))
+    if not item.source_question:
+        item = item.model_copy(
+            update={"source_question": answer_context(state)["question"] or None}
+        )
+    valid, reason = validate_extraction(
+        item,
+        state["messages"][-1].content,
+        state.get("current_gap"),
+    )
     if not valid:
         raise ValueError(reason)
 
@@ -1042,7 +1145,8 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
     for raw_claim in payload.items:
         try:
             claim = NeutralClaim.model_validate(raw_claim)
-            claims.append(_recover_unclassified_scope_exclusion(claim))
+            claim = _recover_unclassified_scope_exclusion(claim)
+            claims.append(_literalize_semantic_claim_evidence(claim, user_response))
         except ValidationError as exc:
             print(f"CLAIM REJECTED: invalid claim schema | {exc}")
 
@@ -1054,6 +1158,13 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
         for claim in claims
     ):
         claims.append(explicit_additional_absence)
+
+    explicit_scope_exclusion = _explicit_product_scope_exclusion_claim(user_response)
+    if explicit_scope_exclusion and not any(
+        claim.kind == "mvp_out_of_scope"
+        for claim in claims
+    ):
+        claims.append(explicit_scope_exclusion)
 
     primary_roles, secondary_roles = _existing_actor_sets(state, scope)
     accepted: list[KnowledgeItem] = []
