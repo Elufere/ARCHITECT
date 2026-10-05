@@ -1,4 +1,5 @@
 """Conservative, bucket-local comparison before committing grounded facts."""
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,6 +38,54 @@ new with low confidence. Supply existing_id for every non-new relationship.
 """
 
 
+ACTION_FAMILIES = {
+    "create": ("create", "add", "make"),
+    "edit": ("edit", "update", "modify", "change", "rename"),
+    "delete": ("delete", "remove"),
+    "complete": ("complete", "mark"),
+    "view": ("view", "see", "read"),
+    "approve": ("approve",),
+    "reject": ("reject",),
+    "cancel": ("cancel",),
+    "invite": ("invite",),
+    "send": ("send",),
+    "pay": ("pay", "fund"),
+    "ship": ("ship", "deliver"),
+    "confirm": ("confirm",),
+    "dispute": ("dispute",),
+    "upload": ("upload",),
+    "download": ("download",),
+    "assign": ("assign",),
+    "archive": ("archive",),
+    "restore": ("restore", "reopen"),
+}
+
+
+def _action_families(value: str) -> set[str]:
+    words = re.findall(r"[a-z]+", value.lower())
+    return {
+        family
+        for family, prefixes in ACTION_FAMILIES.items()
+        if any(
+            word.startswith(prefix)
+            for word in words
+            for prefix in prefixes
+        )
+    }
+
+
+def _independent_owned_actions(candidate, existing) -> bool:
+    if candidate.key != "responsibilities":
+        return False
+    candidate_actions = _action_families(candidate.value)
+    existing_actions = _action_families(existing.value)
+    return bool(
+        candidate_actions
+        and existing_actions
+        and candidate_actions.isdisjoint(existing_actions)
+    )
+
+
 def same_bucket(first, second):
     return (first.scope == second.scope and first.topic == second.topic
             and first.key == second.key
@@ -55,6 +104,17 @@ def compare_candidate(candidate, knowledge, decide):
     for item in existing:
         if candidate.value.lower() == item.value.lower():
             return "exact_duplicate", item
+
+    # Independent actor actions are additive facts, not refinements of one
+    # another. This avoids an LLM comparison incorrectly replacing "edit" with
+    # "delete" or "delete" with "complete" merely because they share an actor,
+    # object, or source sentence.
+    independent = [
+        item for item in existing
+        if _independent_owned_actions(candidate, item)
+    ]
+    if independent and len(independent) == len(existing):
+        return "new", None
     if not existing or candidate.absence:
         return "new", None
     try:
