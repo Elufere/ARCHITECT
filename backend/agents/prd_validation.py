@@ -8,6 +8,7 @@ from agents.llm_errors import raise_if_llm_failure
 from agents.discovery_fields import FIELD_DEFINITIONS
 from agents.prd_schema import ClaimVerdict, PRDDraft, SourceFact, SemanticCategories
 from agents.state import DiscoveryScope, KnowledgeItem, KnowledgeState
+from agents.product_concepts import ProductConcept, ProductConceptKind, concept_id
 
 
 class PRDValidationError(ValueError):
@@ -16,6 +17,31 @@ class PRDValidationError(ValueError):
 
 class PRDAuditError(RuntimeError):
     """An unavailable or incomplete verifier cannot approve a draft."""
+
+
+PRODUCT_MODEL_DEFINITIONS = {
+    "PRODUCT_MODEL.entity": (
+        "An explicitly introduced domain object, resource, container, or record "
+        "that is part of the product model."
+    ),
+    "PRODUCT_MODEL.attribute": (
+        "An explicitly stated property, field, state dimension, ordering/default, "
+        "or other attribute of a product entity or collection."
+    ),
+    "PRODUCT_MODEL.relationship": (
+        "An explicitly stated structural relationship between product entities."
+    ),
+}
+
+
+def source_category_definitions() -> dict[str, str]:
+    definitions = {
+        f"{topic.value}.{key}": meaning
+        for topic, fields in FIELD_DEFINITIONS.items()
+        for key, meaning in fields.items()
+    }
+    definitions.update(PRODUCT_MODEL_DEFINITIONS)
+    return definitions
 
 
 CATEGORY_COMPATIBILITY_GROUPS = (
@@ -49,19 +75,79 @@ def build_source_snapshot(state):
     scope = DiscoveryScope(state["discovery_scope"])
     sources = {}
     for raw in state.get("discovered_knowledge", []):
-        fact = KnowledgeItem.model_validate(raw.model_dump() if isinstance(raw, KnowledgeItem) else raw)
+        fact = KnowledgeItem.model_validate(
+            raw.model_dump() if isinstance(raw, KnowledgeItem) else raw
+        )
         if fact.scope != scope or fact.knowledge_state != KnowledgeState.CONFIRMED:
             continue
         if not fact.value.strip() or not fact.evidence.strip() or fact.confidence < 0.75:
-            raise PRDValidationError("A confirmed fact has missing evidence/value or insufficient confidence.")
+            raise PRDValidationError(
+                "A confirmed fact has missing evidence/value or insufficient confidence."
+            )
         payload = fact.model_dump(mode="json")
         # Correction changes the ID; list ordering and repeated compilation do not.
-        identity = {k: v for k, v in payload.items() if k not in ("confidence", "knowledge_state")}
-        digest = hashlib.sha256(json.dumps(identity, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:24]
+        identity = {
+            k: v
+            for k, v in payload.items()
+            if k not in ("confidence", "knowledge_state")
+        }
+        digest = hashlib.sha256(
+            json.dumps(identity, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()[:24]
         source = SourceFact(fact_id=f"fact_{digest}", **payload)
         sources[source.fact_id] = source
+
+    # ProductConcept is deliberately first-class discovery knowledge for domain
+    # structure that does not fit the legacy TOPIC.key schema. It must therefore
+    # participate in the same immutable/cited PRD source ledger rather than being
+    # visible to planning but silently absent from compilation.
+    for raw in state.get("product_concepts", []) or []:
+        concept = (
+            raw if isinstance(raw, ProductConcept)
+            else ProductConcept.model_validate(raw)
+        )
+        if concept.scope != scope:
+            continue
+        if (
+            not concept.value.strip()
+            or not concept.evidence.strip()
+            or concept.confidence < 0.75
+        ):
+            raise PRDValidationError(
+                "A confirmed product concept has missing evidence/value or "
+                "insufficient confidence."
+            )
+        key = {
+            ProductConceptKind.ENTITY: "entity",
+            ProductConceptKind.ATTRIBUTE: "attribute",
+            ProductConceptKind.RELATIONSHIP: "relationship",
+        }[concept.kind]
+        digest = concept_id(concept)[:24]
+        source = SourceFact(
+            fact_id=f"concept_{digest}",
+            topic="PRODUCT_MODEL",
+            scope=scope.value,
+            key=key,
+            value=concept.value,
+            evidence=concept.evidence,
+            source_question=None,
+            roles=None,
+            aliases=None,
+            role=None,
+            confidence=concept.confidence,
+            knowledge_state="CONFIRMED",
+            source_turn=concept.source_turn,
+            absence=None,
+            subject=concept.subject,
+            relation=concept.relation,
+            object=concept.object,
+        )
+        sources[source.fact_id] = source
+
     if not sources:
-        raise PRDValidationError("There are no confirmed facts in the active discovery scope.")
+        raise PRDValidationError(
+            "There are no confirmed facts in the active discovery scope."
+        )
     return list(sources.values())
 
 
@@ -101,6 +187,10 @@ Then check every part of the generated text, name, description, conditions,
 actor_ids and validation criterion. Reject any added or changed behavior.
 Preserve source categories, actor ownership, capacities, thresholds, boundaries,
 polarity, exceptions and qualifiers. Missing a relevant condition also fails.
+PRODUCT_MODEL.entity / PRODUCT_MODEL.attribute / PRODUCT_MODEL.relationship are
+first-class grounded product-model facts. They may support PRD scope, summaries,
+or functional requirements exactly to the extent stated by their evidence; do
+not turn a structural attribute into an unrelated workflow or business rule.
 NARROW OVERLAP RULE: CORE_WORKFLOW.completion_condition and
 CORE_WORKFLOW.end_state may overlap when the cited founder evidence itself
 explicitly supports the generated meaning. Do not reject solely because one of
@@ -168,7 +258,7 @@ def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier
         raise PRDValidationError("Functional requirement IDs must be unique.")
     if any(not q.strip().endswith("?") for q in draft.open_questions):
         raise PRDValidationError("open_questions may contain questions only, not factual assertions.")
-    definitions = {f"{topic.value}.{key}": meaning for topic, fields in FIELD_DEFINITIONS.items() for key, meaning in fields.items()}
+    definitions = source_category_definitions()
     # Check the whole draft before spending model calls or accepting any verdict.
     for claim_id, claim in claims:
         refs = claim["source_fact_ids"]
