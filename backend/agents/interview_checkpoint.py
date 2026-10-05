@@ -99,6 +99,8 @@ def load_checkpoint(session_id):
     state.setdefault("external_systems", [])
     state.setdefault("captured_observations", [])
     state.setdefault("discovery_boundaries", [])
+    state.setdefault("founder_gap_guidance", [])
+    state.setdefault("awaiting_gap_guidance", False)
     state.setdefault("model_implications", [])
     state.setdefault("thread_planning_enabled", True)
     state.setdefault("discovery_threads", {})
