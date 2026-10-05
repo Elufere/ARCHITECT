@@ -214,8 +214,10 @@ PATTERNS = {
         re.I,
     ),
     "objection": re.compile(
-        r"\b(i told you already|already told you|i answered (?:this|that|the question) already|"
-        r"answered (?:this|that|the question) already|you asked (?:me )?already|"
+        r"\b(i told you already|already told you|"
+        r"i answered (?:(?:this|that) question|this|that|the question) already|"
+        r"answered (?:(?:this|that) question|this|that|the question) already|"
+        r"you asked (?:me )?already|"
         r"stop asking|you keep asking|you are asking irrelevant questions|"
         r"you're asking irrelevant questions|irrelevant questions?|"
         r"that(?:'s| is) irrelevant|this is irrelevant|not relevant)\b", re.I
