@@ -870,6 +870,7 @@ def _record_requirement_question(state: dict, question: str) -> list[dict]:
         "target_facets": list(candidate.get("target_facets") or []),
         "thread_id": candidate.get("thread_id") or state.get("active_discovery_thread"),
         "decision_key": candidate.get("decision_key"),
+        "obligation_id": candidate.get("obligation_id"),
         "objective": state.get("current_objective"),
         "topic": (
             state.get("current_topic").value
@@ -935,11 +936,14 @@ def guardrail_node(state: dict) -> dict:
             "question": last_draft,
             "thread_id": candidate.get("thread_id") or state.get("active_discovery_thread"),
             "decision_key": candidate.get("decision_key"),
+            "obligation_id": candidate.get("obligation_id"),
             "objective": state.get("current_objective"),
             "instruction": (
                 "The selected inquiry could not be phrased safely after bounded guardrail "
-                "retries. Do not emit a generic schema fallback or retry the same decision "
-                "again on this turn; re-plan to a materially different grounded inquiry."
+                "retries. Do not emit a generic schema fallback. If this inquiry is tied "
+                "to an OPEN founder obligation, the underlying decision remains open and "
+                "must be reframed safely on a later planning pass; otherwise re-plan to "
+                "a materially different grounded inquiry."
             ),
         })
         return {
