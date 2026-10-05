@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from agents.state import DiscoveryScope, KnowledgeState
 from agents.role_utils import role_identity, split_role_labels
-from agents.conversation_language import clarification_question, final_question_text
+from agents.conversation_language import clarification_question, final_question_text, message_text
 
 logger = logging.getLogger(__name__)
 
@@ -576,10 +576,12 @@ def evaluate_question(state: dict) -> dict:
     if not isinstance(last_message, AIMessage):
         return state
 
+    generated_text = message_text(generated_text)
+
     # --------------------------------------------------------
     # Check 1: Deterministic question check (no LLM)
     # --------------------------------------------------------
-    if not last_message.content.strip().endswith("?"):
+    if not generated_text.strip().endswith("?"):
         logger.warning("Planner output is not a question. Forcing retry.")
         rejection_text = (
             "CRITICAL ERROR: Because the founder asked for suggestions, you may give brief "
@@ -603,7 +605,7 @@ def evaluate_question(state: dict) -> dict:
 
     if (
         state.get("conversation_intent") == "gap_guidance"
-        and FALSE_GAP_DEFERRAL_PATTERN.search(last_message.content)
+        and FALSE_GAP_DEFERRAL_PATTERN.search(generated_text)
     ):
         logger.warning(
             "Gap-guidance response falsely framed unresolved questions as deferred."
@@ -619,7 +621,7 @@ def evaluate_question(state: dict) -> dict:
         "current_objective": current_objective,
         "question_hint": question_hint,
         "question_retry_count": state.get("question_retry_count", 0),
-        "generated_response": last_message.content,
+        "generated_response": generated_text,
         "selected_inquiry": state.get("selected_inquiry") or {},
         "selected_requirement": selected_requirement,
     }, ensure_ascii=False, indent=2, default=str))
@@ -642,10 +644,10 @@ def evaluate_question(state: dict) -> dict:
     # question about that confirmed role is legitimate discovery, not a leak.
     if (
         state.get("discovery_scope") == DiscoveryScope.USER_APP
-        and INTERNAL_ROLE_PATTERN.search(last_message.content)
+        and INTERNAL_ROLE_PATTERN.search(generated_text)
         and not any(
-            normalize_role(role) in normalize_role(last_message.content)
-            or normalize_role(last_message.content) in normalize_role(role)
+            normalize_role(role) in normalize_role(generated_text)
+            or normalize_role(generated_text) in normalize_role(role)
             for role in get_known_roles(state, current_topic)
         )
     ):
@@ -654,7 +656,7 @@ def evaluate_question(state: dict) -> dict:
         print(json.dumps({
             "check": "internal_role_scope",
             "result": "REJECT",
-            "generated_response": last_message.content,
+            "generated_response": generated_text,
             "reason": USER_SCOPE_ROLE_REJECTION,
         }, ensure_ascii=False, indent=2, default=str))
         print("===== END EARLY GUARDRAIL REJECT =====\n")
@@ -666,7 +668,7 @@ def evaluate_question(state: dict) -> dict:
         or selected_inquiry.get("id")
         or ""
     )
-    current_question = final_question_text(last_message.content)
+    current_question = final_question_text(generated_text)
     if (
         selected_inquiry_id.endswith("|model.core_actors")
         and not _core_actor_question_matches_objective(current_question)
@@ -702,7 +704,7 @@ def evaluate_question(state: dict) -> dict:
         print(json.dumps({
             "check": "semantic_duplicate",
             "result": "REJECT",
-            "generated_response": last_message.content,
+            "generated_response": generated_text,
             "matching_prior_question": duplicate,
         }, ensure_ascii=False, indent=2, default=str))
         print("===== END EARLY GUARDRAIL REJECT =====\n")
@@ -740,12 +742,12 @@ def evaluate_question(state: dict) -> dict:
     # hand-authored keyword table — derived from question_hint/objective)
     # --------------------------------------------------------
     relevance_passed, relevance_reason = check_topic_relevance(
-        last_message.content, question_hint, current_objective
+        generated_text, question_hint, current_objective
     )
     print("===== DISCOVERY ABSTRACTION DEBUG | STAGE 9: DETERMINISTIC GUARDRAIL CHECKS =====")
     print(json.dumps({
-        "ends_with_question_mark": last_message.content.strip().endswith("?"),
-        "internal_role_pattern_found": bool(INTERNAL_ROLE_PATTERN.search(last_message.content)),
+        "ends_with_question_mark": generated_text.strip().endswith("?"),
+        "internal_role_pattern_found": bool(INTERNAL_ROLE_PATTERN.search(generated_text)),
         "semantic_duplicate_found": bool(duplicate),
         "duplicate_question": duplicate,
         "topic_relevance_passed": relevance_passed,
@@ -795,7 +797,7 @@ def evaluate_question(state: dict) -> dict:
                 current_objective=current_objective,
                 requirement_context=requirement_context,
                 validation_context=validation_context,
-                agent_output=last_message.content,
+                agent_output=generated_text,
                 latest_confirmed_understanding="\n".join(
                     f"- {item.topic.value}.{item.key}: {item.value}"
                     for item in state.get("discovered_knowledge", [])
@@ -820,7 +822,7 @@ def evaluate_question(state: dict) -> dict:
         print("===== DISCOVERY ABSTRACTION DEBUG | STAGE 10: LLM GUARDRAIL VERDICT =====")
         print(json.dumps({
             "current_objective": current_objective,
-            "generated_response": last_message.content,
+            "generated_response": generated_text,
             "verdict": result.model_dump(mode="json"),
             "final_guardrail_result": "ALLOW" if result.passed else "REJECT",
         }, ensure_ascii=False, indent=2, default=str))
