@@ -361,3 +361,52 @@ def test_actor_value_none_without_absence_flag_is_normalized_before_alias_resolu
     assert item.absence == "none"
     assert item.roles == []
     assert not item.aliases
+
+
+
+def test_explicit_product_exclusions_recover_from_unclassified_claim():
+    text = "There are no other user roles, payments, integrations, or admin features."
+    claim = NeutralClaim(
+        kind="unclassified",
+        value="There are no payments, integrations, or admin features",
+        evidence=text,
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+    )
+
+    recovered = tracker._recover_unclassified_scope_exclusion(claim)
+
+    assert recovered.kind == "mvp_out_of_scope"
+    state = {
+        "messages": [HumanMessage(content=text)],
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [],
+        "turn_count": 0,
+        "current_gap": None,
+        "current_topic": None,
+    }
+    item = tracker._admit_claim_item(
+        recovered,
+        state,
+        S.USER_APP,
+        set(),
+        set(),
+    )
+    assert item is not None
+    assert item.topic == T.MVP_SCOPE
+    assert item.key == "out_of_scope"
+    assert "payments" in item.value.lower()
+    assert "integrations" in item.value.lower()
+    assert "admin features" in item.value.lower()
+
+
+def test_generic_negative_statement_is_not_promoted_to_scope_exclusion():
+    claim = NeutralClaim(
+        kind="unclassified",
+        value="There are no side effects",
+        evidence="There are no side effects",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+    )
+
+    assert tracker._recover_unclassified_scope_exclusion(claim).kind == "unclassified"
