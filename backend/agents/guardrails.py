@@ -69,6 +69,21 @@ GENERIC_DISCOVERY_TERMS = {
 
 def _stem_discovery_word(word: str) -> str:
     value = word.lower()
+    # Normalize a few high-signal discovery verbs before generic suffix
+    # stripping so delete/deletes/deleted and similar forms share one anchor.
+    for prefix, canonical in (
+        ("delet", "delete"),
+        ("edit", "edit"),
+        ("persist", "persist"),
+        ("reopen", "reopen"),
+        ("order", "order"),
+        ("confirm", "confirm"),
+        ("complet", "complete"),
+        ("filter", "filter"),
+        ("describ", "describe"),
+    ):
+        if value.startswith(prefix):
+            return canonical
     for suffix in ("ing", "ed", "es", "s"):
         if len(value) > len(suffix) + 3 and value.endswith(suffix):
             return value[:-len(suffix)]
@@ -134,7 +149,7 @@ def founder_gap_objective_drift(state: dict, question: str) -> str | None:
             alternate_overlap = score
             alternate = gap
 
-    if alternate_overlap >= 2:
+    if alternate_overlap >= 1:
         return (
             "Generated question drifted from the selected objective and instead "
             f"matches another founder-named open gap: {alternate!r}."
