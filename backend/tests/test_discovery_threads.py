@@ -3,6 +3,7 @@
 import json
 from types import SimpleNamespace
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agents import discovery_threads as threads
