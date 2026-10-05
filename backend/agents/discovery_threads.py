@@ -1009,6 +1009,79 @@ def _creation_shape_already_known(
     return False
 
 
+CRUD_ACTION_FAMILIES = {
+    "create": ("create", "add", "make"),
+    "remove": ("remove", "delete"),
+    "edit": ("edit", "update", "rename", "modify", "change"),
+    "complete": ("mark", "complete", "check", "uncheck"),
+    "view": ("view", "see", "display", "show"),
+    "archive": ("archive",),
+    "restore": ("restore", "reopen"),
+}
+
+
+def _crud_action_families(text: str) -> set[str]:
+    words = re.findall(r"[a-z]+", (text or "").lower())
+    return {
+        family
+        for family, prefixes in CRUD_ACTION_FAMILIES.items()
+        if any(
+            word.startswith(prefix)
+            for word in words
+            for prefix in prefixes
+        )
+    }
+
+
+def _known_ordinary_crud_action(
+    proposal: str,
+    state: AgentState,
+    scope: DiscoveryScope,
+) -> bool:
+    """Whether this frontier is drilling into an already-confirmed CRUD action.
+
+    This intentionally does not require actor discovery to be complete. Once the
+    founder has explicitly established an ordinary action such as remove/delete,
+    a checklist about its default restrictions/conditions is low marginal value
+    unless the product context already contains material complexity.
+    """
+    proposal_actions = _crud_action_families(proposal)
+    if not proposal_actions:
+        return False
+
+    knowledge = [
+        item
+        for item in state.get("discovered_knowledge", [])
+        if item.scope == scope
+        and item.knowledge_state == KnowledgeState.CONFIRMED
+        and not item.absence
+    ]
+    if any(
+        MATERIAL_COMPLEXITY_PATTERN.search(f"{item.value} {item.evidence}")
+        for item in knowledge
+    ):
+        return False
+
+    if any(
+        getattr(
+            item.get("scope") if isinstance(item, dict) else getattr(item, "scope", None),
+            "value",
+            item.get("scope") if isinstance(item, dict) else getattr(item, "scope", None),
+        ) == scope.value
+        for item in state.get("external_systems", []) or []
+    ):
+        return False
+
+    return any(
+        item.key in {"responsibilities", "workflow_steps", "must_have_features"}
+        and bool(
+            proposal_actions
+            & _crud_action_families(f"{item.value} {item.evidence}")
+        )
+        for item in knowledge
+    )
+
+
 def _low_signal_crud_depth_frontier(
     plan: DiscoveryThreadPlan,
     state: AgentState,
@@ -1054,7 +1127,10 @@ def _low_signal_crud_depth_frontier(
     ):
         return False
 
-    return _low_risk_single_actor_context(state, scope)
+    return bool(
+        _low_risk_single_actor_context(state, scope)
+        or _known_ordinary_crud_action(proposal, state, scope)
+    )
 
 
 
