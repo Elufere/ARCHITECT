@@ -116,7 +116,7 @@ def test_structural_failure_never_reaches_auditor_or_overwrites_file(monkeypatch
     result = pm.pm_compile_node(state())
     assert not result["pm_is_complete"] and result["prd_contract"] is None
     assert output.read_text() == "PREVIOUS_VERIFIED_PRD"
-    assert not calls["audit"] and len(calls["compile"]) == 2
+    assert not calls["audit"] and len(calls["compile"]) == pm.MAX_COMPILE_ATTEMPTS
 
 
 def test_visibility_restriction_disguised_as_approval_fails_semantic_gate(monkeypatch, tmp_path):
