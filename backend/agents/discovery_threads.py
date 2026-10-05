@@ -213,6 +213,17 @@ authoritative; requirements are a backlog of decisions, not an interview agenda.
 
 The interview should feel like an excellent human PM conversation:
 
+FOUNDER-NAMED OPEN GAPS:
+The payload may contain founder_gap_guidance. These entries are meta-level
+discovery guidance: areas/questions the founder explicitly says are still
+unresolved. They are NOT confirmed product facts, NOT answers, and NOT deferred
+decisions. Treat them as strong candidates for the next discovery move when they
+remain materially unresolved. Do not claim the founder "established" or "decided"
+anything from them. Do not force low-value/UI/implementation items merely because
+they appear in the list; apply the same stopping/materiality rules. When one is
+already answered by confirmed founder evidence, move to another unresolved item
+or finish.
+
 STOPPING TEST — apply this BEFORE proposing a frontier:
 Ask whether a competent product/engineering team could implement the founder's
 MVP without inventing a MATERIAL business/product decision. If yes, return
@@ -613,6 +624,23 @@ def _history_payload(state: AgentState) -> list[dict]:
     return result
 
 
+def _gap_guidance_payload(
+    state: AgentState,
+    scope: DiscoveryScope,
+) -> list[dict]:
+    result = []
+    for entry in state.get("founder_gap_guidance", []) or []:
+        if not isinstance(entry, dict):
+            continue
+        result.append({
+            "source_turn": entry.get("source_turn"),
+            "evidence": entry.get("evidence"),
+            "items": entry.get("items", []),
+            "instruction": entry.get("instruction"),
+        })
+    return result[-20:]
+
+
 def _thread_activity_payload(state: AgentState) -> dict:
     """Expose conversation depth as evidence, never as a hard stopping rule."""
     history = state.get("requirement_question_history", [])
@@ -678,6 +706,11 @@ frontier before a question is generated.
 
 Do NOT decide coverage from topical similarity. Separate what is KNOWN from what
 the proposed frontier still asks the founder to supply.
+
+founder_gap_guidance, when supplied, is meta-level founder guidance about
+questions/areas that remain open. It is not evidence that any answer is true.
+Use it only to recognize founder-prioritized unresolved areas. Coverage must still
+come from confirmed facts/observations or the latest direct answer.
 
 Return:
 - supporting_observation_ids: only UNIQUE observation IDs whose founder evidence
@@ -1069,6 +1102,7 @@ def _semantic_frontier_problem(
             "reason": frontier.reason,
         },
         "captured_founder_observations": _observation_payload(state, scope),
+        "founder_gap_guidance": _gap_guidance_payload(state, scope),
         "discovery_boundaries": [
             item for item in state.get("discovery_boundaries", [])[-50:]
             if not item.get("scope") or item.get("scope") == scope.value
@@ -1341,6 +1375,7 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "confirmed_product_concepts": _concept_payload(state, scope),
         "confirmed_external_systems": _external_system_payload(state, scope),
         "captured_observations": _observation_payload(state, scope),
+        "founder_gap_guidance": _gap_guidance_payload(state, scope),
         "current_threads": state.get("discovery_threads", {}),
         "active_thread_id": state.get("active_discovery_thread"),
         "delivered_question_history": _history_payload(state),
