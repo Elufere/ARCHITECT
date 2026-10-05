@@ -283,6 +283,8 @@ def log_state_snapshot(state: dict, *, label: str) -> None:
             == "ACTIVE"
         ),
         "discovery_boundaries": len(state.get("discovery_boundaries", []) or []),
+        "founder_gap_guidance": len(state.get("founder_gap_guidance", []) or []),
+        "awaiting_gap_guidance": state.get("awaiting_gap_guidance", False),
         "founder_requested_completion": state.get("founder_requested_completion", False),
         "completion_arbitration_complete": state.get("completion_arbitration_complete", False),
         "prd_confirmation_pending": state.get("prd_confirmation_pending", False),
