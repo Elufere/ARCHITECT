@@ -53,6 +53,15 @@ class FunctionalRequirement(SourceReference):
     validation: str = Field(min_length=1, description="An acceptance criterion entailed by the cited sources, or TBD. Do not add new behavior.")
 
 
+class FeatureSpecification(StrictModel):
+    id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    overview: str = Field(min_length=1)
+    details: list[SourcedClaim] = Field(default_factory=list)
+    requirement_ids: list[str] = Field(default_factory=list)
+    source_fact_ids: list[str] = Field(default_factory=list)
+
+
 class PRDDraft(StrictModel):
     product_name: SourcedClaim | None = None
     elevator_pitch: list[SourcedClaim]
@@ -138,11 +147,12 @@ class DeferredDecision(StrictModel):
 
 
 class PRDContract(PRDDraft):
-    schema_version: Literal["2.0"] = "2.0"
+    schema_version: Literal["2.0", "2.1"] = "2.1"
     discovery_scope: Literal["USER_APP", "ADMIN_DASHBOARD"]
     source_facts: list[SourceFact]
     validation_report: list[ClaimVerdict]
     external_systems: list[ExternalSystemContract] = Field(default_factory=list)
     deferred_decisions: list[DeferredDecision] = Field(default_factory=list)
+    feature_specifications: list[FeatureSpecification] = Field(default_factory=list)
     constraint_source_ids: list[str] = Field(default_factory=list)
     prose_polished: bool = False
