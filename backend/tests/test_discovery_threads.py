@@ -719,3 +719,30 @@ def test_low_risk_product_rejects_completion_timing_microdecision():
         _simple_todo_depth_state(),
         S.USER_APP,
     ) is True
+
+
+
+def test_founder_gap_guidance_payload_preserves_open_questions_as_control_only():
+    state = {
+        "founder_gap_guidance": [
+            {
+                "source_turn": 4,
+                "evidence": (
+                    "Whether completed tasks can still be edited or deleted. "
+                    "How tasks are ordered."
+                ),
+                "items": [
+                    "Whether completed tasks can still be edited or deleted",
+                    "How tasks should be ordered",
+                ],
+                "instruction": (
+                    "Founder identified these as unresolved areas to consider."
+                ),
+            }
+        ]
+    }
+
+    payload = threads._gap_guidance_payload(state, S.USER_APP)
+
+    assert payload == state["founder_gap_guidance"]
+    assert "edited or deleted" in payload[0]["items"][0]
