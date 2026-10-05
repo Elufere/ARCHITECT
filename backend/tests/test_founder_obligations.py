@@ -6,6 +6,7 @@ from langchain_core.messages import HumanMessage
 
 from agents import discovery_threads as threads
 from agents import knowledge_tracker as tracker
+from agents import discovery_obligations as obligations
 from agents.discovery_obligations import (
     append_founder_obligations,
     open_founder_obligations,
@@ -516,3 +517,44 @@ def test_entity_local_no_more_fields_is_a_boundary_not_global_scope(monkeypatch)
     assert [concept.kind for concept in batch.concepts] == [
         ProductConceptKind.BOUNDARY
     ]
+
+
+
+def test_incidental_later_answer_can_resolve_non_active_founder_obligation(monkeypatch):
+    state = _obligation_state("how deletion should work")
+    obligation = open_founder_obligations(state)[0]
+    state.update({
+        "messages": [
+            HumanMessage(content=(
+                "Deleted tasks should be removed permanently and cannot be recovered."
+            ))
+        ],
+        "conversation_intent": "product_information",
+        "selected_inquiry": {
+            "obligation_id": None,
+            "question_hint": "Should tasks be stored locally or in the cloud?",
+        },
+        "current_objective": "Clarify task storage.",
+        "question_hint": "Should tasks be stored locally or in the cloud?",
+        "discovered_knowledge": [],
+        "product_concepts": [],
+        "turn_count": 3,
+    })
+
+    review = obligations.ObligationResolutionReview(
+        resolved=True,
+        resolution_kind="RESOLVED_BY_FACT",
+        supporting_ids=[],
+        reason="The founder explicitly defined deletion as permanent.",
+    )
+    monkeypatch.setattr(
+        obligations,
+        "obligation_resolution_model",
+        lambda: SimpleNamespace(invoke=lambda _: review),
+    )
+
+    reconciled = obligations.reconcile_open_obligations(state)
+    resolved = next(item for item in reconciled if item["id"] == obligation.id)
+
+    assert resolved["status"] == "RESOLVED_BY_FACT"
+    assert "permanent" in resolved["resolution_reason"].lower()
