@@ -13,6 +13,11 @@ from agents.prd_projection import (
     project_prd,
     validate_projection,
 )
+from agents.prd_specification import (
+    build_feature_specifications,
+    build_product_model,
+    validate_feature_specifications,
+)
 from agents.prd_schema import (
     ClaimVerdict,
     PRDDraft,
@@ -871,3 +876,229 @@ def test_todo_secondary_user_absence_cannot_block_prd_save(monkeypatch, tmp_path
         "admin features",
     }
     assert (tmp_path / "requirements_mvp.json").exists()
+
+
+
+def test_todo_product_model_groups_atomic_facts_into_feature_specifications():
+    primary = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="primary_users",
+        value="user",
+        evidence="A user manages their own tasks",
+        roles=["user"],
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+    actions = [
+        KnowledgeItem(
+            topic=T.USER_ROLES,
+            scope=S.USER_APP,
+            key="responsibilities",
+            value=value,
+            evidence="A user can create tasks, edit or delete them, and mark them as completed",
+            role="user",
+            confidence=1,
+            knowledge_state=K.CONFIRMED,
+            source_turn=0,
+        )
+        for value in (
+            "create tasks",
+            "edit tasks",
+            "delete tasks",
+            "mark tasks as completed",
+        )
+    ]
+    persistence = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="responsibilities",
+        value="access their tasks across devices",
+        evidence="The user should be able to access their tasks across devices",
+        role="user",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=2,
+    )
+    concepts = [
+        ProductConcept(
+            kind=ProductConceptKind.ENTITY,
+            scope=S.USER_APP,
+            subject="task",
+            value="Tasks can be either active or completed",
+            evidence="Tasks can be either active or completed",
+            confidence=1,
+            source_turn=0,
+        ),
+        ProductConcept(
+            kind=ProductConceptKind.ATTRIBUTE,
+            scope=S.USER_APP,
+            subject="task",
+            relation="has attribute",
+            object="required title",
+            value="Each task should have a title",
+            evidence="Each task should have a title",
+            confidence=1,
+            source_turn=1,
+        ),
+        ProductConcept(
+            kind=ProductConceptKind.ATTRIBUTE,
+            scope=S.USER_APP,
+            subject="task",
+            relation="has attribute",
+            object="optional description",
+            value="an optional description",
+            evidence="an optional description",
+            source_question="What information should each task contain?",
+            confidence=1,
+            source_turn=1,
+        ),
+        ProductConcept(
+            kind=ProductConceptKind.ATTRIBUTE,
+            scope=S.USER_APP,
+            subject="task",
+            relation="has attribute",
+            object="due date",
+            value="a due date",
+            evidence="a due date",
+            source_question="What information should each task contain?",
+            confidence=1,
+            source_turn=1,
+        ),
+        ProductConcept(
+            kind=ProductConceptKind.ATTRIBUTE,
+            scope=S.USER_APP,
+            subject="task",
+            relation="has attribute",
+            object="priority level",
+            value="a priority level",
+            evidence="a priority level",
+            source_question="What information should each task contain?",
+            confidence=1,
+            source_turn=1,
+        ),
+        ProductConcept(
+            kind=ProductConceptKind.ATTRIBUTE,
+            scope=S.USER_APP,
+            subject="task",
+            relation="tracks",
+            object="active or completed status",
+            value="It should also track whether the task is active or completed",
+            evidence="It should also track whether the task is active or completed",
+            confidence=1,
+            source_turn=1,
+        ),
+        ProductConcept(
+            kind=ProductConceptKind.RELATIONSHIP,
+            scope=S.USER_APP,
+            subject="task",
+            relation="belongs to",
+            object="user account",
+            value="Tasks should be tied to a user account and stored in the cloud",
+            evidence="Tasks should be tied to a user account and stored in the cloud",
+            confidence=1,
+            source_turn=2,
+        ),
+    ]
+    initial = state(primary, *actions, persistence)
+    initial["product_concepts"] = [
+        concept.model_dump(mode="json") for concept in concepts
+    ]
+
+    sources = build_source_snapshot(initial)
+    projection = project_prd(sources)
+    model = build_product_model(sources)
+    features = build_feature_specifications(projection.draft, model)
+    validate_feature_specifications(features, projection.draft, model)
+
+    assert [feature.title for feature in features] == [
+        "Task Management",
+        "Task Persistence & Access",
+    ]
+
+    task_management = features[0]
+    assert len(task_management.details) == 3
+    responsibility = next(
+        detail
+        for detail in task_management.details
+        if detail.category == "USER_ROLES.responsibilities"
+    )
+    attributes = next(
+        detail
+        for detail in task_management.details
+        if detail.category == "PRODUCT_MODEL.attribute"
+    )
+    assert responsibility.text == (
+        "User can create tasks, edit tasks, delete tasks, and mark tasks as completed."
+    )
+    assert attributes.text == (
+        "Task details: required title, optional description, due date, priority level, "
+        "and active or completed status."
+    )
+
+    persistence_feature = features[1]
+    assert {
+        detail.category for detail in persistence_feature.details
+    } == {
+        "USER_ROLES.responsibilities",
+        "PRODUCT_MODEL.relationship",
+    }
+
+
+def test_compiled_todo_contract_contains_grouped_feature_specifications(
+    monkeypatch,
+    tmp_path,
+):
+    primary = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="primary_users",
+        value="user",
+        evidence="A user manages tasks",
+        roles=["user"],
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+    actions = [
+        KnowledgeItem(
+            topic=T.USER_ROLES,
+            scope=S.USER_APP,
+            key="responsibilities",
+            value=value,
+            evidence="A user can create tasks, edit or delete them, and mark them as completed",
+            role="user",
+            confidence=1,
+            knowledge_state=K.CONFIRMED,
+            source_turn=0,
+        )
+        for value in ("create tasks", "edit tasks", "delete tasks", "mark tasks as completed")
+    ]
+    concept = ProductConcept(
+        kind=ProductConceptKind.ATTRIBUTE,
+        scope=S.USER_APP,
+        subject="task",
+        relation="has attribute",
+        object="required title",
+        value="Each task should have a title",
+        evidence="Each task should have a title",
+        confidence=1,
+        source_turn=1,
+    )
+    initial = state(primary, *actions)
+    initial["product_concepts"] = [concept.model_dump(mode="json")]
+    install_prose(monkeypatch, parsed={"edits": []})
+    monkeypatch.setattr(pm, "OUTPUT_DIR", tmp_path)
+
+    result = pm.pm_compile_node(initial)
+
+    assert result["pm_is_complete"] is True
+    contract = result["prd_contract"]
+    assert contract.schema_version == "2.1"
+    assert [feature.title for feature in contract.feature_specifications] == [
+        "Task Management"
+    ]
+    assert contract.feature_specifications[0].details[0].text.startswith("User can ")
+    saved = json.loads((tmp_path / "requirements_mvp.json").read_text())
+    assert saved["feature_specifications"][0]["title"] == "Task Management"
