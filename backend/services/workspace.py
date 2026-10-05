@@ -240,6 +240,13 @@ def _prd_sections(contract: PRDContract | None) -> list[PrdSection]:
     pitch = _claim_texts(contract.elevator_pitch)
     if pitch:
         overview_parts.append(_bullet_block(pitch))
+    if not overview_parts and contract.feature_specifications:
+        overview_parts.append(
+            "Core product areas:\n"
+            + _bullet_block(
+                feature.title for feature in contract.feature_specifications
+            )
+        )
     if overview_parts:
         sections.append(
             PrdSection(id="overview", title="Overview", body="\n\n".join(overview_parts))
