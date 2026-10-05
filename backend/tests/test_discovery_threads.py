@@ -726,6 +726,7 @@ def test_founder_gap_guidance_payload_preserves_open_questions_as_control_only()
     state = {
         "founder_gap_guidance": [
             {
+                "scope": S.USER_APP.value,
                 "source_turn": 4,
                 "evidence": (
                     "Whether completed tasks can still be edited or deleted. "
