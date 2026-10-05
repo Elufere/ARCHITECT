@@ -255,6 +255,61 @@ def independent_categories(classifier, content, definitions, cache):
     return cache[key]
 
 
+FUNCTIONAL_REQUIREMENT_SOURCE_CATEGORIES = {
+    "USER_ROLES.responsibilities",
+    "USER_ROLES.permissions",
+    "USER_ROLES.multiple_roles",
+    "USER_ROLES.role_transitions",
+    "MVP_SCOPE.must_have_features",
+    "PRODUCT_MODEL.entity",
+    "PRODUCT_MODEL.attribute",
+    "PRODUCT_MODEL.relationship",
+}
+
+
+def _requires_functional_requirement(source: SourceFact) -> bool:
+    category = f"{source.topic}.{source.key}"
+    if category in FUNCTIONAL_REQUIREMENT_SOURCE_CATEGORIES:
+        return True
+    return source.topic in {
+        "CORE_WORKFLOW",
+        "BUSINESS_RULES",
+        "EXCEPTIONS",
+        "EDGE_CASES",
+    }
+
+
+def _section_source_refs(draft: PRDDraft) -> dict[str, set[str]]:
+    functional = {
+        ref
+        for requirement in draft.functional_requirements
+        for ref in requirement.source_fact_ids
+    }
+    personas = {
+        ref
+        for persona in draft.personas
+        for ref in persona.source_fact_ids
+    }
+    personas.update(
+        ref
+        for persona in draft.personas
+        for behavior in persona.key_behaviors
+        for ref in behavior.source_fact_ids
+    )
+    in_scope = {
+        ref for claim in draft.scope.in_scope for ref in claim.source_fact_ids
+    }
+    out_of_scope = {
+        ref for claim in draft.scope.out_of_scope for ref in claim.source_fact_ids
+    }
+    return {
+        "functional_requirements": functional,
+        "personas": personas,
+        "scope.in_scope": in_scope,
+        "scope.out_of_scope": out_of_scope,
+    }
+
+
 def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier, category_cache=None):
     source_map = {fact.fact_id: fact for fact in sources}
     claims = list(draft_claims(draft))
@@ -283,7 +338,50 @@ def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier
             )
     cited = {ref for _, claim in claims for ref in claim["source_fact_ids"]}
     if set(source_map) - cited:
-        raise PRDValidationError(f"Confirmed facts omitted from the draft: {sorted(set(source_map) - cited)}.")
+        raise PRDValidationError(
+            f"Confirmed facts omitted from the draft: {sorted(set(source_map) - cited)}."
+        )
+
+    section_refs = _section_source_refs(draft)
+    missing_functional = sorted(
+        source.fact_id
+        for source in sources
+        if _requires_functional_requirement(source)
+        and source.fact_id not in section_refs["functional_requirements"]
+    )
+    if missing_functional:
+        raise PRDValidationError(
+            "Operational product sources must appear in functional_requirements; "
+            f"scope/summary citation alone is insufficient: {missing_functional}."
+        )
+
+    missing_personas = sorted(
+        source.fact_id
+        for source in sources
+        if source.topic == "USER_ROLES"
+        and source.key == "primary_users"
+        and not source.absence
+        and source.fact_id not in section_refs["personas"]
+    )
+    if missing_personas:
+        raise PRDValidationError(
+            "Confirmed primary actors must appear in personas/users-and-roles; "
+            f"overview/scope citation alone is insufficient: {missing_personas}."
+        )
+
+    missing_out_of_scope = sorted(
+        source.fact_id
+        for source in sources
+        if source.topic == "MVP_SCOPE"
+        and source.key == "out_of_scope"
+        and source.fact_id not in section_refs["scope.out_of_scope"]
+    )
+    if missing_out_of_scope:
+        raise PRDValidationError(
+            "Explicit MVP exclusions must appear in scope.out_of_scope: "
+            f"{missing_out_of_scope}."
+        )
+
     cache = category_cache if category_cache is not None else {}
     source_meanings = {}
     # Classify the quote WITHOUT its extracted value, category, or confidence:
