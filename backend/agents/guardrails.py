@@ -658,6 +658,12 @@ def evaluate_question(state: dict) -> dict:
                 founder_gap_guidance="\n".join(
                     f"- {gap}"
                     for entry in state.get("founder_gap_guidance", [])[-10:]
+                    if not entry.get("scope")
+                    or entry.get("scope") == getattr(
+                        state.get("discovery_scope"),
+                        "value",
+                        state.get("discovery_scope"),
+                    )
                     for gap in (entry.get("items") or [])
                 ) or "None",
                 raw_idea=state.get("raw_idea") or "",
