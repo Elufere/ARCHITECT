@@ -463,3 +463,29 @@ def test_explicit_scope_exclusion_is_recovered_even_when_capture_omits_it():
     assert "integrations" in claim.value.lower()
     assert "admin features" in claim.value.lower()
     assert "user roles" not in claim.value.lower()
+
+
+
+def test_product_concept_keeps_the_question_that_contextualizes_short_evidence():
+    claim = NeutralClaim(
+        kind="entity_attribute",
+        subject="task",
+        relation="has attribute",
+        object="optional description",
+        value="an optional description",
+        evidence="an optional description",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+    )
+
+    concept = tracker._concept_from_claim(
+        claim,
+        S.USER_APP,
+        3,
+        "What fields or information should each task have?",
+    )
+
+    assert concept.source_question == (
+        "What fields or information should each task have?"
+    )
+    assert concept.evidence == "an optional description"
