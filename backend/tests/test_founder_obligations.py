@@ -258,3 +258,145 @@ def test_extended_product_concepts_project_as_requirements_not_goals_or_global_s
     assert "PRODUCT_MODEL.boundary" in requirement_categories
     assert projection.draft.elevator_pitch == []
     assert projection.draft.scope.out_of_scope == []
+
+
+
+def test_todo_semantic_projection_keeps_meaning_in_correct_sections():
+    state = {
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [
+            KnowledgeItem(
+                topic=T.USER_ROLES,
+                scope=S.USER_APP,
+                key="primary_users",
+                value="user",
+                evidence="A user can manage tasks.",
+                roles=["user"],
+                confidence=1.0,
+            ),
+            KnowledgeItem(
+                topic=T.USER_ROLES,
+                scope=S.USER_APP,
+                key="responsibilities",
+                value="create tasks",
+                evidence="A user can create tasks",
+                role="user",
+                confidence=1.0,
+            ),
+            KnowledgeItem(
+                topic=T.USER_ROLES,
+                scope=S.USER_APP,
+                key="responsibilities",
+                value="edit or delete tasks",
+                evidence="edit or delete them",
+                role="user",
+                confidence=1.0,
+            ),
+            KnowledgeItem(
+                topic=T.USER_GOALS,
+                scope=S.USER_APP,
+                key="primary_user_goals",
+                value="access the same tasks across devices",
+                evidence="so the user can access their tasks across devices",
+                role="user",
+                confidence=1.0,
+            ),
+            KnowledgeItem(
+                topic=T.MVP_SCOPE,
+                scope=S.USER_APP,
+                key="out_of_scope",
+                value="payments, integrations, or admin features",
+                evidence="There are no other user roles, payments, integrations, or admin features",
+                confidence=1.0,
+            ),
+        ],
+        "product_concepts": [
+            ProductConcept(
+                kind=ProductConceptKind.ENTITY,
+                scope=S.USER_APP,
+                subject="task",
+                value="Task",
+                evidence="tasks",
+                confidence=1.0,
+                source_turn=1,
+            ),
+            ProductConcept(
+                kind=ProductConceptKind.ATTRIBUTE,
+                scope=S.USER_APP,
+                subject="task",
+                relation="has",
+                object="title",
+                value="Each task should have a title",
+                evidence="Each task should have a title",
+                confidence=1.0,
+                source_turn=2,
+            ),
+            ProductConcept(
+                kind=ProductConceptKind.STATE,
+                scope=S.USER_APP,
+                subject="task",
+                relation="state",
+                object="active or completed",
+                value="Tasks can be either active or completed",
+                evidence="Tasks can be either active or completed",
+                confidence=1.0,
+                source_turn=1,
+            ),
+            ProductConcept(
+                kind=ProductConceptKind.OWNERSHIP,
+                scope=S.USER_APP,
+                subject="task",
+                relation="belongs_to",
+                object="user account",
+                value="Tasks are tied to a user account",
+                evidence="Tasks should be tied to a user account",
+                confidence=1.0,
+                source_turn=4,
+            ),
+            ProductConcept(
+                kind=ProductConceptKind.PERSISTENCE,
+                scope=S.USER_APP,
+                subject="task",
+                relation="storage",
+                object="cloud",
+                value="Tasks are stored in the cloud",
+                evidence="stored in the cloud",
+                confidence=1.0,
+                source_turn=4,
+            ),
+            ProductConcept(
+                kind=ProductConceptKind.BOUNDARY,
+                scope=S.USER_APP,
+                subject="task",
+                relation="fields",
+                object="closed_for_mvp",
+                value="No other task fields are needed for the MVP",
+                evidence="No other fields are needed for now",
+                confidence=1.0,
+                source_turn=2,
+            ),
+        ],
+    }
+
+    sources = build_source_snapshot(state)
+    projection = project_prd(sources)
+    elevator_categories = {claim.category for claim in projection.draft.elevator_pitch}
+    out_scope_categories = {claim.category for claim in projection.draft.scope.out_of_scope}
+    functional_categories = {
+        requirement.category for requirement in projection.draft.functional_requirements
+    }
+
+    assert elevator_categories == {"USER_GOALS.primary_user_goals"}
+    assert "PRODUCT_MODEL.persistence" in functional_categories
+    assert "PRODUCT_MODEL.ownership" in functional_categories
+    assert "PRODUCT_MODEL.boundary" in functional_categories
+    assert "PRODUCT_MODEL.state" in functional_categories
+    assert out_scope_categories == {"MVP_SCOPE.out_of_scope"}
+    assert all(
+        "cloud" not in claim.text.lower()
+        for claim in projection.draft.elevator_pitch
+    )
+    assert all(
+        "no other task fields" not in claim.text.lower()
+        for claim in projection.draft.scope.out_of_scope
+    )
