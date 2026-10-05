@@ -576,7 +576,7 @@ def evaluate_question(state: dict) -> dict:
     if not isinstance(last_message, AIMessage):
         return state
 
-    generated_text = message_text(generated_text)
+    generated_text = message_text(last_message.content)
 
     # --------------------------------------------------------
     # Check 1: Deterministic question check (no LLM)
