@@ -781,6 +781,10 @@ Return:
   best_alternative_focus. This is DIAGNOSTIC ONLY: the planner already owns global
   breadth-vs-depth ranking, so do not invalidate an otherwise good frontier merely
   because you can imagine a somewhat better alternative.
+- low_signal_crud_depth_hint is a NON-AUTHORITATIVE heuristic warning that the
+  proposed frontier resembles ordinary CRUD refinement in a simple context.
+  Consider it when judging marginal value, but never treat it as proof and never
+  let it override an OPEN founder obligation.
 - should_move_on=true ONLY when the proposed frontier itself is no longer worth
   asking at this discovery stage: for example it is implementation/UI detail,
   exhaustive refinement after the governing rule is already coherent, or continued
@@ -1206,15 +1210,7 @@ def _semantic_frontier_problem(
         scope,
     )
 
-    if _low_signal_crud_depth_frontier(plan, state, scope) and not obligation_frontier:
-        return (
-            "LOW_MARGINAL_VALUE: The frontier invents policy depth around an "
-            "already-confirmed ordinary content-management action without founder "
-            "evidence of a material state, authorization, retention, compliance, "
-            "or irreversible consequence. Treat the action as sufficiently "
-            "specified for product discovery and move to a materially different "
-            "decision or finish."
-        )
+    crud_depth_hint = _low_signal_crud_depth_frontier(plan, state, scope)
 
     for boundary in state.get("discovery_boundaries", []) or []:
         if not isinstance(boundary, dict):
@@ -1242,6 +1238,7 @@ def _semantic_frontier_problem(
             "question_hint": frontier.question_hint,
             "reason": frontier.reason,
         },
+        "low_signal_crud_depth_hint": crud_depth_hint and not obligation_frontier,
         "captured_founder_observations": _observation_payload(state, scope),
         "founder_gap_guidance": _gap_guidance_payload(state, scope),
         "founder_obligations": [
