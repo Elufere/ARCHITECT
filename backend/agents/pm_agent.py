@@ -28,6 +28,7 @@ from agents.prd_validation import (
     validate_prd,
     check_context_budget,
     source_category_definitions,
+    compatible_categories,
     PRDValidationError,
     PRDAuditError,
 )
@@ -36,11 +37,67 @@ from agents.external_systems import ExternalSystem
 
 logger = logging.getLogger(__name__)
 
-structured_llm = get_structured_model(call_name="pm_compile.compile", schema=PRDDraft, include_raw=True, max_tokens=4096)
+structured_llm = get_structured_model(
+    call_name="pm_compile.compile",
+    schema=PRDDraft,
+    include_raw=True,
+    max_tokens=8192,
+)
 audit_llm = get_structured_model(call_name="pm_compile.audit", schema=ClaimVerdict, include_raw=True, max_tokens=1024)
 category_llm = get_structured_model(call_name="pm_compile.classification", schema=SemanticCategories, include_raw=True, max_tokens=1024)
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 MAX_COMPILE_ATTEMPTS = 3
+
+
+def _draft_source_references(draft: PRDDraft):
+    if draft.product_name is not None:
+        yield draft.product_name
+    yield from draft.elevator_pitch
+    yield from draft.scope.in_scope
+    yield from draft.scope.out_of_scope
+    for persona in draft.personas:
+        yield persona
+        yield from persona.key_behaviors
+    yield from draft.functional_requirements
+    yield from draft.non_functional_constraints
+    yield from draft.deferred_items
+
+
+def normalize_draft_categories(
+    draft: PRDDraft,
+    sources,
+) -> PRDDraft:
+    """Derive unambiguous category labels from cited immutable sources.
+
+    Category is compiler bookkeeping, not founder meaning. If a claim cites
+    sources from exactly one semantic category and the model emitted an
+    incompatible label, correct the label deterministically. Claim text,
+    conditions, actors and validation remain untouched and still pass the full
+    independent verifier.
+    """
+    source_map = {source.fact_id: source for source in sources}
+    for claim in _draft_source_references(draft):
+        refs = list(claim.source_fact_ids)
+        if not refs or len(refs) != len(set(refs)):
+            continue
+        if any(ref not in source_map for ref in refs):
+            continue
+        categories = {
+            f"{source_map[ref].topic}.{source_map[ref].key}"
+            for ref in refs
+        }
+        if len(categories) != 1:
+            continue
+        source_category = next(iter(categories))
+        if claim.category not in compatible_categories(categories):
+            logger.info(
+                "Normalizing compiler category %s -> %s for cited source(s) %s",
+                claim.category,
+                source_category,
+                refs,
+            )
+            claim.category = source_category
+    return draft
 
 
 def build_compile_prompt() -> str:
@@ -60,6 +117,9 @@ SECTION CONTRACT:
   scope citation alone does NOT satisfy functional-requirement coverage.
 - Explicit MVP out-of-scope sources must appear in scope.out_of_scope.
 - Do not use Scope as a dumping ground for product behavior simply to cite a source.
+- Keep elevator_pitch concise (normally 1-2 high-level statements). It is summary,
+  not a coverage section. For large source snapshots, spend output budget on complete
+  personas, scope boundaries, and functional requirements before decorative summary.
 Use canonical TOPIC.key categories. A cited approval rule cannot become visibility,
 ownership, or exclusivity. Preserve actors, capacities, conditions, thresholds,
 negations and exceptions. Cite actor declarations too when needed for identity.
@@ -224,13 +284,20 @@ def pm_compile_node(state: AgentState) -> dict:
             try:
                 messages = [SystemMessage(content=build_compile_prompt()),
                             HumanMessage(content=json.dumps(payload, ensure_ascii=False))]
-                check_context_budget(messages, PRDDraft, output_tokens=4096)
+                check_context_budget(messages, PRDDraft, output_tokens=8192)
                 result = structured_llm.invoke(messages)
                 parsed = result.get("parsed") if isinstance(result, dict) and "parsed" in result else result
                 if parsed is None:
                     raise PRDValidationError("Compiler did not return a valid structured draft.")
                 draft = PRDDraft.model_validate(parsed)
-                verdicts = validate_prd(draft, sources, audit_llm, category_llm, category_cache)
+                draft = normalize_draft_categories(draft, sources)
+                verdicts = validate_prd(
+                    draft,
+                    sources,
+                    audit_llm,
+                    category_llm,
+                    category_cache,
+                )
                 contract = PRDContract(
                     **draft.model_dump(),
                     discovery_scope=scope.value,
