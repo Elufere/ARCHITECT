@@ -402,6 +402,21 @@ internal roles as examples. Ask only about customer-facing users, or ask about
 the handoff point without asking what internal staff do.
 """
 
+GAP_GUIDANCE_REJECTION = """CRITICAL ERROR: The founder's latest message named
+OPEN QUESTIONS / unresolved discovery areas. It did not defer or decide them.
+
+Do not say the decision is deferred, postponed, established, or something to
+revisit later. You may briefly say there are still details/questions to clarify,
+then ask exactly ONE question about the planner-selected objective.
+"""
+
+FALSE_GAP_DEFERRAL_PATTERN = re.compile(
+    r"\b(?:defer(?:red)?|postpon(?:ed|ement)?)\b"
+    r"|\b(?:revisit|come\s+back\s+to)\b[^?\n]{0,40}\blater\b"
+    r"|\bwhen\s+(?:you(?:'re| are)|we(?:'re| are))\s+ready\b",
+    re.I,
+)
+
 INTERNAL_ROLE_PATTERN = re.compile(
     r"\b(admin(?:istrator)?s?|support (?:agent|agents|staff|team|representative|representatives)|"
     r"customer support (?:agent|agents|staff|team|representative|representatives)|"
@@ -477,6 +492,15 @@ def evaluate_question(state: dict) -> dict:
     selected_requirement = state.get("selected_requirement_candidate") or {}
     requirement_context = "None"
     validation_context = "None"
+
+    if (
+        state.get("conversation_intent") == "gap_guidance"
+        and FALSE_GAP_DEFERRAL_PATTERN.search(last_message.content)
+    ):
+        logger.warning(
+            "Gap-guidance response falsely framed unresolved questions as deferred."
+        )
+        return {"messages": [SystemMessage(content=GAP_GUIDANCE_REJECTION)]}
 
     print("===== DISCOVERY ABSTRACTION DEBUG | STAGE 8: GUARDRAIL INPUT =====")
     print(json.dumps({
