@@ -267,7 +267,23 @@ def _prd_sections(contract: PRDContract | None) -> list[PrdSection]:
             PrdSection(id="users", title="Users and roles", body="\n\n".join(personas))
         )
 
-    if contract.functional_requirements:
+    if contract.feature_specifications:
+        for index, feature in enumerate(contract.feature_specifications, start=1):
+            parts = [feature.overview]
+            if feature.details:
+                parts.append(
+                    _bullet_block(
+                        detail.text for detail in feature.details
+                    )
+                )
+            sections.append(
+                PrdSection(
+                    id=f"feature_{index}",
+                    title=f"Feature {index}: {feature.title}",
+                    body="\n\n".join(part for part in parts if part.strip()),
+                )
+            )
+    elif contract.functional_requirements:
         requirements: list[str] = []
         for item in contract.functional_requirements:
             requirements.append(
