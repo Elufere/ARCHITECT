@@ -33,7 +33,7 @@ structured_llm = get_structured_model(call_name="pm_compile.compile", schema=PRD
 audit_llm = get_structured_model(call_name="pm_compile.audit", schema=ClaimVerdict, include_raw=True, max_tokens=1024)
 category_llm = get_structured_model(call_name="pm_compile.classification", schema=SemanticCategories, include_raw=True, max_tokens=1024)
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
-MAX_COMPILE_ATTEMPTS = 2
+MAX_COMPILE_ATTEMPTS = 3
 
 
 def build_compile_prompt() -> str:
@@ -49,8 +49,14 @@ negations and exceptions. Cite actor declarations too when needed for identity.
 State relevant conditions explicitly; do not hide altered behavior in a validation
 criterion. Use TBD when an acceptance criterion cannot be derived faithfully.
 Summaries, personas, scope, non-functional constraints and deferred items also need
-citations. Do not turn user goals into unstated implementations or silence into
-absence. Do not invent engineering/security requirements or product names.
+citations. IMPORTANT: "scope" is only the PRD section location. It is NEVER a
+semantic category. Every in_scope/out_of_scope claim must still use one exact
+canonical TOPIC.key supported by its cited fact(s). NEVER output USER_APP,
+ADMIN_DASHBOARD, IN_SCOPE, OUT_OF_SCOPE, or SCOPE as category values. If one scope
+sentence would combine facts from different canonical categories, split it into
+separate atomic sourced claims instead of inventing a broad category.
+Do not turn user goals into unstated implementations or silence into absence.
+Do not invent engineering/security requirements or product names.
 If no source supports a product name, return product_name=null. Each elevator_pitch
 entry is an atomic sourced statement. Deferred items require explicit deferral;
 unanswered matters belong only in open_questions as questions, never requirements.
@@ -220,9 +226,24 @@ def pm_compile_node(state: AgentState) -> dict:
                     prd_contract=contract, pm_is_complete=True, awaiting_confirmation=False,
                     compilation_errors=[])
             except (PRDValidationError, ValidationError) as exc:
-                errors.append(str(exc))
+                error = str(exc)
+                errors.append(error)
+                logger.warning(
+                    "PRD compile attempt %s/%s rejected: %s",
+                    attempt + 1,
+                    MAX_COMPILE_ATTEMPTS,
+                    error,
+                )
                 if attempt + 1 < MAX_COMPILE_ATTEMPTS:
-                    payload["repair_errors"] = errors
+                    payload["repair_errors"] = list(errors)
+                    payload["repair_instruction"] = (
+                        "Return the COMPLETE corrected PRDDraft. Fix every listed "
+                        "error without changing supported founder meaning. category "
+                        "must always be an exact canonical TOPIC.key from the cited "
+                        "source facts; USER_APP/ADMIN_DASHBOARD are scope labels and "
+                        "must never be used as category. Split broad multi-category "
+                        "claims into atomic claims rather than inventing a category."
+                    )
         raise PRDValidationError(errors[-1])
     except Exception as exc:
         raise_if_llm_failure(exc)
