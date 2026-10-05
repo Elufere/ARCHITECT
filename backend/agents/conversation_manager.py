@@ -132,7 +132,9 @@ def _append_gap_guidance(
     review: GapGuidanceReview,
 ) -> list[dict]:
     guidance = list(state.get("founder_gap_guidance", []) or [])
+    raw_scope = state.get("discovery_scope")
     guidance.append({
+        "scope": getattr(raw_scope, "value", raw_scope),
         "source_turn": state.get("turn_count", 0),
         "evidence": founder_message,
         "items": list(dict.fromkeys(review.unresolved_items)),
