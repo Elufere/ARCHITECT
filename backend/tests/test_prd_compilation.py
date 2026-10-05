@@ -132,7 +132,7 @@ def test_visibility_restriction_disguised_as_approval_fails_semantic_gate(monkey
                        explanation="Approval authority does not establish exclusive visibility.")
     calls = setup(monkeypatch, tmp_path, corrupt, reject)
     result = pm.pm_compile_node(state())
-    assert len(calls["audit"]) == 2
+    assert len(calls["audit"]) == pm.MAX_COMPILE_ATTEMPTS
     assert not result["pm_is_complete"] and not (tmp_path / "requirements_mvp.json").exists()
     assert "exclusive visibility" in result["compilation_errors"][0]
 
@@ -409,21 +409,25 @@ def test_completion_condition_claim_can_cite_compatible_end_state_fact(
     def make(sources):
         return dict(
             product_name=None,
-            elevator_pitch=[
-                dict(
-                    text="A list is complete when every item has been marked as bought.",
-                    category="CORE_WORKFLOW.completion_condition",
-                    actor_ids=[],
-                    conditions=[],
-                    source_fact_ids=[sources[0]["fact_id"]],
-                )
-            ],
+            elevator_pitch=[],
             scope=dict(in_scope=[], out_of_scope=[]),
             personas=[],
             non_functional_constraints=[],
             deferred_items=[],
             open_questions=[],
-            functional_requirements=[],
+            functional_requirements=[
+                dict(
+                    id="FR-01",
+                    description=(
+                        "A list is complete when every item has been marked as bought."
+                    ),
+                    category="CORE_WORKFLOW.completion_condition",
+                    actor_ids=[],
+                    conditions=[],
+                    validation="TBD",
+                    source_fact_ids=[sources[0]["fact_id"]],
+                )
+            ],
         )
 
     calls = setup(
@@ -439,7 +443,7 @@ def test_completion_condition_claim_can_cite_compatible_end_state_fact(
     assert not result["compilation_errors"]
     assert len(calls["audit"]) == 1
     saved = json.loads((tmp_path / "requirements_mvp.json").read_text())
-    assert saved["elevator_pitch"][0]["category"] == (
+    assert saved["functional_requirements"][0]["category"] == (
         "CORE_WORKFLOW.completion_condition"
     )
 
