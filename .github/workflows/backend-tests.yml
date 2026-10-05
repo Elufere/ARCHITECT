@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/model-driven-discovery
+      - fix/pm-obligations-semantic-model
   workflow_dispatch:
 
 concurrency:
