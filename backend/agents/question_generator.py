@@ -257,6 +257,8 @@ def question_generator_node(state: AgentState) -> dict:
     model_guidance = ""
     validation_guidance = ""
     advice_requested = state.get("conversation_intent") == "advice_request"
+    gap_guidance_turn = state.get("conversation_intent") == "gap_guidance"
+    founder_gap_guidance = list(state.get("founder_gap_guidance", []) or [])[-10:]
     discovery_boundaries = [
         item for item in state.get("discovery_boundaries", [])[-50:]
         if not item.get("scope") or item.get("scope") == discovery_scope.value
@@ -273,15 +275,25 @@ The founder has given interview-control feedback. These are not product facts:
 Apply each boundary according to its stored instruction. Do not retry a detail
 the founder explicitly rejected or delegated.
 """
-    output_job = (
-        "Your job is to briefly reflect what you now understand from the founder's answer, "
-        "give brief PM suggestions they explicitly requested, then end with ONE natural "
-        "question that resolves or materially reduces the selected uncertainty."
-        if advice_requested
-        else "Your job is to briefly reflect what you now understand from the founder's "
-             "answer, then end with ONE natural question that resolves or materially "
-             "reduces the selected uncertainty."
-    )
+    if gap_guidance_turn:
+        output_job = (
+            "Your job is to acknowledge that the founder identified unresolved areas, "
+            "without presenting any of them as decided or deferred, then end with ONE "
+            "natural question that resolves or materially reduces the planner-selected "
+            "uncertainty."
+        )
+    elif advice_requested:
+        output_job = (
+            "Your job is to briefly reflect what you now understand from the founder's answer, "
+            "give brief PM suggestions they explicitly requested, then end with ONE natural "
+            "question that resolves or materially reduces the selected uncertainty."
+        )
+    else:
+        output_job = (
+            "Your job is to briefly reflect what you now understand from the founder's "
+            "answer, then end with ONE natural question that resolves or materially "
+            "reduces the selected uncertainty."
+        )
     advice_guidance = """
 COLLABORATIVE PM ADVICE MODE
 The founder explicitly asked for suggestions in their latest answer.
@@ -409,6 +421,25 @@ supersede or qualify the stale fact.
                 + "\n".join(prior_facts)
             )
 
+    gap_guidance_context = ""
+    if founder_gap_guidance:
+        gap_guidance_context = """
+FOUNDER-NAMED OPEN GAPS
+The founder identified the following as questions/areas that still need
+clarification. These are interview-control guidance only:
+""" + "\n".join(
+            f"- {item}"
+            for entry in founder_gap_guidance
+            for item in (entry.get("items") or [])
+        ) + """
+Do NOT present these as established product details.
+Do NOT say they were deferred, postponed, decided, confirmed, or that they will
+be revisited later unless separate founder evidence explicitly says so.
+If you acknowledge this guidance, use language such as "there are still a few
+details to clarify" or "you've identified a few open questions."
+The planner-selected objective below determines the ONE question to ask now.
+"""
+
     system_prompt = f"""
 You are an experienced Product Manager conducting a structured product discovery interview.
 
@@ -435,6 +466,7 @@ Planner source: {planner_source}
 {validation_guidance}
 {advice_guidance}
 {boundary_guidance}
+{gap_guidance_context}
 Internal field definition (normalization context only; never quote this to the user):
 {FIELD_DEFINITIONS.get(current_topic, {}).get((current_gap or '').split('::')[0], '')}
 
@@ -592,6 +624,11 @@ their latest answer. This acknowledgement is part of the conversation, not a
 new product-reasoning step.
 
 UNDERSTANDING RULES:
+- When Conversation intent is gap_guidance, the founder's latest message names
+  unresolved questions/areas, not confirmed product facts. Do not say those
+  details were established, decided, deferred, postponed, or "can be revisited
+  later." A brief acknowledgement may only say that there are still open details
+  to clarify before moving into the ONE selected question.
 - Base the acknowledgement primarily on "Confirmed knowledge established from
   the founder's LATEST answer" above.
 - You may connect it to older CONFIRMED knowledge only when the connection is
