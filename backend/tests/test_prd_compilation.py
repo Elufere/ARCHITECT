@@ -1102,3 +1102,68 @@ def test_compiled_todo_contract_contains_grouped_feature_specifications(
     assert contract.feature_specifications[0].details[0].text.startswith("User can ")
     saved = json.loads((tmp_path / "requirements_mvp.json").read_text())
     assert saved["feature_specifications"][0]["title"] == "Task Management"
+
+
+
+def test_feature_grouping_uses_atomic_meaning_not_shared_evidence_text():
+    shared = (
+        "A user can create tasks, and tasks are stored in the cloud for access "
+        "across devices"
+    )
+    action = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="responsibilities",
+        value="create tasks",
+        evidence=shared,
+        role="user",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+    persistence = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="responsibilities",
+        value="access tasks across devices",
+        evidence=shared,
+        role="user",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+    entity = ProductConcept(
+        kind=ProductConceptKind.ENTITY,
+        scope=S.USER_APP,
+        subject="task",
+        value="Tasks are personal task records",
+        evidence=shared,
+        confidence=1,
+        source_turn=0,
+    )
+    initial = state(action, persistence)
+    initial["product_concepts"] = [entity.model_dump(mode="json")]
+
+    sources = build_source_snapshot(initial)
+    projection = project_prd(sources)
+    model = build_product_model(sources)
+    features = build_feature_specifications(projection.draft, model)
+
+    by_title = {feature.title: feature for feature in features}
+    assert "Task Management" in by_title
+    assert "Task Persistence & Access" in by_title
+    management_values = {
+        ref
+        for detail in by_title["Task Management"].details
+        for ref in detail.source_fact_ids
+    }
+    action_source = next(
+        source for source in sources
+        if source.value == "create tasks"
+    )
+    persistence_source = next(
+        source for source in sources
+        if source.value == "access tasks across devices"
+    )
+    assert action_source.fact_id in management_values
+    assert persistence_source.fact_id not in management_values
