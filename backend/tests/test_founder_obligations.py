@@ -230,6 +230,7 @@ def test_extended_product_concepts_project_as_requirements_not_goals_or_global_s
                 object="cloud",
                 value="Tasks are stored in the cloud",
                 evidence="Tasks should be stored in the cloud",
+                confidence=1.0,
                 source_turn=1,
             ),
             ProductConcept(
@@ -240,6 +241,7 @@ def test_extended_product_concepts_project_as_requirements_not_goals_or_global_s
                 object="closed_for_mvp",
                 value="No other task fields are needed for the MVP",
                 evidence="No other task fields are needed for the MVP",
+                confidence=1.0,
                 source_turn=1,
             ),
         ],
