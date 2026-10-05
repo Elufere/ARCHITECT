@@ -546,3 +546,114 @@ def test_completed_state_adjective_does_not_claim_completion_action():
 
     assert "edit" in families
     assert "complete" not in families
+
+
+
+def test_out_of_scope_payments_and_integrations_do_not_make_simple_app_material():
+    primary = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="primary_users",
+        value="user",
+        evidence="A user can create tasks",
+        roles=["user"],
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+    no_secondary = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="secondary_users",
+        value="none",
+        evidence="There are no other user roles",
+        roles=[],
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+        absence="none",
+    )
+    action = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="responsibilities",
+        role="user",
+        value="create tasks",
+        evidence="A user can create tasks",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+    no_payments = KnowledgeItem(
+        topic=T.MVP_SCOPE,
+        scope=S.USER_APP,
+        key="out_of_scope",
+        value="payments",
+        evidence="There are no payments or integrations",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+    no_integrations = KnowledgeItem(
+        topic=T.MVP_SCOPE,
+        scope=S.USER_APP,
+        key="out_of_scope",
+        value="integrations",
+        evidence="There are no payments or integrations",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+    state = {
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [
+            primary,
+            no_secondary,
+            action,
+            no_payments,
+            no_integrations,
+        ],
+        "external_systems": [],
+    }
+
+    assert threads._low_risk_single_actor_context(state, S.USER_APP) is True
+
+
+@pytest.mark.parametrize(
+    "decision_key,objective,hint",
+    [
+        (
+            "task_creation_post_confirmation_behavior",
+            "Determine what happens immediately after a task is created.",
+            "Should the form reset, focus a new input, or update other parts of the screen?",
+        ),
+        (
+            "task_completion_confirmation",
+            "Confirm feedback after marking a task completed.",
+            "Should the app show a toast or notification after completion?",
+        ),
+        (
+            "task_deletion_confirmation_details",
+            "Understand the exact deletion confirmation experience.",
+            "What should the confirmation message say or look like?",
+        ),
+        (
+            "task_creation_input_error_handling",
+            "Understand invalid task-title handling.",
+            "Should the app show an error message or other user guidance?",
+        ),
+    ],
+)
+def test_low_risk_app_rejects_interaction_design_frontiers(
+    decision_key,
+    objective,
+    hint,
+):
+    state = _simple_todo_depth_state()
+    plan = _frontier(decision_key, objective, hint)
+
+    assert threads._low_signal_crud_depth_frontier(
+        plan,
+        state,
+        S.USER_APP,
+    ) is True
