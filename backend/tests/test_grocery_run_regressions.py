@@ -489,3 +489,60 @@ def test_product_concept_keeps_the_question_that_contextualizes_short_evidence()
         "What fields or information should each task have?"
     )
     assert concept.evidence == "an optional description"
+
+
+
+def test_crud_depth_gate_does_not_suppress_material_escrow_context():
+    removal = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="responsibilities",
+        role="customer",
+        value="delete a draft transaction",
+        evidence="Customers can delete a draft transaction",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+    material = KnowledgeItem(
+        topic=T.CORE_WORKFLOW,
+        scope=S.USER_APP,
+        key="workflow_steps",
+        value="buyer funds escrow before shipment",
+        evidence="The buyer funds escrow before shipment",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+    plan = DiscoveryThreadPlan(
+        thread_id="transaction_management",
+        thread_label="Transaction management",
+        thread_objective="Understand transaction management.",
+        frontier=ThreadFrontierInquiry(
+            decision_key="draft_deletion_rules",
+            topic=T.BUSINESS_RULES,
+            objective="Clarify rules and conditions for deleting a draft transaction.",
+            question_hint="Are there restrictions on deleting a draft transaction?",
+            reason="Deletion may affect the transaction lifecycle.",
+        ),
+    )
+    state = {
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [removal, material],
+        "captured_observations": [],
+        "discovery_boundaries": [],
+        "external_systems": [],
+    }
+
+    assert threads._low_signal_crud_depth_frontier(
+        plan,
+        state,
+        S.USER_APP,
+    ) is False
+
+
+def test_completed_state_adjective_does_not_claim_completion_action():
+    families = threads._crud_action_families("edit completed tasks")
+
+    assert "edit" in families
+    assert "complete" not in families
