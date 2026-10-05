@@ -16,7 +16,7 @@ from agents.llm_errors import LLMCallFailed
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
-DEFAULT_MODEL = "gpt-4.1-mini"
+DEFAULT_MODEL = "gpt-5.6-sol"
 
 
 @lru_cache(maxsize=64)
@@ -24,19 +24,31 @@ def _client(call_name, max_tokens):
     key = os.getenv("OPENAI_API_KEY")
     if not key:
         raise LLMCallFailed(call_name)
-    return ChatOpenAI(
-        api_key=key,
-        base_url="https://api.openai.com/v1",
-        model=os.getenv("OPENAI_MODEL", DEFAULT_MODEL),
-        temperature=0.0,
-        timeout=float(os.getenv("OPENAI_TIMEOUT_SECONDS", "60")),
+    model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
+    model_kwargs = {
+        "api_key": key,
+        "base_url": "https://api.openai.com/v1",
+        "model": model,
+        "timeout": float(os.getenv("OPENAI_TIMEOUT_SECONDS", "60")),
         # Retries are centralized below; avoid multiplying SDK and node retries.
-        max_retries=0,
-        max_tokens=max_tokens,
-        stream_usage=True,
-        callbacks=[usage_tracker],
-        metadata={"openai_call_name": call_name},
-    )
+        "max_retries": 0,
+        "max_tokens": max_tokens,
+        "stream_usage": True,
+        "callbacks": [usage_tracker],
+        "metadata": {"openai_call_name": call_name},
+    }
+
+    if model.startswith("gpt-5.6"):
+        # GPT-5.6 is a reasoning model. Medium is the API default and gives us
+        # the cleanest first A/B comparison against the previous model.
+        model_kwargs["reasoning_effort"] = os.getenv(
+            "OPENAI_REASONING_EFFORT",
+            "medium",
+        )
+    else:
+        model_kwargs["temperature"] = 0.0
+
+    return ChatOpenAI(**model_kwargs)
 
 
 def _retryable(error):
