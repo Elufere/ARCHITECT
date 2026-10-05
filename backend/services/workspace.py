@@ -228,28 +228,101 @@ def _bullet_block(items: Iterable[str]) -> str:
     return "\n".join(f"- {item}" for item in values)
 
 
-def _prd_sections(contract: PRDContract | None) -> list[PrdSection]:
+def _source_values(
+    contract: PRDContract,
+    topic: str,
+    keys: set[str] | None = None,
+) -> list[str]:
+    values: list[str] = []
+    for source in contract.source_facts:
+        if source.absence is not None or source.topic != topic:
+            continue
+        if keys is not None and source.key not in keys:
+            continue
+        value = source.value.strip()
+        if value and value not in values:
+            values.append(value)
+    return values
+
+
+def _prd_sections(
+    contract: PRDContract | None,
+    project_description: str | None = None,
+) -> list[PrdSection]:
     if contract is None:
         return []
 
     sections: list[PrdSection] = []
 
-    overview_parts: list[str] = []
+    # Reference-quality PRDs begin with product context, but Architect may only
+    # render context the founder actually supplied. The durable project
+    # description is founder-authored and therefore safe summary material.
+    summary_parts: list[str] = []
+    if project_description and project_description.strip():
+        summary_parts.append(project_description.strip())
     if contract.product_name is not None:
-        overview_parts.append(f"Product: {contract.product_name.text}")
+        summary_parts.append(f"Product: {contract.product_name.text}")
     pitch = _claim_texts(contract.elevator_pitch)
     if pitch:
-        overview_parts.append(_bullet_block(pitch))
-    if not overview_parts and contract.feature_specifications:
-        overview_parts.append(
+        summary_parts.append(_bullet_block(pitch))
+    if not summary_parts and contract.feature_specifications:
+        summary_parts.append(
             "Core product areas:\n"
             + _bullet_block(
                 feature.title for feature in contract.feature_specifications
             )
         )
-    if overview_parts:
+    if summary_parts:
         sections.append(
-            PrdSection(id="overview", title="Overview", body="\n\n".join(overview_parts))
+            PrdSection(
+                id="overview",
+                title="Executive Summary",
+                body="\n\n".join(summary_parts),
+            )
+        )
+
+    goals = _source_values(
+        contract,
+        "USER_GOALS",
+        {"primary_user_goals", "secondary_user_goals"},
+    )
+    motivations = _source_values(contract, "USER_GOALS", {"motivations"})
+    success = _source_values(contract, "USER_GOALS", {"success_criteria"})
+    success.extend(
+        value
+        for value in _source_values(contract, "MVP_SCOPE", {"success_metrics"})
+        if value not in success
+    )
+    goal_parts: list[str] = []
+    if motivations:
+        goal_parts.append("Problem / motivation:\n" + _bullet_block(motivations))
+    if goals:
+        goal_parts.append("Product goals:\n" + _bullet_block(goals))
+    if success:
+        goal_parts.append("Success metrics:\n" + _bullet_block(success))
+    if goal_parts:
+        sections.append(
+            PrdSection(
+                id="goals",
+                title="Goals and Success Metrics",
+                body="\n\n".join(goal_parts),
+            )
+        )
+
+    if contract.personas:
+        personas: list[str] = []
+        for persona in contract.personas:
+            block = f"{persona.name} — {persona.description}"
+            behaviors = _claim_texts(persona.key_behaviors)
+            if behaviors:
+                block += "\n" + _bullet_block(behaviors)
+            personas.append(block)
+        sections.append(
+            PrdSection(
+                id="users",
+                title="Target Users and Roles",
+                body="\n\n".join(personas),
+            )
         )
 
     in_scope = _claim_texts(contract.scope.in_scope)
@@ -260,18 +333,12 @@ def _prd_sections(contract: PRDContract | None) -> list[PrdSection]:
     if out_of_scope:
         scope_parts.append("Out of scope:\n" + _bullet_block(out_of_scope))
     if scope_parts:
-        sections.append(PrdSection(id="scope", title="Scope", body="\n\n".join(scope_parts)))
-
-    if contract.personas:
-        personas: list[str] = []
-        for persona in contract.personas:
-            block = f"{persona.name}: {persona.description}"
-            behaviors = _claim_texts(persona.key_behaviors)
-            if behaviors:
-                block += "\n" + _bullet_block(behaviors)
-            personas.append(block)
         sections.append(
-            PrdSection(id="users", title="Users and roles", body="\n\n".join(personas))
+            PrdSection(
+                id="scope",
+                title="Product Scope",
+                body="\n\n".join(scope_parts),
+            )
         )
 
     if contract.feature_specifications:
@@ -299,8 +366,29 @@ def _prd_sections(contract: PRDContract | None) -> list[PrdSection]:
         sections.append(
             PrdSection(
                 id="functional_requirements",
-                title="Functional requirements",
+                title="Functional Requirements",
                 body="\n\n".join(requirements),
+            )
+        )
+
+    workflow_labels = {
+        "trigger": "Trigger",
+        "workflow_steps": "Flow",
+        "completion_condition": "Completion condition",
+        "end_state": "Resulting state",
+        "downstream_dependency": "External dependency",
+    }
+    workflow_parts: list[str] = []
+    for key, label in workflow_labels.items():
+        values = _source_values(contract, "CORE_WORKFLOW", {key})
+        if values:
+            workflow_parts.append(f"{label}:\n" + _bullet_block(values))
+    if workflow_parts:
+        sections.append(
+            PrdSection(
+                id="user_flow",
+                title="Core User Flow",
+                body="\n\n".join(workflow_parts),
             )
         )
 
@@ -317,8 +405,40 @@ def _prd_sections(contract: PRDContract | None) -> list[PrdSection]:
         sections.append(
             PrdSection(
                 id="external_systems",
-                title="External systems & integrations",
+                title="External Systems and Integrations",
                 body="\n\n".join(systems),
+            )
+        )
+
+    product_sources = [
+        source
+        for source in contract.source_facts
+        if source.topic == "PRODUCT_MODEL"
+        and source.absence is None
+        and source.subject
+    ]
+    if product_sources:
+        by_subject: dict[str, list[str]] = {}
+        subject_order: list[str] = []
+        for source in product_sources:
+            subject = source.subject.strip().replace("_", " ").title()
+            if subject not in by_subject:
+                by_subject[subject] = []
+                subject_order.append(subject)
+            value = source.value.strip()
+            if value and value not in by_subject[subject]:
+                by_subject[subject].append(value)
+        blocks = []
+        for subject in subject_order:
+            block = subject
+            if by_subject[subject]:
+                block += "\n" + _bullet_block(by_subject[subject])
+            blocks.append(block)
+        sections.append(
+            PrdSection(
+                id="data_model",
+                title="Core Data Model",
+                body="\n\n".join(blocks),
             )
         )
 
@@ -348,7 +468,7 @@ def _prd_sections(contract: PRDContract | None) -> list[PrdSection]:
         sections.append(
             PrdSection(
                 id="deferred",
-                title="Deferred items",
+                title="Deferred Decisions",
                 body=_bullet_block(deferred),
             )
         )
@@ -357,13 +477,12 @@ def _prd_sections(contract: PRDContract | None) -> list[PrdSection]:
         sections.append(
             PrdSection(
                 id="open_questions",
-                title="Open questions",
+                title="Open Questions",
                 body=_bullet_block(contract.open_questions),
             )
         )
 
     return sections
-
 
 def _workspace_updated_at(project: ProjectRecord, document: dict) -> str:
     raw = document.get("updated_at")
@@ -418,6 +537,6 @@ def build_workspace_snapshot(project_id: str) -> WorkspaceSnapshot:
         understanding=UnderstandingSnapshot(sections=understanding.sections),
         prd=PrdSnapshot(
             status=_prd_status(state),
-            sections=_prd_sections(contract),
+            sections=_prd_sections(contract, project.description),
         ),
     )
