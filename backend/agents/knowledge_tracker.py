@@ -883,6 +883,12 @@ def _literalize_semantic_claim_evidence(
         "product_entity",
         "entity_relationship",
         "entity_attribute",
+        "ownership_relationship",
+        "persistence_requirement",
+        "entity_boundary",
+        "entity_state",
+        "state_transition",
+        "operation_rule",
         "external_system",
         "unclassified",
     }:
@@ -988,6 +994,12 @@ def _concept_from_claim(
         "product_entity": ProductConceptKind.ENTITY,
         "entity_relationship": ProductConceptKind.RELATIONSHIP,
         "entity_attribute": ProductConceptKind.ATTRIBUTE,
+        "ownership_relationship": ProductConceptKind.OWNERSHIP,
+        "persistence_requirement": ProductConceptKind.PERSISTENCE,
+        "entity_boundary": ProductConceptKind.BOUNDARY,
+        "entity_state": ProductConceptKind.STATE,
+        "state_transition": ProductConceptKind.TRANSITION,
+        "operation_rule": ProductConceptKind.OPERATION_RULE,
     }[claim.kind]
     if not claim.subject:
         raise ValueError(f"{claim.kind} requires subject")
@@ -1212,7 +1224,17 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
                 admission_status = "EXTERNAL_SYSTEM_CANDIDATE"
                 continue
 
-            if claim.kind in ("product_entity", "entity_relationship", "entity_attribute"):
+            if claim.kind in (
+                "product_entity",
+                "entity_relationship",
+                "entity_attribute",
+                "ownership_relationship",
+                "persistence_requirement",
+                "entity_boundary",
+                "entity_state",
+                "state_transition",
+                "operation_rule",
+            ):
                 concept = _concept_from_claim(
                     claim,
                     scope,
