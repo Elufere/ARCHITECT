@@ -501,13 +501,14 @@ def _compact_product_snapshot(
         if (
             item.scope != scope
             or item.knowledge_state != KnowledgeState.CONFIRMED
-            or item.absence
         ):
             continue
         actor = item.role or ",".join(item.roles or [])
         key = f"{item.topic.value}.{item.key}" + (f"[{actor}]" if actor else "")
         values = grouped_facts.setdefault(key, [])
         value = str(item.value).strip()
+        if item.absence:
+            value = f"{value} [explicit absence: {item.absence}]"
         if value and value not in values:
             values.append(value)
             if len(values) > 8:
@@ -1550,11 +1551,6 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "thread_activity": _thread_activity_payload(state),
         "eligible_requirement_backlog": backlog[:12],
     }
-    messages = [
-        SystemMessage(content=THREAD_PLANNER_INSTRUCTION),
-        HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
-    ]
-
     rejected_frontiers: list[dict] = []
     last_problem = None
     captured_feedback = None
@@ -1600,11 +1596,23 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
 
         proposed = None
         try:
+            serialized_payload = json.dumps(
+                attempt_payload,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            print(
+                "DISCOVERY PLANNER CONTEXT: "
+                f"attempt={attempt + 1} "
+                f"model_tier={'fast-repair' if attempt > 0 else 'reasoning'} "
+                f"chars={len(serialized_payload):,} "
+                f"rough_tokens~={max(1, len(serialized_payload) // 4):,}"
+            )
             proposed = _normalize_plan(
                 _invoke_thread_plan(
                     [
                         SystemMessage(content=system_instruction),
-                        HumanMessage(content=json.dumps(attempt_payload, ensure_ascii=False)),
+                        HumanMessage(content=serialized_payload),
                     ],
                     repair=attempt > 0,
                 ),
