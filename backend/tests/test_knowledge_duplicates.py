@@ -127,3 +127,16 @@ def test_comparison_failure_does_not_delete_facts():
 ])
 def test_live_semantic_comparison(old, new, expected):
     assert compare_candidate(fact(new), [fact(old)], tracker.semantic_decision)[0] == expected
+
+
+
+def test_distinct_atomic_actor_actions_are_never_collapsed_as_refinements():
+    edit = fact("A user can edit tasks", role="user")
+    delete = fact("A user can delete tasks", role="user")
+    complete = fact("A user can mark tasks as completed", role="user")
+
+    def unexpected(*_):
+        pytest.fail("Distinct action families should not need semantic comparison")
+
+    assert compare_candidate(delete, [edit], unexpected) == ("new", None)
+    assert compare_candidate(complete, [edit, delete], unexpected) == ("new", None)
