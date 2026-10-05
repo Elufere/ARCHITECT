@@ -60,6 +60,88 @@ def get_content_words(text: str) -> set:
     return {w for w in words if w not in STOP_WORDS}
 
 
+GENERIC_DISCOVERY_TERMS = {
+    "app", "application", "product", "task", "tasks", "list", "lists",
+    "item", "items", "detail", "details", "information", "field", "fields",
+    "behavior", "behaviour", "rule", "rules", "user", "users",
+}
+
+
+def _stem_discovery_word(word: str) -> str:
+    value = word.lower()
+    for suffix in ("ing", "ed", "es", "s"):
+        if len(value) > len(suffix) + 3 and value.endswith(suffix):
+            return value[:-len(suffix)]
+    return value
+
+
+def _discovery_stems(text: str) -> set[str]:
+    return {
+        _stem_discovery_word(word)
+        for word in get_content_words(text or "")
+        if word.lower() not in GENERIC_DISCOVERY_TERMS
+    }
+
+
+def founder_gap_objective_drift(state: dict, question: str) -> str | None:
+    """Catch a generated question that jumps to another founder-named open gap.
+
+    This is intentionally conservative: reject only when the generated question
+    has no meaningful lexical anchor to the selected objective/hint AND strongly
+    matches a different founder-named unresolved item. The semantic evaluator
+    still owns ordinary paraphrase/relevance decisions.
+    """
+    if state.get("planner_source", "model") != "model":
+        return None
+
+    scope = getattr(
+        state.get("discovery_scope"),
+        "value",
+        state.get("discovery_scope"),
+    )
+    guidance = [
+        gap
+        for entry in state.get("founder_gap_guidance", []) or []
+        if not entry.get("scope") or entry.get("scope") == scope
+        for gap in (entry.get("items") or [])
+    ]
+    if not guidance:
+        return None
+
+    selected_text = " ".join(
+        filter(
+            None,
+            [
+                state.get("current_objective"),
+                state.get("question_hint"),
+            ],
+        )
+    )
+    selected = _discovery_stems(selected_text)
+    asked = _discovery_stems(question)
+    if not asked:
+        return None
+
+    selected_overlap = len(asked & selected)
+    if selected_overlap:
+        return None
+
+    alternate = None
+    alternate_overlap = 0
+    for gap in guidance:
+        score = len(asked & _discovery_stems(gap))
+        if score > alternate_overlap:
+            alternate_overlap = score
+            alternate = gap
+
+    if alternate_overlap >= 2:
+        return (
+            "Generated question drifted from the selected objective and instead "
+            f"matches another founder-named open gap: {alternate!r}."
+        )
+    return None
+
+
 def check_topic_relevance(
     question: str,
     question_hint: str,
@@ -385,6 +467,17 @@ Do NOT ask about any other topic or field.
 NOT_A_QUESTION_REJECTION = """CRITICAL ERROR: Your response must end with exactly ONE interview question ending in '?'.
 A brief grounded acknowledgement may come before it, but do not return acknowledgement/explanation without the final question."""
 
+FOUNDER_GAP_DRIFT_REJECTION = """CRITICAL ERROR: Your previous question switched to a DIFFERENT founder-named open gap.
+
+Reason: {reason}
+
+The selected objective is: {current_objective}
+The selected question guidance is: {question_hint}
+
+Rewrite the FINAL question so it asks only about the selected objective. Do not
+continue another unresolved item merely because it appears in recent conversation.
+"""
+
 TOPIC_RELEVANCE_REJECTION = """CRITICAL ERROR: Your previous question drifted away from what you were supposed to ask.
 
 Reason: {reason}
@@ -611,6 +704,21 @@ def evaluate_question(state: dict) -> dict:
     # "oversee hosts and guests"; that is still an administrator-responsibility
     # question, not a role leak.  The generator is explicitly role-scoped and
     # the objective evaluator below verifies that the selected gap is asked.
+
+    drift_reason = founder_gap_objective_drift(state, current_question)
+    if drift_reason:
+        logger.warning(drift_reason)
+        return {
+            "messages": [
+                SystemMessage(
+                    content=FOUNDER_GAP_DRIFT_REJECTION.format(
+                        reason=drift_reason,
+                        current_objective=current_objective,
+                        question_hint=question_hint,
+                    )
+                )
+            ]
+        }
 
     # --------------------------------------------------------
     # Check 4: Deterministic topic-relevance check (no LLM, no
