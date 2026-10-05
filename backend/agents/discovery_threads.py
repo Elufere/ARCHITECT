@@ -1470,9 +1470,15 @@ def _plan_problem(
             "thread/decision or return no frontier if only requirements remain."
         )
     if frontier is not None:
+        obligation_frontier = is_open_obligation(
+            state,
+            frontier.obligation_id,
+            state.get("discovery_scope", DiscoveryScope.USER_APP),
+        )
         for rejected in rejected_frontiers or []:
             if (
-                rejected.get("thread_id") == plan.thread_id
+                not obligation_frontier
+                and rejected.get("thread_id") == plan.thread_id
                 and rejected.get("decision_key") == frontier.decision_key
             ):
                 return (
@@ -1485,12 +1491,16 @@ def _plan_problem(
             if entry.get("thread_id") == plan.thread_id
             and entry.get("decision_key") == frontier.decision_key
         )
-        if deliveries >= 2:
+        if deliveries >= 2 and not obligation_frontier:
             return (
                 f"Decision '{frontier.decision_key}' in thread '{plan.thread_id}' "
                 "has already been delivered twice."
             )
-        if deliveries == 1 and state.get("extraction_status") != "NO_FACTS_FOUND":
+        if (
+            deliveries == 1
+            and state.get("extraction_status") != "NO_FACTS_FOUND"
+            and not obligation_frontier
+        ):
             return (
                 f"Decision '{frontier.decision_key}' already received a usable answer; "
                 "advance to the next causal decision."
