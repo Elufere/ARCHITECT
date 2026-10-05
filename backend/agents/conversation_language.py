@@ -5,16 +5,59 @@ user answer satisfies a gap or invent product actors/capabilities.
 """
 
 import re
+from typing import Any
 
 
-def final_question_text(content: str) -> str:
+def message_text(content: Any) -> str:
+    """Normalize LangChain/OpenAI message content into plain text.
+
+    Chat models may return either a string or a list of typed content blocks.
+    Discovery code reasons over founder/PM language, so downstream modules should
+    consume one stable textual representation rather than depending on provider
+    response shape.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+                continue
+            if isinstance(block, dict):
+                value = (
+                    block.get("text")
+                    or block.get("content")
+                    or block.get("output_text")
+                )
+                if isinstance(value, str):
+                    parts.append(value)
+                continue
+            value = getattr(block, "text", None)
+            if isinstance(value, str):
+                parts.append(value)
+        return "".join(parts)
+    if isinstance(content, dict):
+        value = (
+            content.get("text")
+            or content.get("content")
+            or content.get("output_text")
+        )
+        return value if isinstance(value, str) else ""
+    value = getattr(content, "text", None)
+    return value if isinstance(value, str) else str(content)
+
+
+def final_question_text(content: Any) -> str:
     """Return the final interview question from a PM response.
 
     Most turns contain only a question. Advice-with-continuation turns may contain
     short PM suggestions first; short answers such as "yes" must still be resolved
     against the actual trailing question rather than the advisory prose.
     """
-    text = (content or "").strip()
+    text = message_text(content).strip()
     if not text:
         return ""
     matches = list(re.finditer(r"(?:^|\n)([^\n?]*\?)\s*$", text, re.M))
