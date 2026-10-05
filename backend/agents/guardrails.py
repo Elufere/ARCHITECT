@@ -15,6 +15,7 @@ from agents.llm import get_structured_model
 from pydantic import BaseModel
 
 from agents.state import DiscoveryScope, KnowledgeState
+from agents.discovery_obligations import is_open_obligation
 from agents.role_utils import role_identity, split_role_labels
 from agents.conversation_language import clarification_question, final_question_text
 
