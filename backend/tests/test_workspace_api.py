@@ -5,10 +5,15 @@ from fastapi import HTTPException
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from agents.interview_checkpoint import save_checkpoint
+from agents.prd_schema import PRDContract
 from agents.state import DiscoveryScope, DiscoveryTopic, KnowledgeItem, KnowledgeState
 from api.routes import get_project_workspace
 from services.project_repository import create_project_record
-from services.workspace import WorkspaceNotFoundError, build_workspace_snapshot
+from services.workspace import (
+    WorkspaceNotFoundError,
+    _prd_sections,
+    build_workspace_snapshot,
+)
 
 
 def _state(session_id: str):
@@ -165,3 +170,85 @@ def test_existing_cli_session_uuid_remains_viewable_as_legacy_workspace(tmp_path
     assert snapshot.project.id == session_id
     assert snapshot.project.name == "Untitled project"
     assert snapshot.project.description == "I want to build an escrow product."
+
+
+
+def test_workspace_renders_feature_specs_instead_of_raw_requirement_ledger():
+    source = {
+        "fact_id": "fact_action",
+        "topic": "USER_ROLES",
+        "scope": "USER_APP",
+        "key": "responsibilities",
+        "value": "create tasks",
+        "evidence": "A user can create tasks",
+        "source_question": None,
+        "roles": None,
+        "aliases": None,
+        "role": "user",
+        "confidence": 1.0,
+        "knowledge_state": "CONFIRMED",
+        "source_turn": 0,
+        "absence": None,
+        "subject": None,
+        "relation": None,
+        "object": None,
+    }
+    contract = PRDContract.model_validate({
+        "schema_version": "2.1",
+        "discovery_scope": "USER_APP",
+        "product_name": None,
+        "elevator_pitch": [],
+        "scope": {"in_scope": [], "out_of_scope": []},
+        "personas": [],
+        "functional_requirements": [
+            {
+                "id": "FR-01",
+                "description": "create tasks",
+                "validation": "TBD",
+                "category": "USER_ROLES.responsibilities",
+                "actor_ids": ["user"],
+                "conditions": [],
+                "source_fact_ids": ["fact_action"],
+            }
+        ],
+        "non_functional_constraints": [],
+        "deferred_items": [],
+        "open_questions": [],
+        "source_facts": [source],
+        "validation_report": [],
+        "external_systems": [],
+        "deferred_decisions": [],
+        "feature_specifications": [
+            {
+                "id": "FEATURE-01",
+                "title": "Task Management",
+                "overview": (
+                    "Defines the confirmed product behavior, data, and rules for "
+                    "task management."
+                ),
+                "details": [
+                    {
+                        "text": "User can create tasks.",
+                        "category": "USER_ROLES.responsibilities",
+                        "actor_ids": ["user"],
+                        "conditions": [],
+                        "source_fact_ids": ["fact_action"],
+                    }
+                ],
+                "requirement_ids": ["FR-01"],
+                "source_fact_ids": ["fact_action"],
+            }
+        ],
+        "constraint_source_ids": [],
+        "prose_polished": False,
+    })
+
+    sections = _prd_sections(contract)
+    section_ids = [section.id for section in sections]
+
+    assert "overview" in section_ids
+    assert "feature_1" in section_ids
+    assert "functional_requirements" not in section_ids
+    feature = next(section for section in sections if section.id == "feature_1")
+    assert feature.title == "Feature 1: Task Management"
+    assert "User can create tasks." in feature.body
