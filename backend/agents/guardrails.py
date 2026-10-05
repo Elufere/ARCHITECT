@@ -195,6 +195,9 @@ Conversation intent:
 Persistent discovery boundaries:
 {discovery_boundaries}
 
+Founder-named open gaps:
+{founder_gap_guidance}
+
 Raw product idea:
 {raw_idea}
 
@@ -235,6 +238,13 @@ reject statements that derive money flow, approval behavior, actors, assets,
 security semantics, or workflow merely from the category name.
 Reject the response if its acknowledgement invents or upgrades unconfirmed
 information. Explain exactly which claim is unsupported.
+
+When Conversation intent is "gap_guidance", the latest founder message is
+meta-level guidance about what remains unresolved. It is NOT product knowledge
+and NOT a deferral. Reject acknowledgements that say those gaps were decided,
+confirmed, established, deferred, postponed, or will be revisited later. Valid
+wording may say only that the founder identified open details/questions still to
+clarify, before moving to the planner-selected question.
 
 2. QUESTION CHECK
 Determine whether the FINAL interview question asks specifically about the
@@ -620,6 +630,11 @@ def evaluate_question(state: dict) -> dict:
                     for item in state.get("discovery_boundaries", [])[-50:]
                     if not item.get("scope")
                     or item.get("scope") == getattr(state.get("discovery_scope"), "value", state.get("discovery_scope"))
+                ) or "None",
+                founder_gap_guidance="\n".join(
+                    f"- {gap}"
+                    for entry in state.get("founder_gap_guidance", [])[-10:]
+                    for gap in (entry.get("items") or [])
                 ) or "None",
                 raw_idea=state.get("raw_idea") or "",
                 planner_source=planner_source,
