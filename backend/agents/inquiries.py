@@ -486,11 +486,16 @@ def identify_open_inquiries(state: AgentState) -> list[ProductInquiry]:
     thread_inquiry = _thread_frontier_inquiry(state)
     if thread_inquiry is not None:
         model_inquiries = [thread_inquiry]
+    elif state.get("active_discovery_thread"):
+        # Once thread planning owns the trajectory, a null frontier is meaningful:
+        # the planner found no safe/high-value model-specific question in that
+        # thread. Do not resurrect the legacy foundational checklist here.
+        # Requirement inquiries explicitly marked relevant to the active thread
+        # may still proceed below.
+        model_inquiries = []
     else:
-        # A null thread frontier means the trajectory optimizer could not produce
-        # a safe model-specific next move. Fall back to the grounded foundational
-        # inquiry frontier rather than treating "no thread frontier" as "discovery
-        # is complete". This also preserves compatibility with older checkpoints.
+        # Pre-thread / imported compatibility state may still need the minimal
+        # grounded foundational frontier.
         model_inquiries = _model_inquiries(state)
     inquiries = [
         *model_inquiries,
