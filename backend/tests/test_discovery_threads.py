@@ -139,6 +139,28 @@ def test_thread_frontier_replaces_legacy_actor_goal_sequence():
     assert "actor_goal" not in inquiries[0].id
 
 
+def test_pre_thread_state_can_still_use_minimal_foundational_actor_inquiry():
+    state = {
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [],
+        "validation_issues": [],
+        "validation_candidate_blocking": False,
+        "answer_followup": None,
+        "active_requirements": {},
+        "requirement_coverage": {},
+        "eligible_requirement_keys": [],
+        "active_discovery_thread": None,
+        "thread_relevant_requirement_ids": [],
+        "thread_frontier": None,
+    }
+
+    inquiries = identify_open_inquiries(state)
+
+    assert len(inquiries) == 1
+    assert inquiries[0].id == "USER_APP|model.core_actors"
+    assert inquiries[0].requirement_id is None
+
+
 def test_no_thread_frontier_does_not_restore_legacy_checklist_after_thread_planning():
     state = {
         "discovery_scope": S.USER_APP,
