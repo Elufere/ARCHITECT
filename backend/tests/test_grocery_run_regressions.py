@@ -326,3 +326,38 @@ def test_explicit_no_other_users_is_recovered_after_grounding_rejection(monkeypa
         and item.evidence == "There are no other user roles"
         for item in result["discovered_knowledge"]
     )
+
+
+
+def test_actor_value_none_without_absence_flag_is_normalized_before_alias_resolution():
+    text = "There are no other user roles"
+    state = {
+        "messages": [HumanMessage(content=text)],
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [],
+        "turn_count": 0,
+        "current_gap": None,
+        "current_topic": None,
+    }
+
+    item = tracker._admit_claim_item(
+        NeutralClaim(
+            kind="secondary_actor",
+            value="none",
+            evidence=text,
+            role=None,
+            absence=None,
+            confidence=1,
+            knowledge_state=K.CONFIRMED,
+        ),
+        state,
+        S.USER_APP,
+        set(),
+        set(),
+    )
+
+    assert item is not None
+    assert item.key == "secondary_users"
+    assert item.absence == "none"
+    assert item.roles == []
+    assert not item.aliases
