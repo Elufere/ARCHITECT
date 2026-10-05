@@ -340,6 +340,22 @@ def _attribute_label(source: SourceFact) -> str:
     return source.value.strip()
 
 
+def _capability_phrase(value: str, actor: str | None) -> str:
+    """Remove duplicated actor/can prefixes before grouped feature synthesis."""
+    text = value.strip().rstrip(".")
+    actor_label = re.escape(_humanize(actor)) if actor else r"(?:user|users)"
+    patterns = [
+        rf"^(?:the\s+)?{actor_label}\s+can\s+",
+        r"^(?:a|the)\s+user\s+can\s+",
+        r"^users\s+can\s+",
+    ]
+    for pattern in patterns:
+        updated = re.sub(pattern, "", text, flags=re.I).strip()
+        if updated != text:
+            return updated
+    return text
+
+
 def _group_text(category: str, sources: list[SourceFact]) -> str:
     values = [source.value.strip() for source in sources]
     actors = [source.role for source in sources if source.role]
@@ -347,7 +363,8 @@ def _group_text(category: str, sources: list[SourceFact]) -> str:
 
     if category == "USER_ROLES.responsibilities":
         prefix = f"{_humanize(actor)} can " if actor else "Users can "
-        return prefix + _join_items(values) + "."
+        actions = [_capability_phrase(value, actor) for value in values]
+        return prefix + _join_items(actions) + "."
 
     if category == "USER_ROLES.permissions":
         prefix = f"{_humanize(actor)} permissions: " if actor else "Permissions: "
@@ -356,11 +373,29 @@ def _group_text(category: str, sources: list[SourceFact]) -> str:
     if category == "PRODUCT_MODEL.attribute":
         subjects = {_singular(source.subject or "") for source in sources if source.subject}
         subject = next(iter(subjects)) if len(subjects) == 1 else None
-        prefix = f"{_humanize(subject)} details: " if subject else "Data details: "
-        return prefix + _join_items([_attribute_label(source) for source in sources]) + "."
+        structured: list[str] = []
+        for source in sources:
+            relation = (source.relation or "").strip().replace("_", " ")
+            obj = (source.object or "").strip()
+            if relation and obj:
+                structured.append(f"{_humanize(relation)}: {obj}")
+            else:
+                structured.append(_attribute_label(source))
+        prefix = f"{_humanize(subject)} details — " if subject else "Data details — "
+        return prefix + _join_items(structured) + "."
 
     if category == "PRODUCT_MODEL.entity":
-        return _join_items(values) + "."
+        subjects = [
+            _humanize(_singular(source.subject or ""))
+            for source in sources
+            if source.subject
+        ]
+        subjects = list(dict.fromkeys(item for item in subjects if item))
+        return (
+            "Core entity: " + _join_items(subjects) + "."
+            if subjects
+            else _join_items(values) + "."
+        )
 
     if category.startswith("CORE_WORKFLOW."):
         return "Workflow: " + _join_items(values) + "."
