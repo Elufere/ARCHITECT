@@ -4,6 +4,7 @@ from agents.discovery_coverage import coverage_key, gap_resolved, facts_for_gap,
 from agents.question_candidates import QuestionCandidate
 from agents.requirements import RequirementStatus
 from agents.consistency_validation import DiscoveryValidationIssue, ValidationIssueKind, ValidationResolution
+from agents.discovery_obligations import open_founder_obligations
 
 # Required knowledge for each topic
 DISCOVERY_TASKS = {
@@ -537,15 +538,24 @@ def all_required_gaps_resolved(state):
 
 
 def all_discovery_resolved(state: AgentState) -> bool:
+    no_open_obligations = not open_founder_obligations(state)
+    no_pending_followup = not state.get("answer_followup")
+    planner_not_exhausted = state.get("thread_plan_exit_reason") != "EXHAUSTED"
+
     if state.get("founder_requested_completion"):
         return bool(
             state.get("completion_arbitration_complete")
             and consistency_resolved(state)
+            and no_open_obligations
+            and no_pending_followup
         )
     return (
         not state.get("open_inquiries", [])
         and active_requirements_resolved(state)
         and consistency_resolved(state)
+        and no_open_obligations
+        and no_pending_followup
+        and planner_not_exhausted
     )
 
 
@@ -783,20 +793,68 @@ def interview_planner_node(state: AgentState) -> dict:
 
     open_inquiries = state.get("open_inquiries", [])
     if open_inquiries and not completion_ready:
-        raise RuntimeError(
-            "Open product inquiries exist but none survived candidate eligibility/prioritization"
-        )
+        # Do not crash or silently complete because eligibility/ranking disagreed
+        # with the inquiry layer. Preserve one grounded unresolved inquiry and let
+        # generation/guardrails reframe it.
+        from agents.question_candidates import build_question_candidates
+        fallback_candidates = build_question_candidates({
+            **state,
+            "open_inquiries": [open_inquiries[0]],
+        })
+        if fallback_candidates:
+            selected = fallback_candidates[0]
+            print(
+                "INQUIRY ELIGIBILITY FALLBACK:",
+                selected.inquiry_id or selected.id,
+            )
+            return {
+                **frontier_updates,
+                "gap_coverage": coverage,
+                "active_answer_result": None,
+                **_plan_candidate(state, selected),
+                "prd_confirmation_pending": False,
+                "ready_to_compile": False,
+            }
 
     if not active_requirements_resolved(state) and not completion_ready:
         blocked = [
-            requirement.id
+            requirement
             for requirement in state.get("active_requirements", {}).values()
             if requirement.scope == scope and requirement.status == RequirementStatus.ACTIVE
         ]
-        raise RuntimeError(
-            "Discovery has unresolved active requirements but no askable inquiry: "
-            + ", ".join(blocked)
-        )
+        if blocked:
+            requirement = blocked[0]
+            print(
+                "REQUIREMENT PLANNING FALLBACK:",
+                requirement.id,
+            )
+            return {
+                **frontier_updates,
+                "gap_coverage": coverage,
+                "active_answer_result": None,
+                "planner_source": "requirement_fallback",
+                "selected_inquiry": None,
+                "selected_requirement_candidate": None,
+                "selected_requirement_priority": None,
+                "selected_validation_issue": None,
+                "current_topic": requirement.topic,
+                "current_gap": requirement.parent_gap,
+                "current_objective": requirement.description or requirement.label,
+                "question_hint": (
+                    "Ask one founder-facing product decision needed to resolve this "
+                    "active requirement. Do not ask implementation or UI mechanics."
+                ),
+                "current_role": None,
+                "known_keys": [],
+                "missing_keys": [],
+                "known_gap_evidence": [],
+                "inferred_gap_evidence": [],
+                "relevant_context": [],
+                "next_discovery_move": "resolve_requirement_fallback",
+                "awaiting_confirmation": False,
+                "prd_confirmation_pending": False,
+                "ready_to_compile": False,
+            }
 
     if not consistency_resolved(state):
         details = "; ".join(
@@ -807,6 +865,41 @@ def interview_planner_node(state: AgentState) -> dict:
         raise RuntimeError(
             "Discovery consistency is still unresolved; compilation is blocked: " + details
         )
+
+    if state.get("thread_plan_exit_reason") == "EXHAUSTED":
+        print(
+            "DISCOVERY PLANNER EXHAUSTED: not treating bounded repair failure as completion."
+        )
+        return {
+            **frontier_updates,
+            "gap_coverage": coverage,
+            "active_answer_result": None,
+            "planner_source": "planner_recovery",
+            "selected_inquiry": None,
+            "selected_requirement_candidate": None,
+            "selected_requirement_priority": None,
+            "selected_validation_issue": None,
+            "current_topic": state.get("current_topic") or DiscoveryTopic.CORE_WORKFLOW,
+            "current_gap": None,
+            "current_objective": (
+                "Recover the remaining product decision after bounded planner repair "
+                "failed without falsely declaring discovery complete."
+            ),
+            "question_hint": (
+                "Ask one concise founder-facing question about the most important "
+                "remaining product decision. Do not claim discovery is complete."
+            ),
+            "current_role": None,
+            "known_keys": [],
+            "missing_keys": [],
+            "known_gap_evidence": [],
+            "inferred_gap_evidence": [],
+            "relevant_context": [],
+            "next_discovery_move": "recover_planner_exhaustion",
+            "awaiting_confirmation": False,
+            "prd_confirmation_pending": False,
+            "ready_to_compile": False,
+        }
 
     print("No material inquiry remains. Founder PRD confirmation is required.")
     return {
