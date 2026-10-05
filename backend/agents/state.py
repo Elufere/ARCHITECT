@@ -146,6 +146,8 @@ class AgentState(TypedDict):
     external_systems: List[dict]
     captured_observations: List[dict]
     discovery_boundaries: List[dict]
+    founder_gap_guidance: List[dict]
+    awaiting_gap_guidance: bool
     model_implications: List[dict]
     thread_planning_enabled: bool
     discovery_threads: Dict[str, dict]
