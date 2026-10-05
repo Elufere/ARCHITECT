@@ -23,7 +23,10 @@ semantic_duplicate: exactly the same atomic assertion, including polarity,
 conditions, quantities, authority, timing and exceptions; neither adds information.
 refinement: candidate preserves ALL information in one existing fact and adds
 compatible specificity. already_refined: the existing fact preserves ALL candidate
-information plus compatible specificity. Mere overlap or related actions is new.
+information plus compatible specificity. Mere overlap or related actions is new. A state adjective/object phrase must not
+change the action identity: "edit completed tasks" and "delete completed tasks"
+are independent actions; "completed" describes the task state, not a COMPLETE
+action in either assertion.
 Different limits, actors, stages, conditions, permissions, or exceptions are NOT
 duplicates. Two independently applicable rules must coexist even if similarly worded.
 correction: source explicitly corrects, replaces, narrows, or supersedes the prior
@@ -62,16 +65,24 @@ ACTION_FAMILIES = {
 
 
 def _action_families(value: str) -> set[str]:
+    """Return the primary action family expressed by an atomic responsibility.
+
+    Responsibility values are intended to be atomic actions. Scan from left to
+    right and stop at the first action verb instead of treating later object/state
+    words as additional actions. For example, "edit completed tasks" is EDIT,
+    not EDIT+COMPLETE, and "delete completed tasks" is DELETE, not
+    DELETE+COMPLETE.
+    """
     words = re.findall(r"[a-z]+", value.lower())
-    return {
-        family
-        for family, prefixes in ACTION_FAMILIES.items()
-        if any(
-            word.startswith(prefix)
-            for word in words
-            for prefix in prefixes
-        )
-    }
+    for word in words:
+        matches = {
+            family
+            for family, prefixes in ACTION_FAMILIES.items()
+            if any(word.startswith(prefix) for prefix in prefixes)
+        }
+        if matches:
+            return matches
+    return set()
 
 
 def _independent_owned_actions(candidate, existing) -> bool:
