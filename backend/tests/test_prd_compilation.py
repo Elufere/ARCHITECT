@@ -686,3 +686,87 @@ def test_graph_waits_for_founder_confirmation_before_compilation(monkeypatch):
     assert result["prd_confirmation_pending"] is True
     assert result["ready_to_compile"] is False
     assert result["messages"][-1].content == graph.PRD_CONFIRMATION_PROMPT
+
+
+
+def test_projected_persona_includes_grounded_actor_responsibilities():
+    primary = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="primary_users",
+        value="user",
+        evidence="A user manages tasks",
+        roles=["user"],
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+    action = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="responsibilities",
+        value="create tasks",
+        evidence="A user can create tasks",
+        role="user",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+
+    sources = build_source_snapshot(state(primary, action))
+    projection = project_prd(sources)
+    validate_projection(projection, sources)
+
+    persona = projection.draft.personas[0]
+    assert persona.name == "User"
+    assert [behavior.text for behavior in persona.key_behaviors] == [
+        "create tasks"
+    ]
+    assert projection.draft.functional_requirements[0].description == (
+        "create tasks"
+    )
+
+
+def test_persona_behavior_prose_edits_cannot_change_provenance():
+    primary = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="primary_users",
+        value="user",
+        evidence="A user manages tasks",
+        roles=["user"],
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+    action = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="responsibilities",
+        value="create tasks",
+        evidence="A user can create tasks",
+        role="user",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=0,
+    )
+
+    sources = build_source_snapshot(state(primary, action))
+    projection = project_prd(sources)
+    original = projection.draft.personas[0].key_behaviors[0]
+
+    edited = apply_prose_edits(
+        projection.draft,
+        [
+            PRDProseEdit(
+                claim_id="personas/0/key_behaviors/0",
+                text="Creates personal tasks.",
+            )
+        ],
+    )
+    changed = edited.personas[0].key_behaviors[0]
+
+    assert changed.text == "Creates personal tasks."
+    assert changed.category == original.category
+    assert changed.actor_ids == original.actor_ids
+    assert changed.source_fact_ids == original.source_fact_ids
