@@ -413,3 +413,39 @@ def test_continue_discovery_sets_gap_guidance_boundary_for_next_founder_turn():
     assert update["messages"][0].content == (
         "Sure. What product decision or area do you want to add or revisit?"
     )
+
+
+
+def test_guardrail_rejects_false_deferral_language_on_gap_guidance():
+    from agents.guardrails import evaluate_question
+    from langchain_core.messages import SystemMessage
+
+    state = {
+        "messages": [
+            AIMessage(
+                content=(
+                    "Okay—I’ll keep that decision deferred and move on. "
+                    "We can revisit it later. "
+                    "Should users be able to edit or delete completed tasks?"
+                )
+            )
+        ],
+        "conversation_intent": "gap_guidance",
+        "current_role": None,
+        "current_topic": DiscoveryTopic.CORE_WORKFLOW,
+        "current_gap": None,
+        "current_objective": (
+            "Clarify whether completed tasks can still be edited or deleted."
+        ),
+        "question_hint": (
+            "Ask whether completed tasks should remain editable or deletable."
+        ),
+        "planner_source": "model",
+        "selected_requirement_candidate": None,
+    }
+
+    update = evaluate_question(state)
+
+    assert isinstance(update["messages"][0], SystemMessage)
+    assert "OPEN QUESTIONS" in update["messages"][0].content
+    assert "did not defer" in update["messages"][0].content
