@@ -79,6 +79,9 @@ class SourceFact(StrictModel):
     knowledge_state: Literal["CONFIRMED"]
     source_turn: int
     absence: Literal["none", "not_applicable"] | None = None
+    subject: str | None = None
+    relation: str | None = None
+    object: str | None = None
 
 
 class ClaimVerdict(StrictModel):
