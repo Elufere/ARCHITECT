@@ -1649,12 +1649,17 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
                         "or a paraphrase. Choose EXACTLY ONE independently answerable "
                         "product decision. Stay on the current thread only when its NEXT "
                         "question is at least as valuable as the best unresolved alternative. "
-                        "If the rejected frontier was already covered, repeated in prior "
-                        "history, below the product-decision abstraction level, or low-value, "
-                        "pause that thread and choose another grounded decision or relevant "
-                        "requirement. Do not ask implementation/UI mechanics, an end-to-end "
-                        "workflow recap, or another confirmation of a closed answer. Use "
-                        "null for an uncertain anchor_gap and never invent requirement IDs."
+                        "If problem starts with DISCOVERY_INCOMPLETE, discovery is "
+                        "not allowed to finish: choose ONE founder-facing product decision "
+                        "that directly resolves the named missing product-definition anchor. "
+                        "Do not return frontier=null on that repair attempt. If the rejected "
+                        "frontier was already covered, repeated in prior history, below the "
+                        "product-decision abstraction level, or genuinely low-value under the "
+                        "product-contract delta test, pause that thread and choose another "
+                        "grounded decision or relevant requirement. Do not ask implementation/"
+                        "UI mechanics, an end-to-end workflow recap, or another confirmation "
+                        "of a closed answer. Use null for an uncertain anchor_gap and never "
+                        "invent requirement IDs."
                     ),
                 },
             }
