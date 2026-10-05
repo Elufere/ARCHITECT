@@ -959,3 +959,50 @@ def test_completed_task_editability_is_not_hard_rejected_as_crud_depth(monkeypat
         state,
         S.USER_APP,
     ) is None
+
+
+
+def test_compact_planner_snapshot_preserves_semantics_without_evidence_duplication():
+    state = {
+        "discovered_knowledge": [
+            KnowledgeItem(
+                topic=T.USER_ROLES,
+                scope=S.USER_APP,
+                key="primary_users",
+                value="user",
+                evidence="A user can create tasks.",
+                roles=["user"],
+                confidence=1,
+            ),
+            KnowledgeItem(
+                topic=T.USER_ROLES,
+                scope=S.USER_APP,
+                key="secondary_users",
+                value="none",
+                evidence="There are no other user roles.",
+                roles=[],
+                absence="none",
+                confidence=1,
+            ),
+            KnowledgeItem(
+                topic=T.USER_GOALS,
+                scope=S.USER_APP,
+                key="primary_user_goals",
+                value="keep track of things they need to do",
+                evidence="keep track of things they need to do",
+                role="user",
+                confidence=1,
+            ),
+        ],
+        "product_concepts": [],
+        "external_systems": [],
+    }
+
+    snapshot = threads._compact_product_snapshot(state, S.USER_APP)
+    encoded = json.dumps(snapshot)
+
+    assert "keep track of things they need to do" in encoded
+    assert "explicit absence: none" in encoded
+    assert "There are no other user roles." not in encoded
+    assert "fact_id" not in encoded
+    assert "source_turn" not in encoded
