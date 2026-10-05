@@ -62,6 +62,7 @@ class ProductInquiry(BaseModel):
     question_cost: float = Field(default=0.0, ge=0, le=1)
     thread_id: Optional[str] = None
     decision_key: Optional[str] = None
+    obligation_id: Optional[str] = None
     information_gain: float = Field(default=0.5, ge=0, le=1)
     causal_relevance: float = Field(default=0.5, ge=0, le=1)
     conversation_continuity: float = Field(default=0.5, ge=0, le=1)
@@ -314,9 +315,46 @@ def _thread_frontier_inquiry(state: AgentState) -> Optional[ProductInquiry]:
         question_cost=frontier.get("question_cost", 0.0),
         thread_id=thread_id,
         decision_key=decision_key,
+        obligation_id=frontier.get("obligation_id"),
         information_gain=frontier.get("information_gain", 0.8),
         causal_relevance=frontier.get("causal_relevance", 1.0),
         conversation_continuity=frontier.get("conversation_continuity", 1.0),
+    )
+
+
+
+
+def _founder_obligation_inquiry(state: AgentState) -> Optional[ProductInquiry]:
+    obligations = open_founder_obligations(state)
+    if not obligations:
+        return None
+    obligation = obligations[0]
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    return ProductInquiry(
+        id=f"{scope.value}|obligation|{obligation.id}",
+        source=InquirySource.MODEL,
+        scope=scope,
+        topic=state.get("current_topic") or DiscoveryTopic.CORE_WORKFLOW,
+        anchor_gap=None,
+        objective=obligation.description,
+        question_hint=(
+            "Ask one focused product-owner question that resolves this founder-requested "
+            f"decision: {obligation.description}."
+        ),
+        reason=(
+            "The founder explicitly said this decision still needs to be covered, "
+            "so it remains open until answered, deferred, withdrawn, or resolved."
+        ),
+        uncertainty=1.0,
+        architecture_impact=0.7,
+        business_risk=0.6,
+        question_cost=0.0,
+        thread_id=state.get("active_discovery_thread") or "founder_obligations",
+        decision_key=f"founder_obligation.{obligation.id[-16:]}",
+        obligation_id=obligation.id,
+        information_gain=0.9,
+        causal_relevance=1.0,
+        conversation_continuity=1.0,
     )
 
 
@@ -487,12 +525,11 @@ def identify_open_inquiries(state: AgentState) -> list[ProductInquiry]:
     if thread_inquiry is not None:
         model_inquiries = [thread_inquiry]
     elif state.get("active_discovery_thread"):
-        # Once thread planning owns the trajectory, a null frontier is meaningful:
-        # the planner found no safe/high-value model-specific question in that
-        # thread. Do not resurrect the legacy foundational checklist here.
-        # Requirement inquiries explicitly marked relevant to the active thread
-        # may still proceed below.
-        model_inquiries = []
+        # A null thread frontier may be a genuine stop or bounded planner
+        # exhaustion. Explicit founder obligations are independent lifecycle state
+        # and must remain askable even when the thread planner returned no frontier.
+        obligation_inquiry = _founder_obligation_inquiry(state)
+        model_inquiries = [obligation_inquiry] if obligation_inquiry is not None else []
     else:
         # Pre-thread / imported compatibility state may still need the minimal
         # grounded foundational frontier.
