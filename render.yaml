@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: architect-ai-pm
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_FAST_MODEL
+        value: gpt-4.1-mini
+      - key: OPENAI_REASONING_MODEL
+        value: gpt-5.6-sol
+      - key: OPENAI_REASONING_CALLS
+        value: discovery_threads.plan,pm_compile.prose
+      - key: OPENAI_REASONING_EFFORT
+        value: medium
+      - key: OPENAI_MAX_RETRIES
+        value: "2"
+      - key: OPENAI_RETRY_BASE_SECONDS
+        value: "1"
+      - key: OPENAI_RATE_LIMIT_RETRY_BASE_SECONDS
+        value: "10"
+      - key: ARCHITECT_PUBLIC_DEMO_POSTS_PER_HOUR
+        value: "30"
+      - key: ARCHITECT_ENABLE_DEBUG_LOG_DOWNLOAD
+        value: "false"
+      - key: ARCHITECT_PROJECT_DIR
+        value: /tmp/architect/projects
+      - key: ARCHITECT_SESSION_DIR
+        value: /tmp/architect/sessions
+      - key: ARCHITECT_LOG_DIR
+        value: /tmp/architect/logs
