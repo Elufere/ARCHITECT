@@ -367,3 +367,63 @@ def test_material_payment_context_keeps_state_lifecycle_requirement_active():
 
     key = requirement_store_key(S.USER_APP, "lifecycle.state_transition_behavior")
     assert result["active_requirements"][key].status == RequirementStatus.ACTIVE
+
+
+
+def test_out_of_scope_payment_does_not_prevent_low_risk_lifecycle_suppression():
+    actor = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="primary_users",
+        value="user",
+        evidence="A user manages tasks",
+        roles=["user"],
+        confidence=1,
+        knowledge_state=KnowledgeState.CONFIRMED,
+        source_turn=0,
+    )
+    no_secondary = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="secondary_users",
+        value="none",
+        evidence="There are no other user roles",
+        roles=[],
+        confidence=1,
+        knowledge_state=KnowledgeState.CONFIRMED,
+        source_turn=0,
+        absence="none",
+    )
+    no_payment = KnowledgeItem(
+        topic=T.MVP_SCOPE,
+        scope=S.USER_APP,
+        key="out_of_scope",
+        value="payments",
+        evidence="There are no payments",
+        confidence=1,
+        knowledge_state=KnowledgeState.CONFIRMED,
+        source_turn=0,
+    )
+    transition = fact(
+        T.CORE_WORKFLOW,
+        "workflow_steps",
+        "The user marks a task completed",
+    )
+    end = fact(
+        T.CORE_WORKFLOW,
+        "end_state",
+        "The task becomes completed",
+    )
+
+    result = requirement_activation_node({
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [actor, no_secondary, no_payment, transition, end],
+        "external_systems": [],
+        "active_requirements": {},
+    })
+
+    key = requirement_store_key(
+        S.USER_APP,
+        "lifecycle.state_transition_behavior",
+    )
+    assert result["active_requirements"][key].status == RequirementStatus.INACTIVE
