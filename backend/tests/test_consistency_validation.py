@@ -436,3 +436,40 @@ def test_cross_scope_contradictions_do_not_mix(monkeypatch):
         "validation_pair_cache": {},
     })
     assert issues == []
+
+
+
+def test_explicit_different_lifecycle_states_skip_conflict_review(monkeypatch):
+    active = fact(
+        T.USER_ROLES,
+        "permissions",
+        "Users may remove items on active lists",
+        role="user",
+    )
+    archived = fact(
+        T.USER_ROLES,
+        "permissions",
+        "Archived lists are view-only",
+        role="user",
+        turn=2,
+    )
+
+    monkeypatch.setattr(
+        cv,
+        "conflict_model",
+        lambda: pytest.fail(
+            "Rules scoped to disjoint explicit lifecycle states should not be reviewed"
+        ),
+    )
+
+    issues, cache = validate_discovery_consistency({
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [active, archived],
+        "active_requirements": {},
+        "requirement_dependency_state": {},
+        "requirement_coverage": {},
+        "validation_pair_cache": {},
+    })
+
+    assert issues == []
+    assert cache == {}

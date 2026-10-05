@@ -8,7 +8,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from agents import knowledge_tracker as tracker
 from agents.semantic_validation import GroundingResult
 from agents.discovery_coverage import GapConfirmation
-from agents.state import DiscoveryScope as S, DiscoveryTopic as T, KnowledgeItem, KnowledgeState as K, TopicStatus
+from agents.state import DiscoveryScope as S, DiscoveryTopic as T, KnowledgeItem, KnowledgeState as K
 
 
 QUESTION = "Besides customers, will anyone else use the user app?"
@@ -33,8 +33,7 @@ def state(text):
     customer = participant("customer", "Customers use the app", key="primary_users", source_turn=1)
     return dict(messages=[AIMessage(content=QUESTION), HumanMessage(content=text)],
                 discovered_knowledge=[customer, absent()], current_topic=T.USER_ROLES,
-                discovery_scope=S.USER_APP, turn_count=2,
-                topic_status={T.USER_ROLES: TopicStatus.COMPLETED})
+                discovery_scope=S.USER_APP, turn_count=2)
 
 
 def setup(monkeypatch, items, allowed=False, failure=False):
@@ -96,7 +95,8 @@ def test_incidental_participant_cannot_override_explicit_absence(monkeypatch, co
                    for item in result["discovered_knowledge"])
     assert process in result["discovered_knowledge"] or any(
         item.key == "downstream_dependency" for item in result["discovered_knowledge"])
-    assert result["topic_status"][T.USER_ROLES] == TopicStatus.COMPLETED
+    assert "topic_status" not in result
+    assert "topic_maturity" not in result
     assert result["superseded_knowledge"] == []
     assert len(calls) == 1 and calls[0]["prior_absences"] == [absent().model_dump(mode="json")]
 

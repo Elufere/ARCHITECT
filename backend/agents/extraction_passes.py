@@ -8,7 +8,7 @@ from agents.state import BUSINESS_RULES_KEYS, CONSTRAINTS_KEYS, MVP_SCOPE_KEYS, 
 from agents.extraction_contract import valid_role_id
 from agents.discovery_fields import FIELD_DEFINITIONS
 
-GENERIC_ROLES = {"user", "users", "people", "person", "demand_side", "supply_side"}
+GENERIC_ROLES = {"people", "person", "demand_side", "supply_side"}
 
 
 def absence_label(value: str) -> str | None:
@@ -24,6 +24,379 @@ def canonical_role(role: str) -> str:
 class RawPass(BaseModel):
     # Keep parsing at the item boundary: one malformed sibling is rejected later.
     items: list[dict]
+
+
+class RawClaims(BaseModel):
+    """One response-wide capture result; individual claims validate independently."""
+    items: list[dict]
+
+
+ClaimKind = Literal[
+    "primary_actor",
+    "secondary_actor",
+    "actor_action",
+    "authorization_boundary",
+    "multiple_roles",
+    "role_transition",
+    "desired_outcome",
+    "success_condition",
+    "motivation",
+    "workflow_steps",
+    "workflow_trigger",
+    "workflow_completion",
+    "workflow_dependency",
+    "workflow_end_state",
+    "validation_rule",
+    "approval_rule",
+    "eligibility_rule",
+    "limit_rule",
+    "ownership_rule",
+    "visibility_rule",
+    "legal_constraint",
+    "business_constraint",
+    "operational_constraint",
+    "geographic_constraint",
+    "time_constraint",
+    "mvp_must_have",
+    "mvp_nice_to_have",
+    "mvp_out_of_scope",
+    "mvp_success_metric",
+    "user_cancellation",
+    "timeout_behavior",
+    "invalid_action",
+    "recovery",
+    "duplicate_action",
+    "boundary_condition",
+    "simultaneous_action",
+    "rare_scenario",
+    "product_entity",
+    "entity_relationship",
+    "entity_attribute",
+    "external_system",
+    "unclassified",
+]
+
+
+class NeutralClaim(BaseModel):
+    """A proposition captured before it is admitted to the product knowledge model."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: ClaimKind
+    value: str = Field(min_length=1)
+    evidence: str = Field(min_length=1)
+    role: str | None = None
+    aliases: list[str] = Field(default_factory=list)
+    subject: str | None = None
+    relation: str | None = None
+    object: str | None = None
+    confidence: float = Field(default=1.0, ge=0, le=1)
+    knowledge_state: KnowledgeState = KnowledgeState.CONFIRMED
+    absence: Literal["none", "not_applicable"] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_product_concept_value(cls, data):
+        """Concept claims may use their evidence as the proposition value.
+
+        Structured models occasionally populate subject/relation/object correctly
+        while omitting the generic value field. For product concepts this is
+        lossless because the exact evidence is already the asserted proposition.
+        Other claim kinds still require an explicit value.
+        """
+        if isinstance(data, dict) and data.get("kind") in {
+            "product_entity", "entity_relationship", "entity_attribute"
+        } and not data.get("value") and data.get("evidence"):
+            return {**data, "value": data["evidence"]}
+        return data
+
+
+CLAIM_CAPTURE_INSTRUCTION = """Capture the explicit propositions in the latest user answer ONCE.
+Do not search independently for every product-document field. First understand
+what each quoted clause actually asserts, then assign exactly one semantic kind
+to that proposition. Emit two claims from the same quote only when the quote
+independently states two different meanings.
+
+Kinds:
+- primary_actor / secondary_actor: identity or membership of a functional user
+  of the CURRENT scoped application. For a positive actor claim, value should be
+  the short canonical actor label (for example "user", "customer", "seller"),
+  not a generated explanatory sentence such as "A user is a functional user".
+  Explicit whole-set absence is also valid:
+  phrases such as "there are no other users/roles/participants" should produce
+  a secondary_actor claim with absence="none", value="none", and no role.
+  The founder's quote itself must establish
+  that this person/role uses or directly interacts with the CURRENT scoped
+  application. Merely participating in the business process, approving/reviewing
+  something downstream, resolving a dispute, or being named in the PM's question
+  is NOT enough. A participant using another app, an offline process, a
+  back-office tool, or an external system is not a current-app actor.
+- actor_action: something a known/current actor explicitly does, performs, manages,
+  submits, confirms, pays, reviews, creates, etc. A benefit received by the actor
+  is NOT an actor action. System/application/service behavior is NOT an actor
+  action and must never be reassigned to an actor merely because that actor was
+  named in the preceding question.
+- authorization_boundary: an explicit permission, prohibition, exclusivity,
+  access restriction, or conditional authority. Ordinary capability is not one.
+  A process/state condition such as "funds stay locked until X reviews it" is
+  NOT a permission for X; capture the workflow/state rule instead.
+- multiple_roles / role_transition: explicit policy about one person/account
+  holding several roles or changing roles. When the quote explicitly says a
+  confirmed canonical actor acts in named capacities, put that canonical actor
+  in role and the capacity labels in aliases. Do not create separate actors.
+- desired_outcome: a result an actor explicitly wants, needs, seeks, or that the
+  product explicitly aims to provide to that actor. Do not relabel the actor's
+  ordinary action as an outcome.
+- success_condition: an explicit definition of what makes the user's/product's
+  goal successful. Merely saying what happens after success is not a definition.
+- motivation: an explicit reason/problem explaining why the product or outcome is wanted.
+- workflow_steps: an explicitly stated normal sequence, routing decision, or
+  handoff performed by the product/process. System behavior such as choosing a
+  route/provider from a product value belongs here when it is stated as part of
+  the process; do not rewrite it as a nearby user's responsibility.
+- workflow_trigger: an explicitly stated event/action that starts the workflow.
+  The first action mentioned in a narrative is not automatically the trigger.
+- workflow_completion: an explicit condition that makes the normal workflow complete.
+- workflow_dependency: an explicit prerequisite/external action required before progress/completion.
+- workflow_end_state: an explicitly stated resulting state AFTER completion.
+  A desired future outcome ('wants assurance that...') is not an established end state.
+- validation_rule / approval_rule / eligibility_rule / limit_rule /
+  ownership_rule / visibility_rule: only the corresponding explicit governing rule.
+- *_constraint: only explicit legal, business, operational, geographic, or time boundaries.
+- mvp_*: only explicit version-one inclusion, deferral/exclusion, or MVP metric.
+  Explicit product exclusions such as "there are no payments, integrations, or
+  admin features" are mvp_out_of_scope even when the founder does not literally
+  say "out of scope". Preserve the excluded capabilities; do not leave an
+  explicit feature exclusion unclassified.
+- user_cancellation / timeout_behavior / invalid_action / recovery: explicit exception handling.
+- duplicate_action / boundary_condition / simultaneous_action / rare_scenario:
+  explicit unusual-case handling.
+- product_entity: an explicitly introduced domain object/resource/container that
+  matters to how the product is structured, such as an event, group, package,
+  variant, deal, cart, shipment, pickup location, workspace, project, queue, etc.
+  Do not use this for human actors.
+- entity_relationship: an explicit structural relationship between product
+  entities, such as "packages are inside groups" or "groups belong to an event".
+  Put canonical short labels in subject/relation/object.
+- entity_attribute: an explicit property or dimension of a product entity, such
+  as "a group has a currency" or "a package can have size/colour variants".
+  Put the entity in subject, property in relation, and stated value(s) in object.
+- external_system: an explicitly identified software/service/provider outside the
+  product boundary that this product integrates with, calls, depends on, routes
+  through, or exchanges data/events with. Put the external system/service name in
+  subject. Use relation/object only when the quote explicitly states them. The
+  value must preserve the stated product-to-system relationship. A company/person
+  mentioned without an integration/dependency relationship is not an external
+  system. A domain object inside the product is a product_entity, not an external
+  system.
+- unclassified: use when the clause is meaningful but none of the supported kinds
+  is explicitly established. Unclassified claims are not persisted.
+
+Critical distinctions:
+- 'The escrow should protect the seller from non-payment' is a desired outcome /
+  intended product benefit for the seller, NOT a seller responsibility or permission.
+- 'The seller wants assurance they will get paid' is a desired outcome, NOT an
+  established workflow end state.
+- 'The buyer pays into escrow, then the seller fulfils...' is workflow_steps;
+  do NOT emit workflow_trigger unless the source explicitly says this starts the process.
+- 'Money is released when the transaction is successfully completed' describes
+  release after completion; it does NOT by itself define what makes the transaction successful.
+- 'A list is complete when every item is marked bought' is a workflow_completion
+  condition. It is NOT a workflow_end_state merely because the word "complete"
+  appears. An end state describes the resulting status/situation after completion.
+- 'can', 'may', or 'should be able to' is ordinary capability unless the source
+  also states an authorization boundary.
+- When the founder explicitly describes the application as being "for" named
+  functional roles to perform an in-app exchange/action (for example "an app for
+  hosts to sell to guests"), capture those named roles as current-app actors and
+  capture the explicitly stated actor action. Do not require a separate sentence
+  saying "the users are...".
+- Founder/product-builder intent such as "I want to create an app..." is not a
+  role-owned desired_outcome unless the desired result is explicitly attributed
+  to a product actor. Preserve the raw idea elsewhere rather than inventing an
+  actor-owned goal.
+- Do not manufacture actor identity from a later mention of an already-known actor.
+  Use actor context only to resolve names/pronouns/capacities.
+- Do not manufacture a new actor from an implementation owner, vendor, specialist,
+  technical team, admin/reviewer, or external participant. Mention alone proves
+  participation in the surrounding discussion, not membership in the current app.
+  When an unconfirmed internal/external participant is explicitly part of a
+  workflow (for example a reviewer makes a decision), preserve that process fact
+  as workflow_steps/workflow_dependency when supported rather than creating a
+  current-app actor so that an actor_action can be stored.
+- Resolve pronoun ownership from the latest response first, then from the last
+  question only when needed. When the last question names multiple actors, do
+  NOT automatically assign the answer to the grammatical subject of the question.
+  Attach an action/boundary to the actor that "they/them/those" actually refers to
+  in context. If that owner is still ambiguous, emit unclassified rather than
+  assigning the wrong actor.
+- A contextual capacity such as buyer/seller may be an alias of one canonical
+  actor only when the user explicitly states that relationship. Never infer it
+  merely from domain convention.
+
+Conversation-control language is NOT product knowledge. Questions, rhetorical
+challenges, complaints about the interview, or statements delegating a technical,
+implementation, design, or specialist decision do not establish application
+actors, roles, permissions, or requirements. A person or team mentioned only as
+the party who will decide, implement, or handle a technical detail is not thereby
+a user of the scoped product. Capture an actor only when the founder explicitly
+establishes that actor's interaction with the CURRENT application. Otherwise emit
+no product claim (or unclassified only when capture is necessary). Never turn an
+interrogative, delegation, or interview objection into an affirmative product
+proposition.
+
+For every claim:
+- evidence MUST be one exact contiguous, case-sensitive substring of latest_response;
+- use the SMALLEST literal span that independently supports the claim. Do not cite
+  an entire multi-claim sentence when a shorter exact substring proves the claim.
+  This is important because evidence is later used for semantic PRD validation.
+- for a positive actor identity that is explicitly named, prefer the shortest
+  exact actor phrase ("A user", "Customers", "the seller") rather than the whole
+  sentence containing all of that actor's actions.
+- for an action in a coordinated sentence, use the shortest exact clause that
+  preserves both actor/meaning when possible. A longer shared sentence is allowed
+  ONLY when shortening would require rewriting a pronoun, inserting an omitted
+  noun, or otherwise creating text the founder did not literally write.
+- when latest_response is a short/contextual answer such as "yes", "no",
+  "delete immediately", "latest to oldest", or a pronoun-led fragment, evidence
+  MUST be copied from latest_response itself. NEVER copy or paraphrase wording
+  from the previous PM question into evidence. The previous question may resolve
+  what the short answer means, but it is source_question context, not evidence.
+- value must preserve ONLY the atomic proposition represented by this claim,
+  including conditions/negation. Do not copy unrelated clauses from a compound
+  sentence into value;
+- role is REQUIRED for primary_actor, secondary_actor, actor_action,
+  authorization_boundary, and desired_outcome. Use one canonical actor ID.
+  For multiple_roles/role_transition, role is optional but SHOULD contain the
+  canonical actor when the source explicitly links that actor to named capacity
+  aliases; aliases then contains those capacity labels.
+- actor identity claims put the canonical actor ID in role. An explicit
+  secondary-actor whole-set absence uses role=null, absence="none", value="none",
+  and the exact absence phrase as evidence. When the source
+  explicitly says one actor can act as named capacities (for example customer
+  acting as buyer or seller), keep the canonical actor in role and put those
+  capacity labels in aliases.
+- product_entity/entity_relationship/entity_attribute/external_system claims do not use role.
+  They MUST use subject; relationship/attribute claims MUST also use relation
+  and object. Use short canonical nouns for subjects/objects (for example
+  "package", not "selling packages"). value should contain the proposition;
+  if omitted defensively, the system will preserve the exact evidence as value.
+  Capture only structure explicitly introduced by the founder.
+- when one action/boundary applies to several labels that are aliases of the SAME
+  canonical actor, emit one claim owned by that canonical actor. When they are
+  genuinely different actors, emit separate owned claims.
+- use knowledge_state=INFERRED only for genuinely tentative current-app membership;
+- do not use prompt examples or prior facts as new evidence;
+- do not invent benefits, actions, rules, states, or ownership;
+- if uncertain about the semantic kind, emit unclassified rather than forcing a bucket.
+"""
+
+
+CLAIM_KIND_TO_FIELD = {
+    "actor_action": (DiscoveryTopic.USER_ROLES, "responsibilities"),
+    "authorization_boundary": (DiscoveryTopic.USER_ROLES, "permissions"),
+    "desired_outcome": (DiscoveryTopic.USER_GOALS, None),
+    "success_condition": (DiscoveryTopic.USER_GOALS, "success_criteria"),
+    "motivation": (DiscoveryTopic.USER_GOALS, "motivations"),
+    "workflow_steps": (DiscoveryTopic.CORE_WORKFLOW, "workflow_steps"),
+    "workflow_trigger": (DiscoveryTopic.CORE_WORKFLOW, "trigger"),
+    "workflow_completion": (DiscoveryTopic.CORE_WORKFLOW, "completion_condition"),
+    "workflow_dependency": (DiscoveryTopic.CORE_WORKFLOW, "downstream_dependency"),
+    "workflow_end_state": (DiscoveryTopic.CORE_WORKFLOW, "end_state"),
+    "validation_rule": (DiscoveryTopic.BUSINESS_RULES, "validation_rules"),
+    "approval_rule": (DiscoveryTopic.BUSINESS_RULES, "approval_rules"),
+    "eligibility_rule": (DiscoveryTopic.BUSINESS_RULES, "eligibility_rules"),
+    "limit_rule": (DiscoveryTopic.BUSINESS_RULES, "limits"),
+    "ownership_rule": (DiscoveryTopic.BUSINESS_RULES, "ownership_rules"),
+    "visibility_rule": (DiscoveryTopic.BUSINESS_RULES, "visibility_rules"),
+    "legal_constraint": (DiscoveryTopic.CONSTRAINTS, "legal_constraints"),
+    "business_constraint": (DiscoveryTopic.CONSTRAINTS, "business_constraints"),
+    "operational_constraint": (DiscoveryTopic.CONSTRAINTS, "operational_constraints"),
+    "geographic_constraint": (DiscoveryTopic.CONSTRAINTS, "geographic_constraints"),
+    "time_constraint": (DiscoveryTopic.CONSTRAINTS, "time_constraints"),
+    "mvp_must_have": (DiscoveryTopic.MVP_SCOPE, "must_have_features"),
+    "mvp_nice_to_have": (DiscoveryTopic.MVP_SCOPE, "nice_to_have_features"),
+    "mvp_out_of_scope": (DiscoveryTopic.MVP_SCOPE, "out_of_scope"),
+    "mvp_success_metric": (DiscoveryTopic.MVP_SCOPE, "success_metrics"),
+    "user_cancellation": (DiscoveryTopic.EXCEPTIONS, "user_cancellations"),
+    "timeout_behavior": (DiscoveryTopic.EXCEPTIONS, "timeouts"),
+    "invalid_action": (DiscoveryTopic.EXCEPTIONS, "invalid_actions"),
+    "recovery": (DiscoveryTopic.EXCEPTIONS, "recovery"),
+    "duplicate_action": (DiscoveryTopic.EDGE_CASES, "duplicate_actions"),
+    "boundary_condition": (DiscoveryTopic.EDGE_CASES, "boundary_conditions"),
+    "simultaneous_action": (DiscoveryTopic.EDGE_CASES, "simultaneous_actions"),
+    "rare_scenario": (DiscoveryTopic.EDGE_CASES, "rare_scenarios"),
+}
+
+
+def claim_to_fact(
+    claim: NeutralClaim,
+    *,
+    primary_roles: set[str],
+    secondary_roles: set[str],
+):
+    """Convert one semantically typed claim into the existing fact contracts."""
+
+    common = dict(
+        value=claim.value,
+        evidence=claim.evidence,
+        confidence=claim.confidence,
+        knowledge_state=claim.knowledge_state,
+        absence=claim.absence,
+    )
+
+    if claim.kind in ("primary_actor", "secondary_actor"):
+        key = "primary_users" if claim.kind == "primary_actor" else "secondary_users"
+        roles = [] if claim.absence else ([claim.role] if claim.role else [])
+        return ActorFact(key=key, roles=roles, aliases=claim.aliases, **common), DiscoveryTopic.USER_ROLES
+
+    if claim.kind in ("multiple_roles", "role_transition"):
+        key = "multiple_roles" if claim.kind == "multiple_roles" else "role_transitions"
+        return ActorFact(
+            key=key,
+            roles=[claim.role] if claim.role else [],
+            aliases=claim.aliases,
+            **common,
+        ), DiscoveryTopic.USER_ROLES
+
+    if claim.kind == "actor_action":
+        if not claim.role:
+            raise ValueError("actor_action requires role")
+        return ResponsibilityFact(key="responsibilities", role=claim.role, **common), DiscoveryTopic.USER_ROLES
+
+    if claim.kind == "authorization_boundary":
+        if not claim.role:
+            raise ValueError("authorization_boundary requires role")
+        return PermissionFact(key="permissions", role=claim.role, **common), DiscoveryTopic.USER_ROLES
+
+    if claim.kind == "desired_outcome":
+        if not claim.role:
+            raise ValueError("desired_outcome requires role")
+        role = canonical_role(claim.role)
+        if role in primary_roles:
+            key = "primary_user_goals"
+        elif role in secondary_roles:
+            key = "secondary_user_goals"
+        else:
+            raise ValueError("desired_outcome owner is not a confirmed actor")
+        return GoalFact(key=key, role=role, **common), DiscoveryTopic.USER_GOALS
+
+    if claim.kind in ("success_condition", "motivation"):
+        key = "success_criteria" if claim.kind == "success_condition" else "motivations"
+        return GoalFact(key=key, role=claim.role, **common), DiscoveryTopic.USER_GOALS
+
+    if claim.kind in ("product_entity", "entity_relationship", "entity_attribute", "external_system"):
+        return None
+
+    if claim.kind == "unclassified":
+        return None
+
+    topic_key = CLAIM_KIND_TO_FIELD.get(claim.kind)
+    if topic_key is None:
+        raise ValueError(f"Unsupported claim kind: {claim.kind}")
+    topic, key = topic_key
+    if topic == DiscoveryTopic.CORE_WORKFLOW:
+        return WorkflowFact(key=key, **common), topic
+    return RemainingFact(topic=topic.value, key=key, **common), topic
 
 
 class Fact(BaseModel):
@@ -57,8 +430,17 @@ class ActorFact(Fact):
     @model_validator(mode="after")
     def valid_actor(self):
         if self.key in ("multiple_roles", "role_transitions"):
-            if self.roles or self.aliases:
-                raise ValueError("Role policies cannot declare actors or aliases")
+            # A role policy does not establish application membership, but it may
+            # preserve an explicit capacity/alias relationship for one already
+            # confirmed canonical actor. Admission verifies that membership.
+            if self.aliases and not self.roles:
+                raise ValueError("Role-policy aliases require one canonical actor")
+            if self.roles:
+                role = canonical_role(self.roles[0])
+                if role in ("primary_users", "secondary_users", "multiple_roles", "role_transitions"):
+                    raise ValueError("An actor ID cannot be an actor field name")
+                if role in GENERIC_ROLES or not valid_role_id(self.roles[0]):
+                    raise ValueError("Malformed canonical actor role")
             return self
         if self.absence:
             if self.roles or self.aliases:
@@ -500,8 +882,14 @@ def normalize_fact(fact: Fact, topic: DiscoveryTopic, scope, turn: int) -> Knowl
         data["roles"] = [canonical_role(role) for role in data["roles"]]
         if not data["roles"] and fact.key in ("multiple_roles", "role_transitions"):
             data.pop("roles")
-        if aliases:
-            data["aliases"] = {data["roles"][0]: [alias.strip().lower() for alias in aliases]}
+        if aliases and data.get("roles"):
+            data["aliases"] = {
+                data["roles"][0]: [
+                    canonical_role(alias)
+                    for alias in aliases
+                    if canonical_role(alias) != data["roles"][0]
+                ]
+            }
     if isinstance(fact, OwnedFact):
         data["role"] = canonical_role(data["role"])
     if isinstance(fact, GoalFact) and data.get("role"):

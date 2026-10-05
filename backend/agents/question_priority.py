@@ -1,25 +1,31 @@
-"""Deterministic, explainable prioritization of eligible requirement questions."""
+"""Deterministic, explainable prioritization of inquiry-driven questions."""
 from __future__ import annotations
 
 from typing import Dict, List, Sequence
 
 from pydantic import BaseModel, Field
 
+from agents.inquiries import InquirySource, ProductInquiry
 from agents.question_candidates import QuestionCandidate
-from agents.requirement_coverage import RequirementCoverageStatus
 from agents.requirements import ActiveRequirement, RequirementStatus, RequirementStore
 from agents.state import AgentState, DiscoveryScope, DiscoveryTopic
 
 
 class CandidatePriorityComponents(BaseModel):
-    dependency_unlock_value: float = Field(ge=0, le=1)
-    uncertainty: float = Field(ge=0, le=1)
-    architecture_impact: float = Field(ge=0, le=1)
-    business_risk: float = Field(ge=0, le=1)
-    context_relevance: float = Field(ge=0, le=1)
-    question_cost_penalty: float = Field(ge=0, le=1)
-    repetition_penalty: float = Field(ge=0, le=1)
-    fatigue_penalty: float = Field(ge=0, le=1)
+    contradiction_pressure: float = Field(default=0, ge=0, le=1)
+    decision_impact: float = Field(default=0.5, ge=0, le=1)
+    dependency_unlock_value: float = Field(default=0, ge=0, le=1)
+    uncertainty: float = Field(default=1, ge=0, le=1)
+    architecture_impact: float = Field(default=0.5, ge=0, le=1)
+    business_risk: float = Field(default=0.5, ge=0, le=1)
+    context_relevance: float = Field(default=0.5, ge=0, le=1)
+    question_cost_penalty: float = Field(default=0, ge=0, le=1)
+    repetition_penalty: float = Field(default=0, ge=0, le=1)
+    fatigue_penalty: float = Field(default=0, ge=0, le=1)
+    premature_depth_penalty: float = Field(default=0, ge=0, le=1)
+    information_gain: float = Field(default=0.5, ge=0, le=1)
+    causal_relevance: float = Field(default=0.5, ge=0, le=1)
+    conversation_continuity: float = Field(default=0.5, ge=0, le=1)
 
 
 class CandidatePriorityScore(BaseModel):
@@ -30,11 +36,16 @@ class CandidatePriorityScore(BaseModel):
 
 
 POSITIVE_WEIGHTS = {
-    "dependency_unlock_value": 0.30,
-    "uncertainty": 0.30,
-    "architecture_impact": 0.15,
-    "business_risk": 0.15,
-    "context_relevance": 0.10,
+    "contradiction_pressure": 0.18,
+    "decision_impact": 0.14,
+    "dependency_unlock_value": 0.10,
+    "uncertainty": 0.12,
+    "architecture_impact": 0.08,
+    "business_risk": 0.07,
+    "context_relevance": 0.05,
+    "information_gain": 0.09,
+    "causal_relevance": 0.10,
+    "conversation_continuity": 0.07,
 }
 
 
@@ -57,7 +68,6 @@ def _unlock_count(
     requirement: ActiveRequirement,
     requirements: Dict[str, ActiveRequirement],
 ) -> int:
-    """Count structurally downstream active requirements this requirement can unlock."""
     inferred = {
         downstream.id
         for downstream in requirements.values()
@@ -74,41 +84,77 @@ def _unlock_count(
 
 
 def _unlock_value(
-    requirement: ActiveRequirement,
+    requirement: ActiveRequirement | None,
     requirements: Dict[str, ActiveRequirement],
 ) -> float:
-    # Three or more downstream nodes is already a strong structural signal.
+    if requirement is None:
+        return 0.0
     return _clamp(_unlock_count(requirement, requirements) / 3.0)
 
 
-def _uncertainty(candidate: QuestionCandidate, requirement: ActiveRequirement) -> float:
-    required = [facet for facet in requirement.facets if facet.required]
-    if required:
-        unresolved_ratio = len(candidate.target_facets) / len(required)
-    else:
-        unresolved_ratio = 1.0
+def _decision_impact(candidate: QuestionCandidate) -> float:
+    if candidate.source == InquirySource.VALIDATION:
+        return 1.0
+    if candidate.source == InquirySource.MODEL:
+        anchor = candidate.anchor_gap or ""
+        if anchor == "primary_users":
+            return 1.0
+        if anchor.startswith("responsibilities"):
+            return 0.95
+        if anchor.startswith("primary_user_goals"):
+            return 0.85
+        if anchor == "workflow_steps":
+            return 1.0
+        if anchor in {"completion_condition", "end_state"}:
+            return 0.9
+        return 0.8
+    return 0.75
 
-    coverage_multiplier = {
-        RequirementCoverageStatus.UNSEEN: 1.0,
-        RequirementCoverageStatus.KNOWN_SHALLOW: 0.85,
-        RequirementCoverageStatus.NEEDS_EXPANSION: 0.65,
-    }.get(candidate.coverage_status, 0.0)
 
-    return _clamp(unresolved_ratio * coverage_multiplier)
+def _requirement_uncertainty(candidate: QuestionCandidate) -> float:
+    if candidate.source != InquirySource.REQUIREMENT:
+        return candidate.uncertainty
+    status = candidate.coverage_status
+    base = {
+        "UNSEEN": 0.70,
+        "KNOWN_SHALLOW": 0.55,
+        "NEEDS_EXPANSION": 0.45,
+    }.get(getattr(status, "value", status), 0.60)
+    breadth = min(0.20, max(0, len(candidate.target_facets) - 1) * 0.10)
+    return _clamp(max(candidate.uncertainty if candidate.uncertainty != 1.0 else 0.0, base + breadth))
+
+
+def _question_cost(candidate: QuestionCandidate) -> float:
+    derived = min(0.15, max(0, len(candidate.target_facets) - 1) * 0.05)
+    return max(candidate.question_cost, derived)
+
+
+def _architecture_impact(
+    candidate: QuestionCandidate,
+    requirement: ActiveRequirement | None,
+) -> float:
+    if candidate.source == InquirySource.REQUIREMENT and requirement is not None:
+        return requirement.priority_hints.architecture_impact
+    return candidate.architecture_impact
+
+
+def _business_risk(
+    candidate: QuestionCandidate,
+    requirement: ActiveRequirement | None,
+) -> float:
+    if candidate.source == InquirySource.REQUIREMENT and requirement is not None:
+        return requirement.priority_hints.business_risk
+    return candidate.business_risk
 
 
 def _context_relevance(state: AgentState, candidate: QuestionCandidate) -> float:
+    active_thread = state.get("active_discovery_thread")
+    if candidate.thread_id and active_thread:
+        return 1.0 if candidate.thread_id == active_thread else 0.25
     current_topic = state.get("current_topic")
     if current_topic is None:
-        return 0.5
-    return 1.0 if current_topic == candidate.topic else 0.35
-
-
-def _question_cost_penalty(candidate: QuestionCandidate) -> float:
-    # Asking about many unresolved facets at once is harder for the user and more
-    # likely to produce a broad answer. One target has no breadth penalty.
-    extra_targets = max(0, len(candidate.target_facets) - 1)
-    return min(0.15, extra_targets * 0.05)
+        return 0.6
+    return 1.0 if current_topic == candidate.topic else 0.5
 
 
 def _recent_history(state: AgentState) -> Sequence[dict]:
@@ -116,9 +162,10 @@ def _recent_history(state: AgentState) -> Sequence[dict]:
 
 
 def _repetition_penalty(state: AgentState, candidate: QuestionCandidate) -> float:
+    identity = candidate.inquiry_id or candidate.requirement_key
     count = sum(
         1 for entry in _recent_history(state)
-        if entry.get("requirement_key") == candidate.requirement_key
+        if (entry.get("inquiry_id") or entry.get("requirement_key")) == identity
     )
     return min(0.21, count * 0.07)
 
@@ -135,52 +182,75 @@ def _fatigue_penalty(state: AgentState, candidate: QuestionCandidate) -> float:
     return min(0.12, count * 0.03)
 
 
+def _premature_depth_penalty(state: AgentState, candidate: QuestionCandidate) -> float:
+    if candidate.source != InquirySource.REQUIREMENT:
+        return 0.0
+    for payload in state.get("open_inquiries", []):
+        inquiry = ProductInquiry.model_validate(payload)
+        if inquiry.source == InquirySource.MODEL:
+            return 0.25
+    return 0.0
+
+
 def score_question_candidate(
     state: AgentState,
     candidate: QuestionCandidate,
 ) -> CandidatePriorityScore:
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
     store = state.get("active_requirements", {})
-    requirement = store.get(candidate.requirement_key)
-    if requirement is None:
+    requirement = (
+        store.get(candidate.requirement_key)
+        if candidate.requirement_key
+        else None
+    )
+    if candidate.source == InquirySource.REQUIREMENT and requirement is None:
         raise ValueError(f"Cannot score missing requirement '{candidate.requirement_key}'")
-    if requirement.scope != scope or candidate.scope != scope:
+    if candidate.scope != scope or (requirement is not None and requirement.scope != scope):
         raise ValueError("Cannot score candidate outside the current discovery scope")
 
     requirements = _scope_requirements(store, scope)
-
     components = CandidatePriorityComponents(
+        contradiction_pressure=1.0 if candidate.source == InquirySource.VALIDATION else 0.0,
+        decision_impact=_decision_impact(candidate),
         dependency_unlock_value=_unlock_value(requirement, requirements),
-        uncertainty=_uncertainty(candidate, requirement),
-        architecture_impact=requirement.priority_hints.architecture_impact,
-        business_risk=requirement.priority_hints.business_risk,
+        uncertainty=_requirement_uncertainty(candidate),
+        architecture_impact=_architecture_impact(candidate, requirement),
+        business_risk=_business_risk(candidate, requirement),
         context_relevance=_context_relevance(state, candidate),
-        question_cost_penalty=_question_cost_penalty(candidate),
+        question_cost_penalty=_question_cost(candidate),
         repetition_penalty=_repetition_penalty(state, candidate),
         fatigue_penalty=_fatigue_penalty(state, candidate),
+        premature_depth_penalty=_premature_depth_penalty(state, candidate),
+        information_gain=candidate.information_gain,
+        causal_relevance=candidate.causal_relevance,
+        conversation_continuity=candidate.conversation_continuity,
     )
 
-    positive = (
-        POSITIVE_WEIGHTS["dependency_unlock_value"] * components.dependency_unlock_value
-        + POSITIVE_WEIGHTS["uncertainty"] * components.uncertainty
-        + POSITIVE_WEIGHTS["architecture_impact"] * components.architecture_impact
-        + POSITIVE_WEIGHTS["business_risk"] * components.business_risk
-        + POSITIVE_WEIGHTS["context_relevance"] * components.context_relevance
+    positive = sum(
+        POSITIVE_WEIGHTS[name] * getattr(components, name)
+        for name in POSITIVE_WEIGHTS
     )
     penalties = (
         components.question_cost_penalty
         + components.repetition_penalty
         + components.fatigue_penalty
+        + components.premature_depth_penalty
     )
     score = _clamp(positive - penalties)
 
     rationale = [
-        f"dependency_unlock_value={components.dependency_unlock_value:.2f}",
+        f"source={candidate.source.value}",
+        f"decision_impact={components.decision_impact:.2f}",
         f"uncertainty={components.uncertainty:.2f}",
+        f"dependency_unlock_value={components.dependency_unlock_value:.2f}",
         f"architecture_impact={components.architecture_impact:.2f}",
         f"business_risk={components.business_risk:.2f}",
-        f"context_relevance={components.context_relevance:.2f}",
+        f"information_gain={components.information_gain:.2f}",
+        f"causal_relevance={components.causal_relevance:.2f}",
+        f"conversation_continuity={components.conversation_continuity:.2f}",
     ]
+    if components.contradiction_pressure:
+        rationale.append("contradiction_pressure=1.00")
     if penalties:
         rationale.append(f"penalties={penalties:.2f}")
 
@@ -196,7 +266,6 @@ def prioritize_question_candidates(
     state: AgentState,
     candidates: List[QuestionCandidate] | None = None,
 ) -> tuple[List[QuestionCandidate], Dict[str, CandidatePriorityScore]]:
-    """Rank only candidates that already passed deterministic eligibility."""
     if candidates is None:
         candidates = [
             QuestionCandidate.model_validate(item)
@@ -208,12 +277,12 @@ def prioritize_question_candidates(
         for candidate in candidates
     }
 
-    # Stable, deterministic tie-breaks: score first, then structural unlock value,
-    # then uncertainty, then candidate id. No randomization or LLM tie-breaking.
     ranked = sorted(
         candidates,
         key=lambda candidate: (
             -scores[candidate.id].score,
+            -scores[candidate.id].components.contradiction_pressure,
+            -scores[candidate.id].components.decision_impact,
             -scores[candidate.id].components.dependency_unlock_value,
             -scores[candidate.id].components.uncertainty,
             candidate.id,

@@ -12,8 +12,22 @@ from langchain_core.callbacks import BaseCallbackHandler
 # Standard text-token USD prices per million; verified against OpenAI's model
 # page 2026-09-24. Unknown models are unpriced, never assigned another model's rate.
 DEFAULT_PRICING = {
-    name: {"input": "0.40", "cached_input": "0.10", "output": "1.60"}
-    for name in ("gpt-4.1-mini", "gpt-4.1-mini-2025-04-14")
+    "gpt-4.1-mini": {
+        "input": "0.40",
+        "cached_input": "0.10",
+        "output": "1.60",
+    },
+    "gpt-4.1-mini-2025-04-14": {
+        "input": "0.40",
+        "cached_input": "0.10",
+        "output": "1.60",
+    },
+    # Current standard short-context promotional pricing (2026-10-05).
+    "gpt-5.6-sol": {
+        "input": "4.00",
+        "cached_input": "0.40",
+        "output": "20.00",
+    },
 }
 
 

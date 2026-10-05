@@ -1,11 +1,13 @@
 """Interactive PM CLI with durable input and graph-boundary recovery."""
 from uuid import uuid4
 
+from agents.diagnostic_log import diagnostic_session, install_diagnostic_streams
 from agents.state import AgentState, DiscoveryScope
 from agents.graph import build_graph
-from agents.interview_checkpoint import save_checkpoint, load_checkpoint, unfinished_sessions, session_lock
+from agents.interview_checkpoint import save_checkpoint, load_checkpoint, session_lock
 from agents.llm_errors import LLMCallFailed, ExtractionFailed
 from agents.product_model import build_product_model
+from services.discovery_session import create_initial_discovery_state
 from langchain_core.messages import HumanMessage
 
 
@@ -32,12 +34,34 @@ def run_phase(graph, state: AgentState, phase_label: str) -> AgentState:
             print("Progress is saved. Run Architect again to retry compilation.")
             return state
         print(f"\nPM Agent: {state['messages'][-1].content}")
+        if state.get("prd_confirmation_pending"):
+            print("\nType 'generate' to approve the PRD, or 'more' to continue discovery.")
         print("\nYou:")
         answer = read_answer()
         if answer is None:
             print("Progress saved. Run Architect again to resume.")
             return state
-        state["messages"].append(HumanMessage(content=answer, id=str(uuid4())))
+
+        message_kwargs = {}
+        if state.get("prd_confirmation_pending"):
+            decision = answer.strip().lower()
+            if decision in {"generate", "yes", "y"}:
+                answer = "Yes, generate the PRD."
+                message_kwargs["architect_turn_type"] = "confirm_prd"
+            elif decision in {"more", "no", "n"}:
+                answer = "There is more I want to cover."
+                message_kwargs["architect_turn_type"] = "continue_discovery"
+            else:
+                print("Please enter 'generate' or 'more'.")
+                continue
+
+        state["messages"].append(
+            HumanMessage(
+                content=answer,
+                id=str(uuid4()),
+                additional_kwargs=message_kwargs,
+            )
+        )
         state["turn_count"] = state.get("turn_count", 0) + 1
         state.update(checkpoint_cursor="conversation_manager", interview_status="PROCESSING_ANSWER",
                      active_answer_result=None, extraction_status="PENDING")
@@ -45,41 +69,13 @@ def run_phase(graph, state: AgentState, phase_label: str) -> AgentState:
     return state
 
 
-def choose_session():
-    pending = unfinished_sessions()
-    if not pending:
-        return None
-    print("\nUnfinished interviews:")
-    for index, document in enumerate(pending, 1):
-        saved = document["state"]
-        print(f"{index}. {document['session_id']} | {saved.get('discovery_scope')} | "
-              f"turn {saved.get('turn_count', 0)} | {saved.get('current_topic')} -> {saved.get('current_gap')} | "
-              f"{document.get('interview_status')}")
-    while True:
-        choice = input("Enter to resume the latest, a session number, 'new', or 'quit': ").strip().lower()
-        if choice in ("new", "quit"):
-            return choice
-        if not choice:
-            return pending[0]["session_id"]
-        if choice.isdigit() and 1 <= int(choice) <= len(pending):
-            return pending[int(choice) - 1]["session_id"]
-        print("Please choose a listed session or 'new'.")
-
 
 def new_session():
     print("\nWhat is your product idea?")
     idea = read_answer()
     if idea is None:
         return None
-    state = AgentState(session_id=str(uuid4()), messages=[HumanMessage(content=idea, id=str(uuid4()))],
-        raw_idea=idea, prd_contract=None, pm_is_complete=False,
-        discovery_scope=DiscoveryScope.USER_APP, turn_count=0, awaiting_confirmation=False,
-        discovered_knowledge=[], superseded_knowledge=[], active_requirements={}, requirement_coverage={}, requirement_dependency_state={}, eligible_requirement_keys=[], question_candidates=[], eligible_question_candidates=[], question_candidate_eligibility={}, ranked_question_candidates=[], question_candidate_priority={}, requirement_question_history=[], planner_source="schema", selected_requirement_candidate=None, selected_requirement_priority=None, validation_issues=[], validation_pair_cache={}, validation_blocking=False, validation_candidate_blocking=False, selected_validation_issue=None, topic_status={}, topic_maturity={}, product_model={},
-        gap_coverage={}, fact_acquisition={}, asked_gap=None, active_answer_result=None,
-        checkpoint_cursor="conversation_manager", interview_status="PROCESSING_ANSWER", extraction_status="PENDING",
-        current_topic=None, current_gap=None, current_objective=None, question_hint=None,
-        known_keys=[], missing_keys=[], inferred_gap_evidence=[], known_gap_evidence=[], relevant_context=[],
-        next_discovery_move=None, conversation_intent=None, is_correction=False, current_role=None)
+    state = create_initial_discovery_state(idea)
     save_checkpoint(state)
     return state
 
@@ -95,17 +91,27 @@ def run_session(state):
         if choice == "y":
             # Global knowledge/acquisition/coverage survive; coverage is scope-keyed.
             state.update(discovery_scope=DiscoveryScope.ADMIN_DASHBOARD, pm_is_complete=False,
-                         prd_contract=None, topic_status={}, topic_maturity={}, current_topic=None,
+                         prd_contract=None, current_topic=None,
                          current_gap=None, current_role=None, asked_gap=None, active_answer_result=None,
-                         awaiting_confirmation=False, next_discovery_move=None, checkpoint_cursor="plan",
+                         awaiting_confirmation=False, prd_confirmation_pending=False,
+                         ready_to_compile=False, next_discovery_move=None, checkpoint_cursor="infer_implications",
                          interview_status="ACTIVE", answer_followup=None,
                          requirement_coverage={}, requirement_dependency_state={}, eligible_requirement_keys=[],
                          question_candidates=[], eligible_question_candidates=[], question_candidate_eligibility={},
                          ranked_question_candidates=[], question_candidate_priority={}, requirement_question_history=[],
-                         planner_source="schema", selected_requirement_candidate=None, selected_requirement_priority=None,
+                         model_implications=[],
+                         discovery_threads={}, active_discovery_thread=None,
+                         thread_frontier=None, thread_relevant_requirement_ids=[],
+                         open_inquiries=[], selected_inquiry=None,
+                         planner_source="model", selected_requirement_candidate=None, selected_requirement_priority=None,
                          validation_issues=[], validation_pair_cache={}, validation_blocking=False,
-                         validation_candidate_blocking=False, selected_validation_issue=None)
-            state["product_model"] = build_product_model(state["discovered_knowledge"], DiscoveryScope.ADMIN_DASHBOARD)
+                         validation_candidate_blocking=False, selected_validation_issue=None,
+                         question_retry_count=0, question_retry_exhausted=False)
+            state["product_model"] = build_product_model(
+                state["discovered_knowledge"],
+                DiscoveryScope.ADMIN_DASHBOARD,
+                state.get("product_concepts", []),
+            )
             save_checkpoint(state)
             state = run_phase(graph, state, "ADMIN_DASHBOARD DISCOVERY")
             if not state.get("pm_is_complete"):
@@ -120,24 +126,23 @@ def run_session(state):
 
 
 def run_cli():
+    install_diagnostic_streams()
     print("ARCHITECT - PRODUCT MANAGER\nType 'quit' to save and exit. Use '.' on a blank line to send input.")
     session_id = None
     try:
-        selected = choose_session()
-        if selected == "quit":
+        state = new_session()
+        if state is None:
             return
-        if selected in (None, "new"):
-            state = new_session()
-            if state is None:
-                return
-            session_id = state["session_id"]
-        else:
-            session_id = selected
+        session_id = state["session_id"]
         with session_lock(session_id):
             state = load_checkpoint(session_id)
             print(f"Session: {session_id}")
             try:
-                run_session(state)
+                with diagnostic_session(
+                    session_id,
+                    operation="cli_interview",
+                ):
+                    run_session(state)
             except (LLMCallFailed, ExtractionFailed) as exc:
                 print(f"\n{exc}")
                 saved = load_checkpoint(session_id)

@@ -1,7 +1,7 @@
 import logging
 from uuid import uuid4
 from langgraph.graph import StateGraph, END, START
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
 
 from agents.state import AgentState, DiscoveryScope
 from agents.llm_usage import usage_tracker
@@ -9,10 +9,13 @@ from agents.interview_checkpoint import durable_node
 # Import the new micro-graph nodes
 from agents.knowledge_tracker import knowledge_tracker_node
 from agents.validation_resolution import validation_resolution_node
+from agents.implications import product_implication_node
 from agents.requirement_activation import requirement_activation_node
 from agents.requirement_coverage import requirement_coverage_node
 from agents.requirement_dependencies import requirement_dependency_node
 from agents.consistency_validation import consistency_validation_node
+from agents.discovery_threads import discovery_thread_node
+from agents.inquiries import inquiry_identification_node
 from agents.question_candidates import question_candidate_builder_node, question_candidate_filter_node
 from agents.question_priority import question_candidate_priority_node
 from agents.conversation_manager import conversation_manager_node
@@ -27,12 +30,12 @@ logger = logging.getLogger(__name__)
 
 def route_after_plan(state: AgentState) -> str:
     """
-    After planning, check if the interview planner decided we are done.
-    If so, skip question generation and go straight to compilation.
+    After planning, check if Architect has no material inquiry left.
+    If so, stop at the founder confirmation boundary instead of compiling.
     """
-    if state.get("awaiting_confirmation") and all_discovery_resolved(state):
-        logger.info("All discovery topics completed. Routing to compilation.")
-        return "compile_prd"
+    if state.get("prd_confirmation_pending") and all_discovery_resolved(state):
+        logger.info("No material inquiry remains. Waiting for founder PRD confirmation.")
+        return "request_prd_confirmation"
     
     # Otherwise, generate questions for the planned topic
     return "generate"
@@ -40,13 +43,37 @@ def route_after_plan(state: AgentState) -> str:
 
 def route_after_conversation_manager(state: AgentState) -> str:
     """Only knowledge and corrections should flow into the extraction pipeline."""
-    if state.get("conversation_intent") in {"product_information", "correction", "objection"}:
+    if state.get("conversation_intent") in {
+        "product_information", "correction"
+    }:
         return "extract"
+    if state.get("conversation_intent") == "advice_request":
+        # "What do you suggest?" is interview control, not founder product
+        # knowledge. Keep the currently selected inquiry/objective and let the
+        # question generator provide options without contaminating extraction or
+        # replanning to a different decision first.
+        return "generate"
+    if state.get("conversation_intent") in {
+        "objection", "design_deferral", "uncertainty", "gap_guidance",
+        "decision_deferral", "reopen_deferral", "close_discovery",
+    }:
+        # Interview feedback is control state, not product knowledge. Re-plan
+        # from the persistent discovery boundary without extracting a fake fact.
+        return "plan_threads"
+    if state.get("conversation_intent") == "continue_discovery":
+        return END
+    if state.get("conversation_intent") == "confirm_prd":
+        return "compile_prd"
     # A short confirmation can itself answer a discovery question. Never drop
     # it just because the intent classifier recognized the word "yes".
     if (
         state.get("conversation_intent") == "confirmation"
-        and (state.get("current_gap") or state.get("next_discovery_move") == "confirm_inference")
+        and (
+            state.get("current_gap")
+            or state.get("selected_inquiry")
+            or state.get("selected_requirement_candidate")
+            or state.get("next_discovery_move") == "confirm_inference"
+        )
     ):
         return "extract"
     if state.get("conversation_intent") == "confirmation":
@@ -54,10 +81,46 @@ def route_after_conversation_manager(state: AgentState) -> str:
     return END
 
 
+PRD_CONFIRMATION_PROMPT = (
+    "I think we've covered the important product decisions.\n\n"
+    "Do you think everything important has been covered before I generate the PRD?"
+)
+
+
+def request_prd_confirmation_node(state: AgentState) -> dict:
+    if not all_discovery_resolved(state):
+        raise RuntimeError(
+            "PRD confirmation cannot be requested while material discovery remains unresolved"
+        )
+    if not state.get("prd_confirmation_pending"):
+        raise RuntimeError("PRD confirmation was not requested by the planner")
+    return {
+        "messages": [AIMessage(content=PRD_CONFIRMATION_PROMPT)],
+        "ready_to_compile": False,
+        "awaiting_confirmation": False,
+    }
+
+
+def compile_prd_when_approved(state: AgentState):
+    if not all_discovery_resolved(state):
+        raise RuntimeError(
+            "PRD compilation blocked: material product inquiries or active requirements remain unresolved"
+        )
+    if not state.get("ready_to_compile"):
+        raise RuntimeError(
+            "PRD compilation blocked: explicit founder confirmation is required"
+        )
+    return pm_compile_node(state)
+
+
 def route_after_guardrail(state: AgentState) -> str:
     """
     Evaluates state directly after the guardrail checks the AI output.
     """
+    if state.get("question_retry_exhausted"):
+        logger.warning("Guardrail retries exhausted. Re-planning a different inquiry.")
+        return "plan_threads"
+
     messages = state["messages"]
     last_message = messages[-1]
 
@@ -77,23 +140,37 @@ def build_graph() -> StateGraph:
     workflow.add_node("conversation_manager", durable_node("conversation_manager", conversation_manager_node,
         lambda state: "waiting" if route_after_conversation_manager(state) == END else route_after_conversation_manager(state)))
     workflow.add_node("extract", durable_node("extract", knowledge_tracker_node, lambda _: "resolve_validation_answer"))
-    workflow.add_node("resolve_validation_answer", durable_node("resolve_validation_answer", validation_resolution_node, lambda _: "activate_requirements"))
+    workflow.add_node("resolve_validation_answer", durable_node("resolve_validation_answer", validation_resolution_node, lambda _: "infer_implications"))
+    workflow.add_node("infer_implications", durable_node("infer_implications", product_implication_node, lambda _: "activate_requirements"))
     workflow.add_node("activate_requirements", durable_node("activate_requirements", requirement_activation_node, lambda _: "cover_requirements"))
     workflow.add_node("cover_requirements", durable_node("cover_requirements", requirement_coverage_node, lambda _: "resolve_requirements"))
     workflow.add_node("resolve_requirements", durable_node("resolve_requirements", requirement_dependency_node, lambda _: "validate_consistency"))
-    workflow.add_node("validate_consistency", durable_node("validate_consistency", consistency_validation_node, lambda _: "build_candidates"))
+    workflow.add_node("validate_consistency", durable_node("validate_consistency", consistency_validation_node, lambda _: "plan_threads"))
+    workflow.add_node("plan_threads", durable_node("plan_threads", discovery_thread_node, lambda _: "identify_inquiries"))
+    workflow.add_node("identify_inquiries", durable_node("identify_inquiries", inquiry_identification_node, lambda _: "build_candidates"))
     workflow.add_node("build_candidates", durable_node("build_candidates", question_candidate_builder_node, lambda _: "filter_candidates"))
     workflow.add_node("filter_candidates", durable_node("filter_candidates", question_candidate_filter_node, lambda _: "prioritize_candidates"))
     workflow.add_node("prioritize_candidates", durable_node("prioritize_candidates", question_candidate_priority_node, lambda _: "plan"))
     workflow.add_node("plan", durable_node("plan", interview_planner_node, route_after_plan))
+    workflow.add_node(
+        "request_prd_confirmation",
+        durable_node(
+            "request_prd_confirmation",
+            request_prd_confirmation_node,
+            lambda _: "waiting",
+        ),
+    )
     workflow.add_node("generate", durable_node("generate", question_generator_node, lambda _: "guardrail"))
-    workflow.add_node("guardrail", durable_node("guardrail", guardrail_node,
-        lambda state: "waiting" if route_after_guardrail(state) == END else "generate"))
-    def compile_when_covered(state):
-        if not all_discovery_resolved(state):
-            raise RuntimeError("PRD compilation blocked: schema or active-requirement coverage is incomplete")
-        return pm_compile_node(state)
-    workflow.add_node("compile_prd", durable_node("compile_prd", compile_when_covered,
+    workflow.add_node("guardrail", durable_node(
+        "guardrail",
+        guardrail_node,
+        lambda state: (
+            "waiting"
+            if route_after_guardrail(state) == END
+            else route_after_guardrail(state)
+        ),
+    ))
+    workflow.add_node("compile_prd", durable_node("compile_prd", compile_prd_when_approved,
         lambda state: ("phase_complete" if state["discovery_scope"] == DiscoveryScope.USER_APP else "completed")
         if state.get("pm_is_complete") else "compile_prd"))
 
@@ -104,30 +181,33 @@ def build_graph() -> StateGraph:
             return "conversation_manager"
         return END if cursor in ("waiting", "phase_complete", "completed") else cursor
     workflow.add_conditional_edges(START, resume_at, {
-        name: name for name in ("conversation_manager", "extract", "resolve_validation_answer", "activate_requirements", "cover_requirements", "resolve_requirements", "validate_consistency", "build_candidates", "filter_candidates", "prioritize_candidates", "plan", "generate", "guardrail", "compile_prd", END)})
+        name: name for name in ("conversation_manager", "extract", "resolve_validation_answer", "infer_implications", "activate_requirements", "cover_requirements", "resolve_requirements", "validate_consistency", "plan_threads", "identify_inquiries", "build_candidates", "filter_candidates", "prioritize_candidates", "plan", "request_prd_confirmation", "generate", "guardrail", "compile_prd", END)})
     workflow.add_conditional_edges(
         "conversation_manager",
         route_after_conversation_manager,
-        {"extract": "extract", "plan": "plan", END: END},
+        {"extract": "extract", "plan_threads": "plan_threads", "plan": "plan", "generate": "generate", "compile_prd": "compile_prd", END: END},
     )
 
-    # 3. Extract -> Requirement activation -> Coverage -> Dependencies -> Candidate filtering/ranking -> Plan
+    # 3. Evidence -> model implications -> requirements -> inquiries -> candidate ranking -> plan
     workflow.add_edge("extract", "resolve_validation_answer")
-    workflow.add_edge("resolve_validation_answer", "activate_requirements")
+    workflow.add_edge("resolve_validation_answer", "infer_implications")
+    workflow.add_edge("infer_implications", "activate_requirements")
     workflow.add_edge("activate_requirements", "cover_requirements")
     workflow.add_edge("cover_requirements", "resolve_requirements")
     workflow.add_edge("resolve_requirements", "validate_consistency")
-    workflow.add_edge("validate_consistency", "build_candidates")
+    workflow.add_edge("validate_consistency", "plan_threads")
+    workflow.add_edge("plan_threads", "identify_inquiries")
+    workflow.add_edge("identify_inquiries", "build_candidates")
     workflow.add_edge("build_candidates", "filter_candidates")
     workflow.add_edge("filter_candidates", "prioritize_candidates")
     workflow.add_edge("prioritize_candidates", "plan")
 
-    # 4. Plan -> Compile OR Generate
+    # 4. Plan -> Founder Confirmation OR Generate
     workflow.add_conditional_edges(
         "plan",
         route_after_plan,
         {
-            "compile_prd": "compile_prd",
+            "request_prd_confirmation": "request_prd_confirmation",
             "generate": "generate"
         }
     )
@@ -140,8 +220,9 @@ def build_graph() -> StateGraph:
         "guardrail",
         route_after_guardrail,
         {
-            "generate": "generate",  # Forces LLM to rewrite based on System Message feedback
-            END: END                 # Returns control to the CLI for user input
+            "generate": "generate",      # Forces LLM to rewrite based on System Message feedback
+            "plan_threads": "plan_threads",  # Abandon exhausted inquiry and choose another
+            END: END                     # Returns control to the CLI for user input
         }
     )
 
@@ -151,4 +232,5 @@ def build_graph() -> StateGraph:
     return workflow.compile().with_config(
         callbacks=[usage_tracker],
         metadata={"openai_usage_session": str(uuid4())},
+        recursion_limit=30,
     )

@@ -58,7 +58,7 @@ def test_two_user_turns_flow_through_full_graph(monkeypatch):
         question_generator,
         "get_chat_model",
         lambda **_: SimpleNamespace(
-            invoke=lambda _: AIMessage(content="What actions must a customer not be allowed to perform?")
+            invoke=lambda _: AIMessage(content="What outcome is a customer trying to achieve by using the app?")
         ),
     )
     monkeypatch.setattr(
@@ -71,9 +71,10 @@ def test_two_user_turns_flow_through_full_graph(monkeypatch):
     first["turn_count"] += 1
     second = workflow.invoke(first, config={"recursion_limit": 30})
 
-    assert second["current_topic"] == T.USER_ROLES
-    assert second["current_gap"] == "permissions::customer"
-    assert second["asked_gap"]["gap"] == "permissions::customer"
+    assert second["planner_source"] == "model"
+    assert second["current_topic"] == T.USER_GOALS
+    assert second["current_gap"] == "primary_user_goals::customer"
+    assert second["asked_gap"]["gap"] == "primary_user_goals::customer"
     assert any(
         item.key == "responsibilities"
         and item.role == "customer"

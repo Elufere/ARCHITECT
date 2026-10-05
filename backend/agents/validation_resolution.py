@@ -69,6 +69,21 @@ Return only the structured decision.
 _resolution_model = None
 
 
+CONFLICT_RESOLUTION_REPAIR_INSTRUCTION = CONFLICT_RESOLUTION_INSTRUCTION + """
+PROTOCOL REPAIR:
+Your previous resolved verdict did not classify every supplied live conflict fact.
+Return a corrected decision for the SAME latest_response and conflict_facts.
+
+If resolved=true, every supplied conflict fact ID must appear exactly once across
+superseded_fact_ids and retained_fact_ids. Do not omit IDs and do not invent IDs.
+When newly_grounded_facts express a replacement rule that qualifies the old broad
+rules by state/condition, it is valid to supersede all old conflict facts and
+retain none, provided the replacement facts themselves remain live.
+If you cannot safely classify every supplied ID, return resolved=false with both
+ID lists empty.
+"""
+
+
 def resolution_model():
     global _resolution_model
     if _resolution_model is None:
@@ -102,7 +117,22 @@ def _replacement_for(previous, retained, current_turn):
         )
     ]
     if same_field:
-        return same_field[0]
+        exact = next(
+            (
+                item
+                for item in same_field
+                if item.value.strip().lower() == previous.value.strip().lower()
+            ),
+            None,
+        )
+        if exact is not None:
+            return exact
+
+        previous_words = set(previous.value.lower().split())
+        return max(
+            same_field,
+            key=lambda item: len(previous_words & set(item.value.lower().split())),
+        )
     if retained:
         return retained[0]
     if current_turn:
@@ -172,6 +202,44 @@ def validation_resolution_node(state: AgentState) -> dict:
     superseded = set(decision.superseded_fact_ids)
     retained_ids = set(decision.retained_fact_ids)
 
+    malformed_resolved = (
+        decision.resolved
+        and (
+            bool(superseded & retained_ids)
+            or superseded | retained_ids != supplied
+            or not superseded
+            or not superseded.issubset(supplied)
+            or not retained_ids.issubset(supplied)
+        )
+    )
+    if malformed_resolved:
+        print(
+            "CONFLICT RESOLUTION PROTOCOL REPAIR: "
+            f"supplied={sorted(supplied)} superseded={sorted(superseded)} "
+            f"retained={sorted(retained_ids)}"
+        )
+        repair_payload = {
+            **payload,
+            "previous_decision": decision.model_dump(mode="json"),
+            "required_conflict_fact_ids": sorted(supplied),
+        }
+        try:
+            repaired = resolution_model().invoke([
+                SystemMessage(content=CONFLICT_RESOLUTION_REPAIR_INSTRUCTION),
+                HumanMessage(content=json.dumps(repair_payload, ensure_ascii=False)),
+            ])
+            decision = (
+                repaired
+                if isinstance(repaired, ConflictResolutionDecision)
+                else ConflictResolutionDecision.model_validate(repaired)
+            )
+            superseded = set(decision.superseded_fact_ids)
+            retained_ids = set(decision.retained_fact_ids)
+        except Exception as exc:
+            raise_if_llm_failure(exc)
+            print(f"CONFLICT RESOLUTION REPAIR SKIPPED: {exc}")
+            return {}
+
     if not decision.resolved:
         if superseded or retained_ids:
             raise ExtractionFailed("Unresolved contradiction returned fact mutations")
@@ -180,13 +248,17 @@ def validation_resolution_node(state: AgentState) -> dict:
     if decision.confidence < 0.95:
         return {}
     if superseded & retained_ids:
-        raise ExtractionFailed("Contradiction resolution both retained and superseded the same fact")
+        print("CONFLICT RESOLUTION REJECTED: fact both retained and superseded")
+        return {}
     if superseded | retained_ids != supplied:
-        raise ExtractionFailed("Contradiction resolution did not account for every live conflict fact")
+        print("CONFLICT RESOLUTION REJECTED: incomplete live-conflict accounting")
+        return {}
     if not superseded:
-        raise ExtractionFailed("Contradiction resolution must supersede at least one conflict fact")
+        print("CONFLICT RESOLUTION REJECTED: no conflict fact superseded")
+        return {}
     if not superseded.issubset(supplied) or not retained_ids.issubset(supplied):
-        raise ExtractionFailed("Contradiction resolution referenced facts outside the selected issue")
+        print("CONFLICT RESOLUTION REJECTED: referenced fact outside selected issue")
+        return {}
 
     evidence = recover_evidence_span(decision.evidence, answer)
     if evidence is None:

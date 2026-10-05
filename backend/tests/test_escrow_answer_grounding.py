@@ -15,11 +15,19 @@ from replay_escrow_responsibilities import initial_state, ANSWER, ACTORS
 CAPTURE = json.loads((Path(__file__).parent / "fixtures" / "escrow_responsibilities_extraction.json").read_text(encoding="utf-8-sig"))
 
 
-def setup_models(monkeypatch):
+def setup_models(monkeypatch, *, include_incidental_workflow=False):
     prompts = {}
     def invoke(name, messages):
         prompts[name] = messages[0].content
-        return {"parsed": {"items": CAPTURE.get(name, [])}}
+        items = list(CAPTURE.get(name, []))
+        if name == "WORKFLOW" and include_incidental_workflow:
+            items.append(dict(
+                key="workflow_steps",
+                value="buyer and seller transaction flow",
+                evidence=ANSWER,
+                confidence=1,
+            ))
+        return {"parsed": {"items": items}}
     monkeypatch.setattr(tracker, "extraction_models", lambda: {
         name: SimpleNamespace(invoke=lambda messages, n=name: invoke(n, messages))
         for name, *_ in tracker.PASSES})
@@ -28,7 +36,7 @@ def setup_models(monkeypatch):
 
 @pytest.mark.parametrize("incidental_failure", ["malformed", "rejected"])
 def test_exact_answer_advances_even_when_incidental_audit_fails(monkeypatch, incidental_failure):
-    prompts = setup_models(monkeypatch)
+    prompts = setup_models(monkeypatch, include_incidental_workflow=True)
     audits = []
     def decide(name, schema, instruction, payload):
         if name == "GAP_ANSWER":
@@ -55,7 +63,8 @@ def test_exact_answer_advances_even_when_incidental_audit_fails(monkeypatch, inc
     monkeypatch.setattr(guardrails, "evaluator_llm", SimpleNamespace(invoke=lambda _: SimpleNamespace(passed=True)))
     result = graph.build_graph().invoke(initial_state())
     assert len(audits) == 2
-    assert result["current_gap"] == "permissions::customer"
+    assert result["planner_source"] == "model"
+    assert result["current_gap"] == "primary_user_goals::customer"
     assert result["question_retry_count"] == 0
     duties = [i for i in result["discovered_knowledge"] if i.key == "responsibilities"]
     assert len(duties) == 2 and all(i.role == "customer" for i in duties)

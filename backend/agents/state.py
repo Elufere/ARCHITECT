@@ -142,6 +142,18 @@ class AgentState(TypedDict):
 
     discovered_knowledge: List[KnowledgeItem]
     superseded_knowledge: List[dict]
+    product_concepts: List[dict]
+    external_systems: List[dict]
+    captured_observations: List[dict]
+    discovery_boundaries: List[dict]
+    founder_gap_guidance: List[dict]
+    awaiting_gap_guidance: bool
+    model_implications: List[dict]
+    thread_planning_enabled: bool
+    discovery_threads: Dict[str, dict]
+    active_discovery_thread: Optional[str]
+    thread_frontier: Optional[dict]
+    thread_relevant_requirement_ids: List[str]
     active_requirements: Dict[str, Any]
     requirement_coverage: Dict[str, dict]
     requirement_dependency_state: Dict[str, dict]
@@ -152,6 +164,8 @@ class AgentState(TypedDict):
     ranked_question_candidates: List[dict]
     question_candidate_priority: Dict[str, dict]
     requirement_question_history: List[dict]
+    open_inquiries: List[dict]
+    selected_inquiry: Optional[dict]
     planner_source: str
     selected_requirement_candidate: Optional[dict]
     selected_requirement_priority: Optional[dict]
@@ -160,11 +174,8 @@ class AgentState(TypedDict):
     validation_blocking: bool
     validation_candidate_blocking: bool
     selected_validation_issue: Optional[dict]
-    topic_status: Dict[DiscoveryTopic, TopicStatus]
     current_topic: Optional[DiscoveryTopic]
-    topic_dependencies: Dict[DiscoveryTopic, List[DiscoveryTopic]]
-    topic_maturity: Dict[DiscoveryTopic, TopicMaturity]
-    product_model: Dict[str, List[str]]
+    product_model: Dict[str, Any]
 
     current_gap: Optional[str]
     current_objective: Optional[str]
@@ -176,10 +187,18 @@ class AgentState(TypedDict):
     relevant_context: List[str]
     conversation_intent: Optional[str]
     is_correction: bool
+    founder_requested_completion: bool
+    completion_request_evidence: Optional[str]
+    completion_arbitration_complete: bool
 
     turn_count: int
     question_retry_count: int
+    question_retry_exhausted: bool
     answer_followup: Optional[dict]
+    # Legacy field retained for checkpoint compatibility. PRD authorization is
+    # represented explicitly by the two fields below.
     awaiting_confirmation: bool
+    prd_confirmation_pending: bool
+    ready_to_compile: bool
     current_role: Optional[str]
     discovery_scope: DiscoveryScope

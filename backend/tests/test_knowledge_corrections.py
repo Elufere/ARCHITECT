@@ -5,9 +5,34 @@ from langchain_core.messages import HumanMessage
 from agents import knowledge_tracker as tracker
 from agents.knowledge_corrections import CorrectionReview, correction_targets
 from agents.knowledge_duplicates import FactComparison
-from agents.state import DiscoveryTopic as T, DiscoveryScope as S, KnowledgeState as K, TopicStatus
+from agents.inquiries import identify_open_inquiries
+from agents.state import DiscoveryTopic as T, DiscoveryScope as S, KnowledgeState as K
 from test_knowledge_duplicates import fact
-from test_topic_invalidation import completed_state
+
+
+def model_foundation():
+    return [
+        fact("Customers use the app", key="primary_users", role=None, roles=["customer"]),
+        fact("Customers create orders", key="responsibilities", role="customer"),
+        fact(
+            "Customers complete purchases safely",
+            topic=T.USER_GOALS,
+            key="primary_user_goals",
+            role="customer",
+        ),
+        fact(
+            "Customers create, pay for, and complete orders",
+            topic=T.CORE_WORKFLOW,
+            key="workflow_steps",
+            role=None,
+        ),
+        fact(
+            "The order is complete when fulfillment is confirmed",
+            topic=T.CORE_WORKFLOW,
+            key="completion_condition",
+            role=None,
+        ),
+    ]
 
 
 def commit(monkeypatch, prior, candidates, *, relation="new", targets=(), initial=None, flag=False):
@@ -81,21 +106,57 @@ def test_multiple_specific_prior_rules_can_be_replaced(monkeypatch):
     assert len(result["superseded_knowledge"]) == 2
 
 
-def test_correction_preserving_coverage_keeps_completed_topic(monkeypatch, capsys):
-    initial = completed_state()
-    new = fact("Correction: customers may view only assigned orders", key="permissions", role="customer")
-    result = commit(monkeypatch, initial["discovered_knowledge"], [new], relation="correction", initial=initial)
-    assert result["topic_status"] == initial["topic_status"]
-    assert "TOPIC INVALIDATION" not in capsys.readouterr().out
+def test_correction_preserving_model_state_emits_no_topic_lifecycle(monkeypatch, capsys):
+    old = fact("customers may view only their own orders", key="permissions", role="customer")
+    prior = [*model_foundation(), old]
+    new = fact(
+        "Correction: customers may view only assigned orders",
+        key="permissions",
+        role="customer",
+    )
+    result = commit(monkeypatch, prior, [new], relation="correction")
+
+    assert old not in result["discovered_knowledge"]
+    assert new in result["discovered_knowledge"]
+    assert "topic_status" not in result
+    assert "topic_maturity" not in result
+    output = capsys.readouterr().out
+    assert "TOPIC INVALIDATION" not in output
+    assert "TOPIC STATUS" not in output
 
 
-def test_actor_replacement_invalidates_only_new_coverage(monkeypatch, capsys):
-    initial = completed_state()
-    new = fact("Correction: editors are the primary app users instead", key="primary_users", role=None, roles=["editor"])
-    result = commit(monkeypatch, initial["discovered_knowledge"], [new], targets=[0], initial=initial)
-    assert result["topic_status"][T.USER_ROLES] == TopicStatus.PARTIAL
-    assert result["topic_status"][T.USER_GOALS] == TopicStatus.PARTIAL
-    assert "responsibilities::editor" in capsys.readouterr().out
+def test_new_actor_changes_inquiry_frontier_without_topic_reopening(monkeypatch, capsys):
+    prior = model_foundation()
+    new = fact(
+        "Editors are also primary app users",
+        key="primary_users",
+        role=None,
+        roles=["editor"],
+    )
+    result = commit(monkeypatch, prior, [new])
+
+    inquiry_state = {
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": result["discovered_knowledge"],
+        "fact_acquisition": result.get("fact_acquisition", {}),
+        "active_requirements": {},
+        "requirement_coverage": {},
+        "eligible_requirement_keys": [],
+        "validation_issues": [],
+        "validation_candidate_blocking": False,
+    }
+    inquiries = identify_open_inquiries(inquiry_state)
+
+    assert any(
+        item.anchor_gap == "responsibilities::editor"
+        and item.role == "editor"
+        for item in inquiries
+    )
+    assert "topic_status" not in result
+    assert "topic_maturity" not in result
+    output = capsys.readouterr().out
+    assert "TOPIC INVALIDATION" not in output
+    assert "TOPIC STATUS" not in output
 
 
 @pytest.mark.parametrize("changes", [{"scope": S.ADMIN_DASHBOARD}, {"role": "seller"},

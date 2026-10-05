@@ -6,12 +6,19 @@ __pycache__/
 # Env secrets
 .env
 
+# Runtime state
+backend/projects/
+backend/logs/
+backend/sessions/
+backend/output/
+
 # Vector DB
 backend/chroma_store/
 
 # Node
 frontend/node_modules/
 frontend/.next/
+frontend/dist/
 
 # OS
 .DS_Store

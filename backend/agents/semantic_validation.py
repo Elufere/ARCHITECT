@@ -8,7 +8,13 @@ from agents.discovery_fields import FIELD_DEFINITIONS
 AuditField = Literal[tuple(f"{topic.value}.{key}" for topic, definitions in FIELD_DEFINITIONS.items() for key in definitions)]
 
 
-def category_contradiction(key: str, evidence: str) -> str | None:
+def category_contradiction(
+    key: str,
+    evidence: str,
+    value: str | None = None,
+    *,
+    direct_answer: bool = False,
+) -> str | None:
     """Reject narrow explicit category contradictions; never infer a positive fact.
 
     Mixed clauses remain the auditor's job. These checks do not resolve negatives,
@@ -25,9 +31,166 @@ def category_contradiction(key: str, evidence: str) -> str | None:
             r"\b(?:when|whenever|once|after|before|until|upon|if|starts?|begins?|triggers?|complete[ds]?|finished|result|status|state|requires?|depends?|unless)\b", evidence, re.I
         ):
             return "A capability list contains no explicit start/completion/state/dependency clause"
-    if key == "trigger" and re.search(r"\b(?:I|we)\s+(?:want|plan|intend)\s+to\s+(?:build|create|develop)\b", evidence, re.I):
-        if not re.search(r"\b(?:when|whenever|once|after|upon|if|starts?|begins?|triggers?)\b", evidence, re.I):
-            return "Founder intent contains no explicit workflow start event"
+    if key == "trigger" and not direct_answer:
+        explicit_start = re.search(
+            r"\b(?:starts?|begins?|initiates?|triggers?|triggered|kicks?\s+off|"
+            r"start\s+event|entry\s+point|first\s+starts?)\b",
+            evidence,
+            re.I,
+        )
+        if not explicit_start:
+            return "Evidence does not explicitly establish the workflow start event"
+
+    if key == "completion_condition" and not direct_answer:
+        explicit_completion = re.search(
+            r"\b(?:complete[ds]?|completion|finished|finishes|successful(?:ly)?|"
+            r"considered\s+complete|ends?\s+when|marks?\s+(?:the\s+)?end)\b",
+            evidence,
+            re.I,
+        )
+        if not explicit_completion:
+            return "Evidence does not explicitly establish what makes the workflow complete"
+
+    if key == "downstream_dependency" and not direct_answer:
+        explicit_dependency = re.search(
+            r"\b(?:requires?|required|depends?\s+on|dependency|prerequisite|"
+            r"cannot\s+(?:proceed|continue|complete)\s+(?:until|without)|"
+            r"must\b[^.]{0,120}\bbefore\b|"
+            r"before\b[^.]{0,120}\b(?:can|may|is\s+allowed\s+to|are\s+allowed\s+to)\b|"
+            r"waiting\s+for|awaiting|(?:remain|remains|stays?|is)\s+pending\s+until|"
+            r"pending\s+until|only\s+after)\b",
+            evidence,
+            re.I,
+        )
+        if not explicit_dependency:
+            return "Evidence states no prerequisite or downstream dependency"
+
+    if key == "success_criteria" and not direct_answer:
+        explicit_definition = re.search(
+            r"\b(?:success\s+(?:means|is)|successful\s+when|considered\s+(?:successful|complete)|"
+            r"goal\s+is\s+achieved|know\s+(?:they|we|the\s+user).*successful|"
+            r"counts?\s+as\s+success)\b",
+            evidence,
+            re.I,
+        )
+        if not explicit_definition:
+            return "Evidence does not explicitly define what counts as success"
+
+    if key in ("primary_user_goals", "secondary_user_goals"):
+        proposed = value or ""
+        intent_words = re.search(r"\b(?:wants?|aims?|goal|objective|seeks?|hopes?|needs?)\b", proposed, re.I)
+        source_intent = re.search(
+            r"\b(?:wants?|aims?|goal|objective|seeks?|hopes?|needs?|helps?|purpose|"
+            r"so that|in order to|achieve|outcome|result|benefit|problem|protect|avoid|reduce)\b",
+            evidence,
+            re.I,
+        )
+        if intent_words and not source_intent:
+            return "Candidate invents desired-outcome intent not stated in its evidence"
+
+    if key == "permissions" and not direct_answer:
+        explicit_boundary = re.search(
+            r"\b(?:only|cannot|can't|must\s+not|forbidden|restricted|restriction|"
+            r"authorized|authorization|exclusive|exclusively|unless|except|"
+            r"not\s+allowed|allowed\s+only|allowed\s+to|permitted\s+to|"
+            r"permissions?|required\s+permissions?|fixed\s+permissions?|immutable|"
+            r"cannot\s+(?:modify|change)|can't\s+(?:modify|change)|"
+            r"access\s+(?:only|limited|restricted|to)|may\s+not)\b",
+            evidence,
+            re.I,
+        )
+        if not explicit_boundary:
+            return "Evidence states no explicit authorization boundary, prohibition, exclusivity, or access boundary"
+
+    if key == "responsibilities":
+        proposed = (value or "").strip().lower()
+        product_benefit = re.search(
+            r"\b(?:app|platform|system|escrow|product|service)\b.*\b(?:protect|help|ensure|guarantee)\b",
+            evidence,
+            re.I,
+        )
+        passive_benefit = re.match(
+            r"(?:be\s+)?(?:protected|assured|guaranteed|safe|secure)\b",
+            proposed,
+            re.I,
+        )
+        if passive_benefit or product_benefit:
+            return "A benefit provided to an actor is not an action performed by that actor"
+
+    if key == "end_state":
+        intent_only = re.search(
+            r"\b(?:wants?|needs?|seeks?|hopes?|expects?|assurance|should\s+protect|"
+            r"should\s+ensure|would\s+like)\b",
+            evidence,
+            re.I,
+        )
+        explicit_terminal = re.search(
+            r"\b(?:after\s+completion|once\s+(?:completed|resolved)|completed|resolved|"
+            r"terminal|final\s+state|ends?\s+(?:as|in)|is\s+marked\s+(?:complete|"
+            r"completed|closed|archived|cancelled|canceled)|closed|archived|"
+            r"status\s+(?:is|becomes)\s+(?:confirmed|completed|complete|closed|"
+            r"fulfilled|cancelled|canceled|archived))\b",
+            evidence,
+            re.I,
+        )
+        if intent_only and not explicit_terminal:
+            return "A desired future outcome is not an established workflow end state"
+        if not direct_answer and not explicit_terminal:
+            return "Evidence describes an intermediate state, not the workflow's terminal result"
+
+    if key == "validation_rules" and not direct_answer and not re.search(
+        r"\b(?:valid|invalid|validate|validation|must\s+(?:match|contain|provide)|"
+        r"required\s+(?:field|value|input|data|document|information)|"
+        r"(?:field|value|input|data|document|information)\s+is\s+required|"
+        r"rejected?\s+(?:if|when)|format|fails?\s+validation)\b",
+        evidence,
+        re.I,
+    ):
+        return "Evidence states no validation condition or validation consequence"
+
+    if key == "eligibility_rules" and not direct_answer and not re.search(
+        r"\b(?:eligible|eligibility|qualified|qualification|licensed|verified|"
+        r"prerequisite|must\s+be\s+(?:a|an|verified|licensed|qualified)|"
+        r"eligible\s+to|qualif(?:y|ies)\s+to)\b",
+        evidence,
+        re.I,
+    ):
+        return "Evidence states no qualification or participation prerequisite"
+
+    if key == "limits" and not direct_answer and not re.search(
+        r"\b(?:limit|limited|maximum|minimum|max|min|at\s+most|at\s+least|"
+        r"no\s+more\s+than|no\s+less\s+than|up\s+to|cap|capped|"
+        r"cannot\s+exceed|must\s+not\s+exceed|above\s+\d+|below\s+\d+)\b",
+        evidence,
+        re.I,
+    ):
+        return "Evidence states no explicit operational limit"
+
+    if key == "visibility_rules" and not direct_answer and not re.search(
+        r"\b(?:visible|visibility|view|see|shown|hidden|access\s+to|"
+        r"can\s+read|cannot\s+see|only\s+.+\s+(?:see|view|access))\b",
+        evidence,
+        re.I,
+    ):
+        return "Evidence states no visibility or viewing boundary"
+
+    if key == "approval_rules" and not direct_answer and not re.search(
+        r"\b(?:approv(?:e|es|ed|ing|al|als)|review(?:s|ed|ing)?|"
+        r"authoriz(?:e|es|ed|ing|ation)|consent(?:s|ed|ing)?|sign[ -]?off|"
+        r"requires?\s+(?:acceptance|approval|review|authorization|consent))\b",
+        evidence,
+        re.I,
+    ):
+        return "Evidence states no approval, review, consent, agreement, or authorization rule"
+
+    if key == "ownership_rules" and not direct_answer and not re.search(
+        r"\b(?:own(?:s|ed|ership)?|belongs?\s+to|control(?:s|led)?|assigned\s+to|"
+        r"responsible\s+for\s+the\s+record)\b",
+        evidence,
+        re.I,
+    ):
+        return "Evidence states no ownership or control assignment rule"
+
     return None
 
 
@@ -174,7 +337,11 @@ and categories. For each evidence_id, list ONLY the TOPIC.key
 meanings explicitly expressed by that quote. Multiple meanings may coexist.
 Then return supported_ids for candidates whose own quote entails their full value,
 polarity, scope and actor. A fact appearing elsewhere cannot rescue a wrong quote.
-Use latest_response/question only to resolve references and short answers.
+Use latest_response/question only to resolve references and short answers. The
+active question is NOT a relevance gate for product knowledge: a founder may
+answer the question and volunteer adjacent facts in the same response. Judge each
+candidate from its own quote and category. Never reject an otherwise supported
+candidate merely because it does not answer the active question.
 confirmed_actor_context contains previously confirmed actor declarations with
 their source quotes. Use it to resolve identity and explicitly established role
 relationships: a capacity of an existing actor is not automatically a new actor.
@@ -237,6 +404,9 @@ Critical distinctions:
   denial of only one dependency type, cannot support whole-field absence. Require
   the existing independent absence verdict for an explicit denial of the whole field.
 - Permissions require explicit authorization/restriction, not capabilities alone.
+  A product/process state such as money remaining locked until a review happens
+  is not a permission of the reviewer unless the quote separately states an
+  authorization boundary for that actor.
 - Audit responsibilities and permissions independently for each actor and action.
   "Can" alone supports a capability, not an authorization boundary. An
   exclusivity rule, prohibition, or access limitation alone supports permissions,
@@ -256,8 +426,11 @@ Critical distinctions:
   operation, external system, offline process, or third-party platform is not the
   current application merely because it participates in the same business process.
   Unknown surface means unresolved membership, not an invented application.
-  A supported current-process dependency, handoff, or business rule may retain a
-  participant from another/unknown surface without supporting an actor declaration.
+  The PM question and current scope may resolve pronouns or the subject being
+  discussed, but they MUST NOT establish application membership that the
+  founder's own quote did not state. A supported current-process dependency,
+  handoff, or business rule may retain a participant from another/unknown surface
+  without supporting an actor declaration.
   Evaluate those process candidates independently; an external participant need
   not belong to the current actor registry. Preserve explicit surface qualifiers
   and reject unrelated facts about the other application.
@@ -275,8 +448,10 @@ Critical distinctions:
   CURRENT application (or explicitly name its users). A named workflow participant
   or an administrative duty alone is insufficient. References to another app or
   back-office surface, and explicitly external dependencies, do not establish
-  current-scope membership. Resolve application references from scope/question.
-  actor_classification includes candidate proposals; it is not proof of membership.
+  current-scope membership. The PM's question/current scope may resolve pronouns
+  and discourse references, but it cannot prove that a newly mentioned actor
+  belongs to this application. actor_classification includes candidate proposals;
+  it is not proof of membership.
   Use confirmed_actor_context to distinguish established actors from new proposals.
   An INFERRED actor candidate may preserve an explicitly mentioned participant
   whose membership is genuinely unresolved, provided its value states that
@@ -284,6 +459,15 @@ Critical distinctions:
   category as tentative information only, never as confirmed membership. Reject
   an unsupported CONFIRMED declaration, an invented participant, or a tentative
   current-app candidate whose quote explicitly places it outside this application.
+- A person/team mentioned only as the implementation owner of a technical,
+  design, infrastructure, or engineering detail is not a current-app actor unless
+  the quote independently establishes that they use/interact with the scoped app.
+  Delegating a detail to specialists is interview-control feedback, not actor
+  membership or a responsibility in the product model.
+- System/application behavior belongs to the system/process, not to whichever
+  user role appeared in the question. Do not accept an actor responsibility when
+  the candidate's own quote says the app/system/service chooses, routes,
+  validates, calculates, or otherwise performs the behavior.
 - Actor membership alone establishes no workflow, responsibility or goal.
 - For responsibilities, merely saying an actor uses the platform is participation,
   not a specific product activity. Its quote supports no responsibility category.
@@ -295,6 +479,11 @@ Critical distinctions:
   Specific exclusions, mixed answers, uncertainty and denied examples are not whole-field absence.
 For absence candidates require both supported_ids and confirmed_absence_ids.
 Never infer facts from the domain, prompt examples or previous turns.
+A rhetorical/interrogative founder message or interview-feedback statement does
+not entail the affirmative proposition inside it. For example, "am I the product
+designer?" does NOT support "the product designer is a primary user", and saying
+that UI detail is "the designer's job" does not create a product actor or product
+requirement. Reject such candidates.
 Give rejection_reasons for rejected candidates. The same quote may support several
 candidates, but each candidate must satisfy its own field definition independently.
 """

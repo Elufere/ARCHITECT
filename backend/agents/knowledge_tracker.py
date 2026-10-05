@@ -1,5 +1,6 @@
 import re
 import json
+import hashlib
 from typing import Tuple, get_args
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -17,19 +18,47 @@ from agents.state import (
     KnowledgeItem,
     KnowledgeState,
     TOPIC_KEY_MAP,
-    TopicStatus,
 )
-from agents.semantic_validation import GapAnswer, GroundingResult, GroundingResponse, GAP_INSTRUCTION, ROLE_POLICY_INSTRUCTION, GROUNDING_INSTRUCTION, category_contradiction
+from agents.semantic_validation import GapAnswer, GroundingResult, GroundingResponse, GAP_INSTRUCTION, ROLE_POLICY_INSTRUCTION, GROUNDING_INSTRUCTION
 from agents.discovery_fields import OVERLAP_RULES, field_contract
 from agents.product_model import build_product_model
-from agents.topic_lifecycle import invalidate_completed_topics
+from agents.product_concepts import (
+    ProductConcept,
+    ProductConceptKind,
+    merge_product_concepts,
+)
+from agents.external_systems import (
+    ExternalSystemMention,
+    external_system_context,
+    ground_external_system_mentions,
+    merge_external_systems,
+)
 from agents.absence_supersession import matching_absences, can_replace_absence, supersession_record
 from agents.answer_contract import interpret_closed_answer
 from agents.evidence_spans import recover_evidence_span
 from agents.knowledge_duplicates import FactComparison, compare_candidate
 from agents.knowledge_corrections import CorrectionReview, correction_targets
-from agents.role_utils import roles_match, split_role_labels
-from agents.extraction_passes import PASSES, RawPass, OwnedFact, GoalFact, normalize_fact, canonical_role, absence_label
+from agents.role_utils import role_identity, roles_match, split_role_labels
+from agents.actor_context import (
+    actors_mentioned_in_text,
+    canonical_actor_for_label,
+    resolve_owned_claim_role,
+)
+from agents.conversation_language import final_question_text
+from agents.extraction_passes import (
+    PASSES,
+    RawPass,
+    RawClaims,
+    NeutralClaim,
+    CLAIM_CAPTURE_INSTRUCTION,
+    ActorFact,
+    OwnedFact,
+    GoalFact,
+    normalize_fact,
+    canonical_role,
+    absence_label,
+    claim_to_fact,
+)
 
 # ──────────────────────────────────────────────
 # Evidence Validation
@@ -63,13 +92,18 @@ def validate_extraction(
     item.evidence = evidence
     if item.evidence not in user_message:
         return False, "Evidence is not an exact substring of the user message"
-    if not get_content_words(item.evidence) and not item.absence and not item_directly_answers_gap(item, current_gap):
+    if (
+        not get_content_words(item.evidence)
+        and not item.absence
+        and not item_directly_answers_gap(item, current_gap)
+        and not item.source_question
+    ):
         return False, "Evidence lacks meaningful content words"
     if item.confidence < 0.75:
         return False, "Confidence below threshold"
     if not item.value or not item.value.strip():
         return False, "Missing value"
-    generic_roles = {"user", "users", "people", "person", "demand_side", "supply_side"}
+    generic_roles = {"people", "person", "demand_side", "supply_side"}
     if item.key in ("primary_users", "secondary_users"):
         if not item.absence and (not item.roles or any(role.strip().lower() in generic_roles for role in item.roles)):
             return False, "Actor requires a functional canonical role"
@@ -114,7 +148,7 @@ _extraction_models = None
 
 
 def extraction_models():
-    """Create one structured model per pass and reuse it across turns."""
+    """Create the production claim model plus legacy/test compatibility models."""
     global _extraction_models
     if _extraction_models is None:
         # Definitions, structured schema and overlapping evidence must fit together.
@@ -126,6 +160,11 @@ def extraction_models():
             for name, *_ in PASSES
         }
         _extraction_models.update({
+            "CLAIMS": get_structured_model(
+                call_name="knowledge_tracker.CLAIMS",
+                schema=RawClaims,
+                include_raw=True,
+            ),
             "GAP_ANSWER": get_structured_model(call_name="knowledge_tracker.GAP_ANSWER", schema=GapAnswer, include_raw=True),
             "GROUNDING": get_structured_model(call_name="knowledge_tracker.GROUNDING", schema=GroundingResponse, include_raw=True),
             "FACT_COMPARISON": get_structured_model(call_name="knowledge_tracker.FACT_COMPARISON", schema=FactComparison, include_raw=True),
@@ -147,7 +186,14 @@ def group_audit_evidence(payload):
                 for quote_id, quote in quotes.items()]}
 
 
-def semantic_decision(name, schema, instruction, payload, allow_repair=True):
+def semantic_decision(
+    name,
+    schema,
+    instruction,
+    payload,
+    allow_repair=True,
+    allow_protocol_repair=True,
+):
     original_payload = payload
     original_instruction = instruction
     if name == "GROUNDING":
@@ -167,12 +213,40 @@ def semantic_decision(name, schema, instruction, payload, allow_repair=True):
         SystemMessage(content=instruction),
         HumanMessage(content=json.dumps(payload, default=str)),
     ])
-    raw = result.get("parsed") if isinstance(result, dict) and "parsed" in result else result
-    if name == "GROUNDING" and isinstance(raw, GroundingResponse):
-        raw = raw.decision()
-    elif name == "GROUNDING" and isinstance(raw, dict) and isinstance(raw.get("evidence_categories"), list):
-        raw = GroundingResponse.model_validate(raw).decision()
-    decision = raw if isinstance(raw, schema) else schema.model_validate(raw)
+    try:
+        raw = result.get("parsed") if isinstance(result, dict) and "parsed" in result else result
+        if raw is None:
+            parsing_error = (
+                result.get("parsing_error")
+                if isinstance(result, dict)
+                else None
+            )
+            raise ValueError(
+                f"Structured {name} response was not parsed"
+                + (f": {parsing_error}" if parsing_error else "")
+            )
+        if name == "GROUNDING" and isinstance(raw, GroundingResponse):
+            raw = raw.decision()
+        elif name == "GROUNDING" and isinstance(raw, dict) and isinstance(raw.get("evidence_categories"), list):
+            raw = GroundingResponse.model_validate(raw).decision()
+        decision = raw if isinstance(raw, schema) else schema.model_validate(raw)
+    except Exception as exc:
+        raise_if_llm_failure(exc)
+        if name == "GROUNDING" and allow_protocol_repair:
+            print(f"GROUNDING PROTOCOL REPAIR: invalid structured response; retrying once | {exc}")
+            return semantic_decision(
+                name,
+                schema,
+                original_instruction
+                + "\nThe previous grounding audit response could not be parsed. "
+                  "Return exactly one complete structured audit matching the required schema. "
+                  "Do not omit evidence_categories, supported_ids, confirmed_absence_ids, "
+                  "or rejection_reasons. Use only the supplied candidate and evidence IDs.",
+                original_payload,
+                allow_repair=allow_repair,
+                allow_protocol_repair=False,
+            )
+        raise
     if name == "GROUNDING" and allow_repair:
         # A support ID alone is not a complete verdict: its quote category and,
         # for absence, the independent polarity verdict must also be present.
@@ -191,11 +265,15 @@ def semantic_decision(name, schema, instruction, payload, allow_repair=True):
                 "candidates": [{**candidate, "id": index} for index, candidate in enumerate(missing)],
                 "evidence_quotes": {key: value for key, value in original_payload["evidence_quotes"].items() if key in quote_ids}}
             try:
-                repaired = semantic_decision(name, schema,
+                repaired = semantic_decision(
+                    name,
+                    schema,
                     original_instruction + "\nThe previous audit omitted a complete verdict for these candidates. "
                     "Return either support or a rejection reason for EVERY supplied ID. "
                     "Supported facts need their evidence_id category; supported absences also need confirmed_absence_ids. Do not invent IDs.",
-                    repair_payload, allow_repair=False)
+                    repair_payload,
+                    allow_repair=False,
+                )
             except Exception as exc:
                 raise_if_llm_failure(exc)
                 print(f"GROUNDING REPAIR FAILED: {exc}")
@@ -216,8 +294,42 @@ def semantic_decision(name, schema, instruction, payload, allow_repair=True):
 def answer_context(state):
     question = next((message.content for message in reversed(state.get("messages", [])[:-1])
                      if isinstance(message, AIMessage)), "")
-    return dict(question=question, topic=state.get("current_topic"),
+    return dict(question=final_question_text(question), topic=state.get("current_topic"),
                 gap=state.get("current_gap"), scope=state.get("discovery_scope"))
+
+
+def _actor_gap_question_matches_field(state: AgentState, key: str) -> bool:
+    """Only let actor absence semantics answer a question that actually asks actor identity.
+
+    This prevents a neighboring access/capability question from becoming
+    primary_users=none merely because the planner still carried an actor gap.
+    """
+    if key not in ("primary_users", "secondary_users"):
+        return True
+
+    question = (answer_context(state).get("question") or "").lower()
+    if not question:
+        return False
+
+    if key == "primary_users":
+        if re.search(r"\b(?:besides|any\s+other|other\s+(?:users?|people|roles?|participants?))\b", question):
+            return False
+        return bool(
+            re.search(
+                r"\bwho\b.*\b(?:use|uses|using|interact|participate|users?|people|roles?)\b"
+                r"|\b(?:who|which)\s+(?:users?|people|roles?|participants?)\b"
+                r"|\b(?:primary|main)\s+users?\b",
+                question,
+            )
+        )
+
+    return bool(
+        re.search(
+            r"\b(?:besides|any\s+other|anyone\s+else|other\s+(?:users?|people|roles?|participants?)|"
+            r"additional\s+(?:users?|people|roles?|participants?))\b",
+            question,
+        )
+    )
 
 
 def extract_gap_absence(user_response, state, scope):
@@ -240,6 +352,11 @@ def extract_gap_absence(user_response, state, scope):
                 if item.scope == scope and item.topic == topic and item.key == key
                 and item.role == (role or None)]
     policy_field = topic == DiscoveryTopic.USER_ROLES and key in ("multiple_roles", "role_transitions")
+    if topic == DiscoveryTopic.USER_ROLES and not _actor_gap_question_matches_field(state, key):
+        print(
+            f"GAP ANSWER SKIPPED: active actor field {key} does not match the delivered question"
+        )
+        return None
     try:
         decision = semantic_decision("GAP_ANSWER", GapAnswer,
             (ROLE_POLICY_INSTRUCTION if policy_field else GAP_INSTRUCTION)
@@ -283,44 +400,140 @@ def confirmed_actor_context(state, scope):
             and item.knowledge_state == KnowledgeState.CONFIRMED and not item.absence]
 
 
-def ground_items(items, user_response, state, active_gap_review=None):
-    """Audit the asked-for answer independently of incidental extracted claims.
+def actor_identity_candidate_allowed(fact: ActorFact, state: AgentState, scope: DiscoveryScope) -> bool:
+    """Reject redundant actor declarations extracted from non-identity prose.
 
-    A malformed/omitted verdict in a large cross-topic batch must not erase a
-    valid answer to the current question. Both batches still need grounding.
+    Once a canonical actor is already known in the same classification, later
+    capability/rule/workflow sentences must not be re-admitted as actor facts.
+    A later answer may still:
+    - answer an actor discovery gap directly,
+    - introduce a genuinely new canonical actor,
+    - reclassify an existing actor, or
+    - explicitly establish a new alias/capacity relationship.
+
+    Alias updates require the source quote itself to contain both the existing
+    canonical actor label and at least one proposed alias. Prior context may
+    resolve identity, but it cannot turn an alias-only capability sentence into
+    a fresh actor declaration.
     """
-    focused = [item for item in items if item.topic == state.get("current_topic")
-               and item_directly_answers_gap(item, state.get("current_gap"))]
-    remaining = [item for item in items if item not in focused]
+    if fact.key not in ("primary_users", "secondary_users") or fact.absence:
+        return True
+
+    role = canonical_role(fact.roles[0])
+    prior = [
+        item for item in state.get("discovered_knowledge", [])
+        if item.scope == scope
+        and item.topic == DiscoveryTopic.USER_ROLES
+        and item.key in ("primary_users", "secondary_users")
+        and item.knowledge_state == KnowledgeState.CONFIRMED
+        and not item.absence
+        and role in [canonical_role(value) for value in (item.roles or [])]
+    ]
+    if not prior:
+        return True
+
+    gap = (state.get("current_gap") or "").split("::", 1)[0]
+    if state.get("current_topic") == DiscoveryTopic.USER_ROLES and gap in ("primary_users", "secondary_users"):
+        return True
+
+    # A classification change is not a redundant redeclaration. It still goes
+    # through normal grounding/correction review downstream.
+    if any(item.key != fact.key for item in prior):
+        return True
+
+    if not fact.aliases:
+        return False
+
+    normalized_evidence = re.sub(r"[^a-z0-9]+", " ", fact.evidence.lower()).strip()
+
+    def mentions(label: str) -> bool:
+        phrase = " ".join(canonical_role(label).split("_"))
+        if not phrase:
+            return False
+        forms = {phrase}
+        parts = phrase.split()
+        last = parts[-1]
+        if not last.endswith("s"):
+            forms.add(" ".join([*parts[:-1], last + "s"]))
+        return any(
+            re.search(rf"\b{re.escape(form)}\b", normalized_evidence) is not None
+            for form in forms
+        )
+
+    return mentions(role) and any(mentions(alias) for alias in fact.aliases)
+
+
+def ground_items(items, user_response, state, active_gap_review=None):
+    """Semantically ground structurally valid candidates with the LLM.
+
+    Python owns provenance/schema. The model owns whether the quoted founder
+    evidence actually supports the candidate's meaning, category, polarity,
+    scope and actor.
+
+    Actor declarations are grounded first so same-turn owned facts can use only
+    actor identities that survived semantic grounding.
+    """
+    actor_items = [
+        item for item in items
+        if item.topic == DiscoveryTopic.USER_ROLES
+        and item.key in ("primary_users", "secondary_users")
+    ]
+    other_items = [item for item in items if item not in actor_items]
+
+    accepted_actors = []
+    context_state = state
+    if actor_items:
+        accepted_actors = ground_batch(
+            actor_items, user_response, state, active_gap_review
+        )
+        context_state = {
+            **state,
+            "discovered_knowledge": [
+                *state.get("discovered_knowledge", []),
+                *accepted_actors,
+            ],
+        }
+
+    if not other_items:
+        return accepted_actors
+
+    focused = [
+        item for item in other_items
+        if item.topic == context_state.get("current_topic")
+        and item_directly_answers_gap(item, context_state.get("current_gap"))
+    ]
+    remaining = [item for item in other_items if item not in focused]
+
     if not focused or not remaining:
-        return ground_batch(items, user_response, state, active_gap_review)
-    print(f"GROUNDING BATCHES: active_gap={state.get('current_gap')} "
-          f"direct_candidates={len(focused)} incidental_candidates={len(remaining)}")
-    accepted = ground_batch(focused, user_response, state, active_gap_review)
-    # Only grounded actor declarations may provide new identity context to the
-    # remaining batch. A rejected actor proposal is not an established owner.
-    context_state = {**state, "discovered_knowledge": [
-        *state.get("discovered_knowledge", []),
-        *(item for item in accepted if item.topic == DiscoveryTopic.USER_ROLES
-          and item.key in ("primary_users", "secondary_users"))]}
+        accepted_other = ground_batch(
+            other_items, user_response, context_state, active_gap_review
+        )
+        return accepted_actors + accepted_other
+
+    print(
+        f"GROUNDING BATCHES: active_gap={context_state.get('current_gap')} "
+        f"direct_candidates={len(focused)} incidental_candidates={len(remaining)}"
+    )
+    accepted_other = ground_batch(
+        focused, user_response, context_state, active_gap_review
+    )
     try:
-        accepted += ground_batch(remaining, user_response, context_state)
+        accepted_other += ground_batch(
+            remaining, user_response, context_state
+        )
     except ExtractionFailed as exc:
         # The active answer was already grounded independently. Fail closed on
         # unrelated incidental candidates without discarding the valid answer.
         print(f"INCIDENTAL GROUNDING FAILED: {exc}")
-    return [item for item in items if item in accepted]
+
+    return accepted_actors + [
+        item for item in other_items if item in accepted_other
+    ]
 
 
 def ground_batch(items, user_response, state, active_gap_review=None):
-    eligible = []
-    for item in items:
-        reason = category_contradiction(item.key, item.evidence)
-        if reason:
-            print(f"CATEGORY REJECTED: {item.topic.value}.{item.key} owner={item.role} | {reason}")
-        else:
-            eligible.append(item)
-    items = eligible
+    # Semantic support belongs to the grounding model. Python has already
+    # verified source provenance/schema; do not pre-judge meaning with regexes.
     if not items:
         return []
     # Intern repeated quotes instead of serializing the entire source sentence
@@ -331,9 +544,18 @@ def ground_batch(items, user_response, state, active_gap_review=None):
     quotes = sorted({item.evidence for item in items}, key=lambda quote: (user_response.find(quote), len(quote), quote))
     candidates = []
     for index, item in enumerate(items):
-        candidate = dict(id=index, topic=item.topic.value, key=item.key,
-                         value=item.value, scope=item.scope.value,
-                         evidence_id=quotes.index(item.evidence))
+        candidate = dict(
+            id=index,
+            topic=item.topic.value,
+            key=item.key,
+            value=item.value,
+            scope=item.scope.value,
+            evidence_id=quotes.index(item.evidence),
+            directly_answers_active_gap=(
+                item.topic == state.get("current_topic")
+                and item_directly_answers_gap(item, state.get("current_gap"))
+            ),
+        )
         if item.key in ("primary_users", "secondary_users"):
             candidate.update(kind="actor_declaration", roles=item.roles or [])
             if item.aliases:
@@ -360,6 +582,11 @@ def ground_batch(items, user_response, state, active_gap_review=None):
                    **({"active_gap_review": active_gap_review.model_dump(mode="json")} if active_gap_review else {}),
                    actor_classification=actor_context,
                    confirmed_actor_context=confirmed_actor_context(state, scope),
+                   grounding_policy={
+                       "active_question_is_reference_context_only": True,
+                       "incidental_supported_facts_must_be_preserved": True,
+                       "candidate_relevance_to_active_gap_is_not_a_support_requirement": True,
+                   },
                    candidates=candidates, evidence_quotes={str(i): quote for i, quote in enumerate(quotes)}))
         supported = set(decision.supported_ids)
         confirmed_absences = set(decision.confirmed_absence_ids)
@@ -388,7 +615,743 @@ def ground_batch(items, user_response, state, active_gap_review=None):
         raise ExtractionFailed("Grounding verification failed") from exc
 
 
+class ExtractedBatch(list):
+    """Extracted schema facts plus parallel structure/integration ledgers."""
+
+    def __init__(
+        self,
+        items=(),
+        *,
+        grounding_required=True,
+        concepts=None,
+        external_systems=None,
+        observations=None,
+        observation_candidates=None,
+    ):
+        super().__init__(items)
+        self.grounding_required = grounding_required
+        self.concepts = list(concepts or [])
+        self.external_systems = list(external_systems or [])
+        self.observations = list(observations or [])
+        self.observation_candidates = dict(observation_candidates or {})
+
+
+def _captured_observation(
+    claim: NeutralClaim,
+    scope: DiscoveryScope,
+    turn: int,
+    admission_status: str,
+    rejection_reason: str | None = None,
+) -> dict:
+    """Preserve what the founder explicitly said even when normalization rejects it."""
+    identity = "|".join([
+        scope.value,
+        str(turn),
+        claim.kind,
+        claim.role or "",
+        claim.value,
+        claim.evidence,
+    ])
+    return {
+        "id": "obs_" + hashlib.sha1(identity.encode("utf-8")).hexdigest()[:16],
+        "scope": scope.value,
+        "source_turn": turn,
+        "kind": claim.kind,
+        "value": claim.value,
+        "evidence": claim.evidence,
+        "role": claim.role,
+        "aliases": list(claim.aliases),
+        "subject": claim.subject,
+        "relation": claim.relation,
+        "object": claim.object,
+        "confidence": claim.confidence,
+        "knowledge_state": claim.knowledge_state.value,
+        "admission_status": admission_status,
+        "rejection_reason": rejection_reason,
+    }
+
+
+def merge_captured_observations(existing: list[dict], incoming: list[dict]) -> list[dict]:
+    """Idempotently persist observations; later re-processing may improve their status."""
+    merged = {item.get("id"): dict(item) for item in existing if item.get("id")}
+    for item in incoming:
+        identity = item.get("id")
+        if identity:
+            merged[identity] = dict(item)
+    return list(merged.values())[-250:]
+
+
+def _claim_prompt(state: AgentState, scope: DiscoveryScope) -> str:
+    known = confirmed_actor_context(state, scope)
+    known_external_systems = external_system_context(state, scope)
+    return f"""Extract neutral product claims from the latest user response.
+
+Current scope: {scope.value}
+Current interview focus: {state.get('current_gap') or 'none'}
+Last question (reference context only): {answer_context(state)['question']}
+Confirmed actor identity context: {json.dumps(known, default=str)}
+Confirmed external systems context: {json.dumps(known_external_systems, default=str)}
+External-system context may resolve a pronoun/name only. It is not evidence for a
+new interaction; every new external_system claim still needs its OWN exact quote
+from the latest response.
+
+{CLAIM_CAPTURE_INSTRUCTION}
+
+Return JSON with an items array matching this schema:
+{json.dumps(NeutralClaim.model_json_schema(), default=str)}
+"""
+
+
+def _existing_actor_sets(state: AgentState, scope: DiscoveryScope) -> tuple[set[str], set[str]]:
+    primary, secondary = set(), set()
+    for item in state.get("discovered_knowledge", []):
+        if (
+            item.scope != scope
+            or item.knowledge_state != KnowledgeState.CONFIRMED
+            or item.absence
+            or item.key not in ("primary_users", "secondary_users")
+        ):
+            continue
+        target = primary if item.key == "primary_users" else secondary
+        target.update(canonical_role(role) for role in item.roles or [])
+    return primary, secondary
+
+
+def _actor_role_from_claim_text(text: str) -> str | None:
+    """Conservative fallback when the structured model omits an actor's role field."""
+    value = re.sub(
+        r"^\s*(?:the\s+)?(?:main\s+users?\s+are|users?\s+are|we\s+(?:only\s+)?have|"
+        r"there\s+(?:is|are)|only)\s+",
+        "",
+        text.strip(),
+        flags=re.I,
+    )
+    head = re.split(
+        r"\b(?:who|that|which|can|may|will|participat(?:e|es|ing)|"
+        r"interact(?:s|ing)?|uses?|using)\b",
+        value,
+        maxsplit=1,
+        flags=re.I,
+    )[0].strip(" ,.;:")
+    head = re.sub(r"^(?:a|an|the)\s+", "", head, flags=re.I)
+    if not head or re.search(r"\b(?:and|or|/)\b", head, re.I):
+        return None
+    identity = role_identity(head)
+    return canonical_role(identity) if identity else None
+
+
+def _aliases_from_actor_claim(text: str) -> list[str]:
+    """Recover an explicit one-actor/multiple-capacity relationship."""
+    patterns = (
+        # Capacity labels separated by contextual conditions:
+        # "a buyer in one transaction and a seller in another".
+        r"\b(?:be|act\s+as)\s+(?:either\s+)?(?:a\s+)?"
+        r"([a-z][a-z_-]{1,30})\s+(?:in|during|for|within)\b[^,.;]{0,80}?"
+        r"\s+(?:or|and)\s+(?:a\s+)?([a-z][a-z_-]{1,30})\b",
+        # Direct "buyer or seller" / "buyer and seller" relationship.
+        r"\b(?:be|act\s+as)\s+(?:either\s+)?(?:a\s+)?"
+        r"([a-z][a-z _-]{1,30}?)\s+(?:or|and)\s+(?:a\s+)?"
+        r"([a-z][a-z _-]{1,30}?)(?=\s+(?:in|during|for|within)\b|[.,;]|$)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, re.I)
+        if not match:
+            continue
+        return list(dict.fromkeys(
+            canonical_role(role_identity(label))
+            for label in match.groups()
+            if role_identity(label)
+        ))
+    return []
+
+
+def _role_from_actor_evidence(state: AgentState, scope: DiscoveryScope, evidence: str) -> str | None:
+    """Resolve an omitted owned-claim role without creating a new actor."""
+    return resolve_owned_claim_role(None, evidence, state, scope)
+
+
+def _canonical_claim_role(role: str | None, state: AgentState, scope: DiscoveryScope) -> str | None:
+    if not role:
+        return role
+    existing = canonical_actor_for_label(role, state, scope)
+    if existing:
+        return existing
+    identity = role_identity(role)
+    return canonical_role(identity) if identity else None
+
+
+EXPLICIT_PRODUCT_SCOPE_EXCLUSION_PATTERN = re.compile(
+    r"\b(?:no|without|exclude(?:d|s)?|not\s+include(?:d)?)\b[^.]{0,160}"
+    r"\b(?:features?|functionality|integrations?|payments?|"
+    r"admin\s+(?:features?|dashboard|portal|tool)|support\s+for)\b",
+    re.I,
+)
+
+
+def _recover_unclassified_scope_exclusion(
+    claim: NeutralClaim,
+) -> NeutralClaim:
+    """Promote only explicit product-capability exclusions from unclassified."""
+    if claim.kind != "unclassified":
+        return claim
+    if not EXPLICIT_PRODUCT_SCOPE_EXCLUSION_PATTERN.search(claim.value):
+        return claim
+    return NeutralClaim.model_validate({
+        **claim.model_dump(mode="python"),
+        "kind": "mvp_out_of_scope",
+    })
+
+
+def _explicit_product_scope_exclusion_claim(
+    user_response: str,
+) -> NeutralClaim | None:
+    """Recover an explicit feature/capability exclusion even if capture omitted it.
+
+    This is intentionally narrower than general negation parsing. Actor absence is
+    handled separately; here we only recover an explicit product-capability
+    exclusion clause such as "no payments, integrations, or admin features".
+    """
+    match = EXPLICIT_PRODUCT_SCOPE_EXCLUSION_PATTERN.search(user_response)
+    if not match:
+        return None
+
+    sentence_start = user_response.rfind(".", 0, match.start()) + 1
+    sentence_end = user_response.find(".", match.end())
+    if sentence_end == -1:
+        sentence_end = len(user_response)
+    else:
+        sentence_end += 1
+    evidence = user_response[sentence_start:sentence_end].strip()
+    if not evidence:
+        return None
+
+    candidates = []
+    for piece in re.split(r",|\bor\b|\band\b", evidence, flags=re.I):
+        normalized = re.sub(
+            r"^\s*(?:there\s+(?:are|is)\s+)?(?:no|without)\s+",
+            "",
+            piece.strip(),
+            flags=re.I,
+        ).strip(" .;:")
+        if not normalized:
+            continue
+        if re.search(
+            r"\b(?:other\s+)?(?:user\s+roles?|users?|people|participants?|actors?)\b",
+            normalized,
+            re.I,
+        ):
+            continue
+        if re.search(
+            r"\b(?:payments?|integrations?|admin\s+(?:features?|dashboard|portal|tool)|"
+            r"features?|functionality)\b",
+            normalized,
+            re.I,
+        ):
+            candidates.append(normalized)
+
+    if not candidates:
+        return None
+
+    value = "Out of scope: " + ", ".join(dict.fromkeys(candidates))
+    return NeutralClaim(
+        kind="mvp_out_of_scope",
+        value=value,
+        evidence=evidence,
+        confidence=1.0,
+        knowledge_state=KnowledgeState.CONFIRMED,
+    )
+
+
+def _literalize_semantic_claim_evidence(
+    claim: NeutralClaim,
+    user_response: str,
+) -> NeutralClaim:
+    """Preserve verbatim founder provenance without discarding a semantic candidate.
+
+    Structured capture sometimes returns a correct proposition but rewrites the
+    evidence span (especially coordinated clauses or short contextual answers).
+    Product concepts/external systems do not have a downstream semantic grounding
+    gate, so they remain strict. Canonical fact candidates may fall back to the
+    entire latest founder response, which is literal provenance; the independent
+    grounding audit must still approve the candidate meaning/category.
+    """
+    recovered = recover_evidence_span(claim.evidence, user_response)
+    if recovered is not None:
+        return claim.model_copy(update={"evidence": recovered})
+
+    if claim.kind in {
+        "product_entity",
+        "entity_relationship",
+        "entity_attribute",
+        "external_system",
+        "unclassified",
+    }:
+        return claim
+
+    literal = (user_response or "").strip()
+    if not literal:
+        return claim
+    return claim.model_copy(update={"evidence": literal})
+
+
+def _explicit_additional_actor_absence_claim(
+    user_response: str,
+) -> NeutralClaim | None:
+    """Recover an explicit whole-set denial of additional application actors."""
+    match = re.search(
+        r"\b(?:there\s+(?:are|is)\s+)?no\s+(?:other|additional)\s+"
+        r"(?:user\s+roles?|users?|people|participants?|actors?)\b",
+        user_response,
+        re.I,
+    )
+    if not match:
+        return None
+    evidence = user_response[match.start():match.end()]
+    return NeutralClaim(
+        kind="secondary_actor",
+        value="none",
+        evidence=evidence,
+        confidence=1.0,
+        knowledge_state=KnowledgeState.CONFIRMED,
+        absence="none",
+    )
+
+
+def _explicit_additional_actor_absence_item(
+    user_response: str,
+    scope: DiscoveryScope,
+    turn: int,
+) -> KnowledgeItem | None:
+    claim = _explicit_additional_actor_absence_claim(user_response)
+    if claim is None:
+        return None
+    fact, topic = claim_to_fact(
+        claim,
+        primary_roles=set(),
+        secondary_roles=set(),
+    )
+    item = normalize_fact(fact, topic, scope, turn)
+    valid, reason = validate_extraction(item, user_response, None)
+    if not valid:
+        print(f"EXPLICIT ACTOR ABSENCE REJECTED: {reason}")
+        return None
+    return item
+
+
+def _explicit_whole_field_absence(evidence: str) -> bool:
+    return bool(re.search(
+        r"\b(?:no|none|nothing|nobody|no\s+other|only|never|not\s+applicable|"
+        r"does\s+not\s+apply|do\s+not\s+apply|without\s+any)\b",
+        evidence,
+        re.I,
+    ))
+
+
+def _explicit_current_surface_membership(evidence: str, scope: DiscoveryScope) -> bool:
+    text = evidence.lower()
+    scope_label = scope.value.lower()
+    human_scope = scope_label.replace("_", " ")
+    return bool(
+        re.search(
+            rf"\b(?:uses?|using|logs?\s+into|signs?\s+into|access(?:es)?|"
+            rf"interacts?\s+with|works?\s+in)\b[^.]*\b(?:app|application|platform|"
+            rf"dashboard|{re.escape(scope_label)}|{re.escape(human_scope)})\b",
+            text,
+        )
+        or re.search(
+            rf"\b(?:through|inside|within|on)\s+(?:the\s+)?(?:{re.escape(scope_label)}|"
+            rf"{re.escape(human_scope)}|app|application|platform|dashboard)\b",
+            text,
+        )
+    )
+
+
+def _explicit_other_surface(evidence: str, scope: DiscoveryScope) -> bool:
+    text = evidence.lower()
+    current = scope.value.lower()
+    if f"outside {current}" in text or f"outside the {current.replace('_', ' ')}" in text:
+        return True
+    return bool(re.search(
+        r"\b(?:separate\s+back[- ]office\s+tool|internal\s+operations\s+tool|"
+        r"external\s+system|offline\s+process|third[- ]party\s+platform)\b",
+        text,
+    ))
+
+
+def _concept_from_claim(
+    claim: NeutralClaim,
+    scope: DiscoveryScope,
+    turn: int,
+    source_question: str | None = None,
+) -> ProductConcept:
+    kind = {
+        "product_entity": ProductConceptKind.ENTITY,
+        "entity_relationship": ProductConceptKind.RELATIONSHIP,
+        "entity_attribute": ProductConceptKind.ATTRIBUTE,
+    }[claim.kind]
+    if not claim.subject:
+        raise ValueError(f"{claim.kind} requires subject")
+    if kind != ProductConceptKind.ENTITY and (not claim.relation or not claim.object):
+        raise ValueError(f"{claim.kind} requires subject/relation/object")
+    return ProductConcept(
+        kind=kind,
+        scope=scope,
+        subject=claim.subject,
+        relation=None if kind == ProductConceptKind.ENTITY else claim.relation,
+        object=None if kind == ProductConceptKind.ENTITY else claim.object,
+        value=claim.value,
+        evidence=claim.evidence,
+        source_question=source_question,
+        confidence=claim.confidence,
+        source_turn=turn,
+    )
+
+
+def _external_system_from_claim(
+    claim: NeutralClaim,
+    scope: DiscoveryScope,
+    turn: int,
+) -> ExternalSystemMention:
+    if not claim.subject or not claim.subject.strip():
+        raise ValueError("external_system requires a system/service name in subject")
+    return ExternalSystemMention(
+        scope=scope,
+        name=claim.subject.strip(),
+        value=claim.value,
+        evidence=claim.evidence,
+        source_turn=turn,
+        relation=claim.relation,
+        object=claim.object,
+        confidence=claim.confidence,
+    )
+
+
+def _admit_claim_item(
+    claim: NeutralClaim,
+    state: AgentState,
+    scope: DiscoveryScope,
+    primary_roles: set[str],
+    secondary_roles: set[str],
+) -> KnowledgeItem | None:
+    aliases = list(claim.aliases)
+
+    if claim.kind in ("primary_actor", "secondary_actor"):
+        actor_absence = claim.absence or absence_label(claim.value)
+        if actor_absence:
+            # "none"/"not applicable" is a whole-set actor absence, never an
+            # actor identity. Normalize it before role/alias inference so a
+            # model-emitted value="none" cannot accidentally become role/alias
+            # metadata and fail ActorFact validation.
+            resolved_role = None
+            aliases = []
+            claim = claim.model_copy(
+                update={
+                    "absence": actor_absence,
+                    "value": "none" if actor_absence == "none" else "not applicable",
+                    "role": None,
+                    "aliases": [],
+                }
+            )
+        else:
+            # Identity claims may legitimately introduce a new canonical actor.
+            resolved_role = _canonical_claim_role(claim.role, state, scope)
+            if not resolved_role:
+                resolved_role = _actor_role_from_claim_text(claim.value)
+            if resolved_role and not aliases:
+                aliases = _aliases_from_actor_claim(claim.value)
+    elif claim.kind in ("multiple_roles", "role_transition"):
+        # Role-policy claims may enrich an existing actor with explicit capacity
+        # aliases, but must never create membership on their own.
+        resolved_role = canonical_actor_for_label(claim.role, state, scope)
+        if not resolved_role:
+            matches = actors_mentioned_in_text(claim.evidence, state, scope)
+            resolved_role = next(iter(matches)) if len(matches) == 1 else None
+        if resolved_role and not aliases:
+            aliases = [
+                alias for alias in _aliases_from_actor_claim(claim.evidence)
+                if canonical_role(alias) != resolved_role
+            ]
+    elif claim.kind in ("actor_action", "authorization_boundary", "desired_outcome"):
+        resolved_role = resolve_owned_claim_role(
+            claim.role,
+            claim.evidence,
+            state,
+            scope,
+        )
+    else:
+        resolved_role = (
+            canonical_actor_for_label(claim.role, state, scope)
+            if claim.role else None
+        )
+
+    claim = claim.model_copy(update={"role": resolved_role, "aliases": aliases})
+
+    converted = claim_to_fact(
+        claim,
+        primary_roles=primary_roles,
+        secondary_roles=secondary_roles,
+    )
+    if converted is None:
+        print(f"CLAIM UNCLASSIFIED: {claim.evidence!r}")
+        return None
+
+    fact, topic = converted
+    item = normalize_fact(fact, topic, scope, state.get("turn_count", 0))
+    if not item.source_question:
+        item = item.model_copy(
+            update={"source_question": answer_context(state)["question"] or None}
+        )
+    valid, reason = validate_extraction(
+        item,
+        state["messages"][-1].content,
+        state.get("current_gap"),
+    )
+    if not valid:
+        raise ValueError(reason)
+
+    if claim.absence and (
+        item.topic == state.get("current_topic")
+        and item_directly_answers_gap(item, state.get("current_gap"))
+    ):
+        # Dedicated GAP_ANSWER semantics own active negative answers so a single
+        # capture classification cannot silently close the current inquiry.
+        raise ValueError("Active-gap absence must be resolved by the dedicated absence interpreter")
+
+    if isinstance(fact, (OwnedFact, GoalFact)) and item.role:
+        allowed = primary_roles | secondary_roles
+        if canonical_role(item.role) not in allowed:
+            raise ValueError("Owner is not a confirmed actor")
+
+    return item
+
+
+def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope) -> ExtractedBatch:
+    """Production capture: one response-wide proposition pass, no category-hunting fanout."""
+
+    model = extraction_models()["CLAIMS"]
+    print("========== CLAIM EXTRACTION RAW ==========")
+    try:
+        result = model.invoke([
+            SystemMessage(content=_claim_prompt(state, scope)),
+            HumanMessage(content=user_response),
+        ])
+        raw = result.get("parsed") if isinstance(result, dict) and "parsed" in result else result
+        if raw is None:
+            raise ValueError(str(result.get("parsing_error", "No parsed output")))
+        payload = raw if isinstance(raw, RawClaims) else RawClaims.model_validate(raw)
+        print(payload.model_dump())
+    except Exception as exc:
+        raise_if_llm_failure(exc)
+        print(f"CLAIM EXTRACTION FAILED: {exc}")
+        raise ExtractionFailed("Claim extraction did not return a valid response") from exc
+
+    claims = []
+    for raw_claim in payload.items:
+        try:
+            claim = NeutralClaim.model_validate(raw_claim)
+            claim = _recover_unclassified_scope_exclusion(claim)
+            claims.append(_literalize_semantic_claim_evidence(claim, user_response))
+        except ValidationError as exc:
+            print(f"CLAIM REJECTED: invalid claim schema | {exc}")
+
+    explicit_additional_absence = _explicit_additional_actor_absence_claim(
+        user_response
+    )
+    if explicit_additional_absence and not any(
+        claim.kind == "secondary_actor" and claim.absence
+        for claim in claims
+    ):
+        claims.append(explicit_additional_absence)
+
+    explicit_scope_exclusion = _explicit_product_scope_exclusion_claim(user_response)
+    if explicit_scope_exclusion and not any(
+        claim.kind == "mvp_out_of_scope"
+        for claim in claims
+    ):
+        claims.append(explicit_scope_exclusion)
+
+    primary_roles, secondary_roles = _existing_actor_sets(state, scope)
+    accepted: list[KnowledgeItem] = []
+    concepts: list[ProductConcept] = []
+    external_mentions: list[ExternalSystemMention] = []
+    observations: list[dict] = []
+    observation_candidates: dict[str, KnowledgeItem] = {}
+
+    # Identity claims establish same-turn owners before owned propositions are admitted.
+    ordered = sorted(
+        enumerate(claims),
+        key=lambda pair: (0 if pair[1].kind in ("primary_actor", "secondary_actor") else 1, pair[0]),
+    )
+    for _, claim in ordered:
+        admission_status = "REJECTED"
+        rejection_reason = None
+        item = None
+        try:
+            if claim.kind == "external_system":
+                mention = _external_system_from_claim(
+                    claim,
+                    scope,
+                    state.get("turn_count", 0),
+                )
+                valid_evidence, reason = validate_extraction(
+                    KnowledgeItem(
+                        topic=DiscoveryTopic.CORE_WORKFLOW,
+                        scope=scope,
+                        key="downstream_dependency",
+                        value=mention.value,
+                        evidence=mention.evidence,
+                        confidence=mention.confidence,
+                        source_turn=mention.source_turn,
+                    ),
+                    state["messages"][-1].content,
+                    None,
+                )
+                if not valid_evidence:
+                    raise ValueError(reason)
+                external_mentions.append(mention)
+                admission_status = "EXTERNAL_SYSTEM_CANDIDATE"
+                continue
+
+            if claim.kind in ("product_entity", "entity_relationship", "entity_attribute"):
+                concept = _concept_from_claim(
+                    claim,
+                    scope,
+                    state.get("turn_count", 0),
+                    answer_context(state)["question"] or None,
+                )
+                valid_evidence, reason = validate_extraction(
+                    KnowledgeItem(
+                        topic=DiscoveryTopic.CORE_WORKFLOW,
+                        scope=scope,
+                        key="workflow_steps",
+                        value=concept.value,
+                        evidence=concept.evidence,
+                        confidence=concept.confidence,
+                        source_turn=concept.source_turn,
+                    ),
+                    state["messages"][-1].content,
+                    None,
+                )
+                if not valid_evidence:
+                    raise ValueError(reason)
+                concepts.append(concept)
+                admission_status = "CONCEPT"
+                continue
+            item = _admit_claim_item(
+                claim,
+                {**state, "discovered_knowledge": [*state.get("discovered_knowledge", []), *accepted]},
+                scope,
+                primary_roles,
+                secondary_roles,
+            )
+            if item is None:
+                admission_status = "UNCLASSIFIED"
+                continue
+            if item.key == "primary_users" and not item.absence:
+                primary_roles.update(canonical_role(role) for role in item.roles or [])
+            elif item.key == "secondary_users" and not item.absence:
+                secondary_roles.update(canonical_role(role) for role in item.roles or [])
+            if item not in accepted:
+                accepted.append(item)
+            admission_status = "ADMITTED"
+        except (ValidationError, ValueError) as exc:
+            rejection_reason = str(exc)
+            print(f"CLAIM REJECTED: {claim.kind} | {exc} | evidence={claim.evidence!r}")
+        finally:
+            # Observation memory is for founder evidence, not model guesses.
+            # Semantic/canonical admission may fail without losing the statement,
+            # but evidence that cannot be grounded in THIS user response must
+            # never enter durable memory.
+            grounded_evidence = recover_evidence_span(claim.evidence, user_response)
+            if grounded_evidence is None:
+                print(
+                    f"OBSERVATION DROPPED (ungrounded): {claim.kind} | "
+                    f"evidence={claim.evidence!r}"
+                )
+            else:
+                grounded_claim = claim.model_copy(update={"evidence": grounded_evidence})
+                observation = _captured_observation(
+                    grounded_claim,
+                    scope,
+                    state.get("turn_count", 0),
+                    admission_status,
+                    rejection_reason,
+                )
+                observations.append(observation)
+                if admission_status == "ADMITTED" and 'item' in locals() and item is not None:
+                    observation_candidates[observation["id"]] = item
+                print(
+                    f"OBSERVATION STORED: {observation['id']} | "
+                    f"{claim.kind} | {admission_status}"
+                )
+
+    try:
+        grounded_external_systems = ground_external_system_mentions(
+            external_mentions,
+            user_response,
+            state,
+        )
+    except Exception as exc:
+        raise_if_llm_failure(exc)
+        if external_mentions:
+            raise ExtractionFailed("External-system grounding failed") from exc
+        grounded_external_systems = []
+
+    if external_mentions:
+        grounded_signatures = {
+            (
+                mention.name.strip().lower(),
+                mention.value,
+                mention.evidence,
+            )
+            for mention in grounded_external_systems
+        }
+        updated_observations = []
+        for observation in observations:
+            if observation.get("kind") != "external_system":
+                updated_observations.append(observation)
+                continue
+            signature = (
+                str(observation.get("subject") or "").strip().lower(),
+                observation.get("value"),
+                observation.get("evidence"),
+            )
+            updated_observations.append({
+                **observation,
+                "admission_status": (
+                    "GROUNDED_EXTERNAL_SYSTEM"
+                    if signature in grounded_signatures
+                    else "SEMANTIC_REJECTED"
+                ),
+                "rejection_reason": (
+                    None
+                    if signature in grounded_signatures
+                    else "External-system grounding did not support this interpretation"
+                ),
+            })
+        observations = updated_observations
+
+    # Python has validated provenance/schema only. Canonical knowledge facts and
+    # external-system candidates each pass an independent semantic grounding gate.
+    return ExtractedBatch(
+        accepted,
+        grounding_required=True,
+        concepts=concepts,
+        external_systems=grounded_external_systems,
+        observations=observations,
+        observation_candidates=observation_candidates,
+    )
+
+
 def extract_passes(user_response: str, state: AgentState,
+                   scope: DiscoveryScope) -> list[KnowledgeItem]:
+    models = extraction_models()
+    if "CLAIMS" in models:
+        return extract_claims(user_response, state, scope)
+    return _extract_passes_legacy(user_response, state, scope)
+
+
+def _extract_passes_legacy(user_response: str, state: AgentState,
                    scope: DiscoveryScope) -> list[KnowledgeItem]:
     accepted = []
     stored_actors = [item for item in state.get("discovered_knowledge", [])
@@ -541,6 +1504,8 @@ of rules or exclusions. Preserve it in value with its original meaning.
                 valid, reason = validate_extraction(item, user_response, state.get("current_gap"))
                 if not valid:
                     raise ValueError(reason)
+                if isinstance(fact, ActorFact) and not actor_identity_candidate_allowed(fact, state, scope):
+                    raise ValueError("Existing actor cannot be redeclared from non-identity evidence")
                 if isinstance(fact, (OwnedFact, GoalFact)) and item.role:
                     if item.role not in primary + secondary:
                         raise ValueError("Owner is not a confirmed actor")
@@ -615,9 +1580,6 @@ def knowledge_tracker_node(state: AgentState) -> dict:
     print("\n===== KNOWLEDGE TRACKER INPUT =====")
     print("Current topic:", state.get("current_topic"))
     print("Turn:", state.get("turn_count"))
-    print("Incoming topic status:")
-    for topic in DiscoveryTopic:
-        print(f"  {topic.value}: {state.get('topic_status', {}).get(topic)}")
     print("Knowledge count:", len(state.get("discovered_knowledge", [])))
     print("===================================\n")
 
@@ -667,39 +1629,32 @@ def knowledge_tracker_node(state: AgentState) -> dict:
                 promoted.append(replacement)
                 committed_promotions.append(replacement)
             promoted = [item for item in promoted if item not in replaced_absences]
-            print("\n===== TOPIC STATUS MERGE =====")
-            topic_status = dict(state.get("topic_status", {}))
-            if current_topic and topic_status.get(current_topic) != TopicStatus.COMPLETED:
-                topic_status[current_topic] = TopicStatus.PARTIAL
-            topic_status = invalidate_completed_topics(
-                state, promoted,
-                committed_promotions, topic_status)
             return {
                 "discovered_knowledge": promoted,
                 "superseded_knowledge": superseded_knowledge,
-                "topic_status": topic_status,
-                "product_model": build_product_model(promoted, current_scope),
+                "product_model": build_product_model(
+                    promoted,
+                    current_scope,
+                    state.get("product_concepts", []),
+                    state.get("external_systems", []),
+                ),
                 "active_answer_result": answer_receipt(state, committed_promotions, promoted, confirmed_existing=True),
                 "fact_acquisition": acquisition_records(state, promoted, committed_promotions),
                 "extraction_status": "CONFIRMED_EXISTING",
             }
 
-    # When the user says a question was already answered, recover the answer
-    # from earlier human turns rather than pretending the gap is still blank.
-    # We only ask the extractor to recover the current gap, and retain the
-    # original quoted text as evidence for the normal validation pipeline.
+    # An objection such as "I told you already" must not concatenate the
+    # conversation into one synthetic answer. That destroys source provenance
+    # and makes repeated evidence fail the unique-span validator. Durable
+    # captured_observations preserve prior answers for the planner instead.
     recovering_prior_answer = state.get("conversation_intent") == "objection"
-    if recovering_prior_answer:
-        earlier_answers = [
-            message.content for message in messages[:-1]
-            if isinstance(message, HumanMessage)
-        ]
-        if earlier_answers:
-            user_response = "\n".join(earlier_answers)
 
     print(f"Extracting knowledge for topic: {current_topic}, user response: {user_response}")
     closed_answer = None if recovering_prior_answer or confirmed_prior_answer else interpret_closed_answer(state)
     answer_followup = None
+    captured_concepts = []
+    captured_external_systems = []
+    captured_observations = list(state.get("captured_observations", []))
     if closed_answer is not None:
         # The exact generated question defines the choice's meaning. No model
         # inference is involved, and no free-form answer takes this path.
@@ -710,22 +1665,139 @@ def knowledge_tracker_node(state: AgentState) -> dict:
             answer_followup = dict(gap=current_gap, scope=current_scope, question=followup)
     else:
         extracted_items = extract_passes(user_response, state, current_scope)
-        # Never reinterpret historical denials as this turn's answer.
-        absence = None
-        if not recovering_prior_answer and not confirmed_prior_answer:
+        captured_concepts = list(getattr(extracted_items, "concepts", []))
+        captured_external_systems = list(
+            getattr(extracted_items, "external_systems", [])
+        )
+        observation_candidates = dict(
+            getattr(extracted_items, "observation_candidates", {})
+        )
+        captured_observations = merge_captured_observations(
+            captured_observations,
+            list(getattr(extracted_items, "observations", [])),
+        )
+        # Semantic grounding happens BEFORE deciding whether the active inquiry
+        # has been answered. A structurally valid but semantically unsupported
+        # candidate must not suppress the short-answer/absence interpreter.
+        grounding_required = getattr(extracted_items, "grounding_required", True)
+        if grounding_required:
+            before_grounding = list(extracted_items)
+            extracted_items = ground_items(
+                extracted_items, user_response, state, None
+            )
+
+            grounded_candidates = {
+                observation_id
+                for observation_id, candidate in observation_candidates.items()
+                if candidate in extracted_items
+            }
+
+            if observation_candidates:
+                updated_observations = []
+                for observation in captured_observations:
+                    observation_id = observation.get("id")
+                    if observation_id not in observation_candidates:
+                        updated_observations.append(observation)
+                        continue
+                    if observation_id in grounded_candidates:
+                        updated_observations.append({
+                            **observation,
+                            "admission_status": "GROUNDED",
+                            "rejection_reason": None,
+                        })
+                    else:
+                        updated_observations.append({
+                            **observation,
+                            "admission_status": "SEMANTIC_REJECTED",
+                            "rejection_reason": "LLM semantic grounding did not support this canonical interpretation",
+                        })
+                captured_observations = updated_observations
+
+            for rejected in before_grounding:
+                if rejected not in extracted_items:
+                    print(
+                        "CANDIDATE FINAL REJECT (grounding):",
+                        rejected.model_dump(mode="json"),
+                    )
+        else:
+            extracted_items = list(extracted_items)
+            print(
+                f"CLAIM ADMISSION: {len(extracted_items)} fact(s) accepted "
+                "without semantic grounding"
+            )
+
+        # Whole-set actor absence is explicit control-grade founder evidence.
+        # Preserve it deterministically even if the semantic grounding model
+        # omitted/rejected the synthetic candidate. Silence never enters here.
+        explicit_actor_absence = _explicit_additional_actor_absence_item(
+            user_response,
+            current_scope,
+            state.get("turn_count", 0),
+        )
+        if (
+            explicit_actor_absence is not None
+            and not any(
+                item.topic == DiscoveryTopic.USER_ROLES
+                and item.key == "secondary_users"
+                and item.absence
+                for item in extracted_items
+            )
+        ):
+            extracted_items.append(explicit_actor_absence)
+            print(
+                "DETERMINISTIC ACTOR ABSENCE COMMIT CANDIDATE:",
+                explicit_actor_absence.model_dump(mode="json"),
+            )
+
+        # Never reinterpret historical denials as this turn's answer. Only a
+        # SEMANTICALLY GROUNDED direct claim can make the dedicated gap-answer
+        # interpreter unnecessary.
+        policy_gap = (
+            current_topic == DiscoveryTopic.USER_ROLES
+            and (current_gap or "").split("::", 1)[0]
+            in ("multiple_roles", "role_transitions")
+        )
+        direct_claim_answer = bool(
+            current_topic
+            and current_gap
+            and not policy_gap
+            and any(
+                item.topic == current_topic
+                and item_directly_answers_gap(item, current_gap)
+                for item in extracted_items
+            )
+        )
+        if (
+            not recovering_prior_answer
+            and not confirmed_prior_answer
+            and not direct_claim_answer
+        ):
             absence = extract_gap_absence(user_response, state, current_scope)
             if absence:
-                extracted_items.append(absence)
-        before_grounding = list(extracted_items)
-        extracted_items = ground_items(extracted_items, user_response, state, absence)
-        for rejected in before_grounding:
-            if rejected not in extracted_items:
-                print("CANDIDATE FINAL REJECT (grounding):", rejected.model_dump(mode="json"))
+                if grounding_required:
+                    grounded_absence = ground_items(
+                        [absence], user_response, state, absence
+                    )
+                    extracted_items.extend(grounded_absence)
+                    if not grounded_absence:
+                        print(
+                            "CANDIDATE FINAL REJECT (grounding):",
+                            absence.model_dump(mode="json"),
+                        )
+                else:
+                    extracted_items.append(absence)
+    product_concepts = merge_product_concepts(
+        state.get("product_concepts", []),
+        captured_concepts,
+    )
+    external_systems = merge_external_systems(
+        state.get("external_systems", []),
+        captured_external_systems,
+    )
     discovered_knowledge = list(state.get("discovered_knowledge", []))
     if current_gap:
         print(f"ACTIVE ANSWER: gap={current_gap} accepted_facts="
               f"{sum(item.topic == current_topic and item_directly_answers_gap(item, current_gap) for item in extracted_items)}")
-    accepted_topics = set()
     committed_items = []
     direct_answer_items = (facts_for_gap(state, current_topic, current_gap)
                            if confirmed_prior_answer else [])
@@ -771,8 +1843,7 @@ def knowledge_tracker_node(state: AgentState) -> dict:
             replaced = []
             if relation == "correction" and matched in state.get("discovered_knowledge", []):
                 replaced.append(matched)
-            if (state.get("is_correction") or relation in ("correction", "contradiction")
-                    or item.key in ("primary_users", "secondary_users")):
+            if state.get("is_correction") or relation in ("correction", "contradiction"):
                 replaced.extend(correction_targets(item, state.get("discovered_knowledge", []),
                                                   messages[-1].content, semantic_decision))
             for old in replaced:
@@ -801,37 +1872,8 @@ def knowledge_tracker_node(state: AgentState) -> dict:
             superseded_knowledge.extend(supersession_record(old, item) for old in previous_absences)
         committed_items.append(item)
         direct_answer_items.append(item)
-        accepted_topics.add(item.topic)
-    # -----------------------------
-    # Merge topic status
-    # -----------------------------
-    print("\n===== TOPIC STATUS MERGE =====")
-
-    topic_status = dict(state.get("topic_status", {}))
-
-    for topic in accepted_topics:
-        old = topic_status.get(topic)
-
-        print(f"\nTopic: {topic.value}")
-        print(f"  Old status : {old}")
-
-        if old != TopicStatus.COMPLETED:
-            topic_status[topic] = TopicStatus.PARTIAL
-
-        print(f"  New status : {topic_status.get(topic)}")
-
-    topic_status = invalidate_completed_topics(
-        state, discovered_knowledge, committed_items, topic_status)
-
-    print("================================\n")
-
     print("\n===== KNOWLEDGE TRACKER OUTPUT =====")
     print("Current topic:", current_topic)
-    print("Outgoing topic status:")
-
-    for topic in DiscoveryTopic:
-        print(f"  {topic.value}: {topic_status.get(topic)}")
-
     print("Knowledge count:", len(discovered_knowledge))
     print("====================================\n")
 
@@ -839,10 +1881,26 @@ def knowledge_tracker_node(state: AgentState) -> dict:
         "discovered_knowledge": discovered_knowledge,
         "superseded_knowledge": superseded_knowledge,
         "answer_followup": answer_followup,
-        "topic_status": topic_status,
-        "product_model": build_product_model(discovered_knowledge, current_scope),
+        "product_concepts": product_concepts,
+        "external_systems": external_systems,
+        "captured_observations": captured_observations,
+        "product_model": build_product_model(
+            discovered_knowledge,
+            current_scope,
+            product_concepts,
+            external_systems,
+        ),
         "active_answer_result": answer_receipt(state, direct_answer_items, discovered_knowledge,
                                                confirmed_existing=confirmed_prior_answer),
         "fact_acquisition": acquisition_records(state, discovered_knowledge, direct_answer_items),
-        "extraction_status": "SUCCESS" if extracted_items or confirmed_prior_answer else "NO_FACTS_FOUND",
+        "extraction_status": (
+            "SUCCESS"
+            if (
+                extracted_items
+                or captured_concepts
+                or captured_external_systems
+                or confirmed_prior_answer
+            )
+            else "NO_FACTS_FOUND"
+        ),
     }

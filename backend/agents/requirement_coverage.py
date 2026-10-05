@@ -11,7 +11,7 @@ import json
 from typing import Dict, Iterable, List, Sequence
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from agents.discovery_coverage import fact_id
 from agents.llm import get_structured_model
@@ -68,6 +68,21 @@ class RequirementCoverageAssessment(BaseModel):
 
     covered_facets: Dict[str, List[str]] = Field(default_factory=dict)
     not_applicable_facets: Dict[str, List[str]] = Field(default_factory=dict)
+
+    @field_validator("covered_facets", "not_applicable_facets", mode="before")
+    @classmethod
+    def normalize_single_fact_ids(cls, value):
+        """Structured models sometimes emit one fact ID as a scalar string.
+
+        The protocol is semantically unambiguous in that case, so normalize the
+        wire shape instead of spending a repair call or aborting the interview.
+        """
+        if not isinstance(value, dict):
+            return value
+        normalized = {}
+        for facet_id, fact_ids in value.items():
+            normalized[facet_id] = [fact_ids] if isinstance(fact_ids, str) else fact_ids
+        return normalized
 
     @model_validator(mode="after")
     def no_overlap(self):
@@ -325,9 +340,96 @@ A facet is NOT_APPLICABLE only when the supplied facts explicitly establish that
 the facet does not apply. Silence, uncertainty, "I don't know", or lack of detail
 is not NOT_APPLICABLE.
 
-Return fact IDs exactly as supplied. Do not invent IDs. Leave unresolved facets
-out of both mappings. Assess only the target facet IDs.
+Return fact IDs exactly as supplied. Do not invent IDs. EVERY mapping value must
+be a JSON ARRAY of fact-ID strings, even when exactly one fact supports the facet.
+Leave unresolved facets out of both mappings. Assess only the target facet IDs.
 """
+
+
+REQUIREMENT_COVERAGE_REPAIR_INSTRUCTION = """
+The previous requirement-facet assessment was invalid. Repair only the response
+format/protocol. Do not add new product knowledge. Use ONLY the supplied target
+facet IDs and ONLY the supplied confirmed fact IDs. A facet may be omitted when
+the evidence does not establish it. Return no explanation outside the structured
+assessment.
+"""
+
+
+def _normalize_requirement_coverage_assessment(result) -> RequirementCoverageAssessment:
+    return (
+        result
+        if isinstance(result, RequirementCoverageAssessment)
+        else RequirementCoverageAssessment.model_validate(result)
+    )
+
+
+def _validate_requirement_coverage_protocol(
+    requirement: ActiveRequirement,
+    assessment: RequirementCoverageAssessment,
+    target_facets: Sequence[str],
+    allowed_fact_ids: Sequence[str],
+) -> None:
+    outside = (
+        set(assessment.covered_facets)
+        | set(assessment.not_applicable_facets)
+    ) - set(target_facets)
+    if outside:
+        raise ValueError(f"Coverage assessment returned non-target facets: {sorted(outside)}")
+    validate_coverage_assessment(requirement, assessment, allowed_fact_ids)
+
+
+def _assess_requirement_facets_with_repair(
+    payload: dict,
+    requirement: ActiveRequirement,
+    target_facets: Sequence[str],
+    allowed_fact_ids: Sequence[str],
+) -> RequirementCoverageAssessment:
+    messages = [
+        SystemMessage(content=REQUIREMENT_COVERAGE_INSTRUCTION),
+        HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+    ]
+    try:
+        assessment = _normalize_requirement_coverage_assessment(
+            requirement_coverage_assessor().invoke(messages)
+        )
+        _validate_requirement_coverage_protocol(
+            requirement, assessment, target_facets, allowed_fact_ids
+        )
+        return assessment
+    except Exception as first_exc:
+        raise_if_llm_failure(first_exc)
+        print(f"REQUIREMENT COVERAGE REPAIR: {first_exc}")
+
+    repair_payload = {
+        **payload,
+        "repair": {
+            "allowed_target_facets": list(target_facets),
+            "allowed_fact_ids": list(allowed_fact_ids),
+            "instruction": (
+                "Return only supported mappings using these exact IDs. "
+                "Omit any unresolved facet."
+            ),
+        },
+    }
+    try:
+        repaired = _normalize_requirement_coverage_assessment(
+            requirement_coverage_assessor().invoke([
+                SystemMessage(content=(
+                    REQUIREMENT_COVERAGE_INSTRUCTION
+                    + REQUIREMENT_COVERAGE_REPAIR_INSTRUCTION
+                )),
+                HumanMessage(content=json.dumps(repair_payload, ensure_ascii=False)),
+            ])
+        )
+        _validate_requirement_coverage_protocol(
+            requirement, repaired, target_facets, allowed_fact_ids
+        )
+        return repaired
+    except Exception as second_exc:
+        raise_if_llm_failure(second_exc)
+        raise ExtractionFailed(
+            "Requirement facet coverage assessment failed after one repair attempt"
+        ) from second_exc
 
 
 def _latest_question_and_answer(state: AgentState) -> tuple[str, str] | None:
@@ -429,41 +531,32 @@ def assess_selected_requirement_answer(
         if facet.id in target_facets
     }
 
-    try:
-        assessment = requirement_coverage_assessor().invoke([
-            SystemMessage(content=REQUIREMENT_COVERAGE_INSTRUCTION),
-            HumanMessage(content=json.dumps({
-                "question": question,
-                "latest_response": answer,
-                "requirement_id": requirement.id,
-                "requirement": requirement.description or requirement.label,
-                "target_facets": target,
-                "confirmed_facts": supplied_facts,
-            }, ensure_ascii=False)),
-        ])
-        if not isinstance(assessment, RequirementCoverageAssessment):
-            assessment = RequirementCoverageAssessment.model_validate(assessment)
-        outside = (
-            set(assessment.covered_facets)
-            | set(assessment.not_applicable_facets)
-        ) - set(target_facets)
-        if outside:
-            raise ValueError(f"Coverage assessment returned non-target facets: {sorted(outside)}")
+    payload = {
+        "question": question,
+        "latest_response": answer,
+        "requirement_id": requirement.id,
+        "requirement": requirement.description or requirement.label,
+        "target_facets": target,
+        "confirmed_facts": supplied_facts,
+    }
+    assessment = _assess_requirement_facets_with_repair(
+        payload,
+        requirement,
+        target_facets,
+        allowed_ids,
+    )
 
-        existing_payload = coverage.get(requirement_key)
-        existing = (
-            RequirementCoverageRecord.model_validate(existing_payload)
-            if existing_payload else None
-        )
-        record = apply_requirement_coverage_assessment(
-            requirement,
-            knowledge,
-            assessment,
-            existing,
-        )
-    except Exception as exc:
-        raise_if_llm_failure(exc)
-        raise ExtractionFailed("Requirement facet coverage assessment failed") from exc
+    existing_payload = coverage.get(requirement_key)
+    existing = (
+        RequirementCoverageRecord.model_validate(existing_payload)
+        if existing_payload else None
+    )
+    record = apply_requirement_coverage_assessment(
+        requirement,
+        knowledge,
+        assessment,
+        existing,
+    )
 
     updated_coverage = dict(coverage)
     updated_coverage[requirement_key] = record.model_dump(mode="json")
@@ -475,6 +568,162 @@ def assess_selected_requirement_answer(
         )
     })
     return updated_store, updated_coverage
+
+def assess_model_thread_requirement_answers(
+    state: AgentState,
+    store: RequirementStore,
+    coverage: Dict[str, dict],
+) -> tuple[RequirementStore, Dict[str, dict]]:
+    """Let model-driven answers satisfy requirement facets they directly resolve.
+
+    Requirement coverage must not depend on which planner source happened to ask
+    the question. The previous thread plan explicitly identifies requirement IDs
+    whose facets overlap the model-driven frontier; only those requirements are
+    assessed here, keeping the extra semantic work bounded.
+    """
+    if state.get("planner_source") != "model":
+        return store, coverage
+
+    relevant_requirement_ids = set(state.get("thread_relevant_requirement_ids") or [])
+    exchange = _latest_question_and_answer(state)
+    if not relevant_requirement_ids or exchange is None:
+        return store, coverage
+
+    question, answer = exchange
+    knowledge = state.get("discovered_knowledge", [])
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    turn = state.get("turn_count", 0)
+    fact_index = _confirmed_fact_index(knowledge, scope)
+    current_turn_ids = [
+        identity
+        for identity, item in fact_index.items()
+        if item.source_turn == turn
+    ]
+    if not current_turn_ids:
+        return store, coverage
+
+    updated_store = dict(store)
+    updated_coverage = dict(coverage)
+
+    for requirement_key, requirement in list(updated_store.items()):
+        if (
+            requirement.scope != scope
+            or requirement.status != RequirementStatus.ACTIVE
+            or requirement.id not in relevant_requirement_ids
+            or not requirement.facets
+        ):
+            continue
+
+        existing_payload = updated_coverage.get(requirement_key)
+        existing = (
+            RequirementCoverageRecord.model_validate(existing_payload)
+            if existing_payload else None
+        )
+        base_record = reconcile_requirement_coverage_record(
+            requirement,
+            knowledge,
+            existing,
+        )
+        target_facets = [
+            facet.id
+            for facet in requirement.facets
+            if facet.required
+            and (
+                base_record.facets.get(facet.id) is None
+                or base_record.facets[facet.id].state == RequirementFacetState.UNKNOWN
+            )
+        ]
+        if not target_facets:
+            continue
+
+        allowed_ids = list(dict.fromkeys([
+            *candidate_fact_ids(requirement, knowledge),
+            *current_turn_ids,
+        ]))
+        supplied_facts = [
+            {
+                "fact_id": identity,
+                "topic": fact_index[identity].topic.value,
+                "key": fact_index[identity].key,
+                "value": fact_index[identity].value,
+                "evidence": fact_index[identity].evidence,
+                "source_turn": fact_index[identity].source_turn,
+            }
+            for identity in allowed_ids
+            if identity in fact_index
+        ]
+        targets = {
+            facet.id: {
+                "label": facet.label,
+                "description": facet.description,
+            }
+            for facet in requirement.facets
+            if facet.id in target_facets
+        }
+
+        assessment = _assess_requirement_facets_with_repair(
+            {
+                "question": question,
+                "latest_response": answer,
+                "requirement_id": requirement.id,
+                "requirement": requirement.description or requirement.label,
+                "target_facets": targets,
+                "confirmed_facts": supplied_facts,
+                "planner_source": "model",
+                "instruction": (
+                    "Assess whether the model-driven answer directly resolves any "
+                    "of these requirement facets. Planner source does not affect "
+                    "coverage: explicit founder facts count wherever they were elicited."
+                ),
+            },
+            requirement,
+            target_facets,
+            allowed_ids,
+        )
+
+        used_ids = list(dict.fromkeys([
+            identity
+            for mapping in (
+                assessment.covered_facets,
+                assessment.not_applicable_facets,
+            )
+            for ids in mapping.values()
+            for identity in ids
+        ]))
+        if not used_ids:
+            continue
+
+        refs = list(requirement.evidence_refs)
+        seen = {ref.fact_id for ref in refs}
+        for identity in used_ids:
+            if identity in seen or identity not in fact_index:
+                continue
+            seen.add(identity)
+            item = fact_index[identity]
+            refs.append(RequirementEvidenceRef(
+                fact_id=identity,
+                source_turn=item.source_turn,
+                note="grounded answer from model-driven discovery thread",
+            ))
+
+        requirement = requirement.model_copy(update={"evidence_refs": refs})
+        record = apply_requirement_coverage_assessment(
+            requirement,
+            knowledge,
+            assessment,
+            existing,
+        )
+        updated_coverage[requirement_key] = record.model_dump(mode="json")
+        updated_store[requirement_key] = requirement.model_copy(update={
+            "status": (
+                RequirementStatus.RESOLVED
+                if record.status == RequirementCoverageStatus.RESOLVED
+                else RequirementStatus.ACTIVE
+            )
+        })
+
+    return updated_store, updated_coverage
+
 
 def reconcile_requirement_coverage(
     store: RequirementStore,
@@ -528,6 +777,16 @@ def requirement_coverage_node(state: AgentState) -> dict:
     # grounded answer to the selected requirement facets. This never marks the
     # broad parent schema gap resolved.
     store, coverage = assess_selected_requirement_answer(state, store, coverage)
+
+    # Model-driven discovery may answer the same semantic decisions represented
+    # by active requirement facets. Keep both views synchronized so a resolved
+    # decision cannot reappear later only because a different planner source
+    # elicited it.
+    store, coverage = assess_model_thread_requirement_answers(
+        state,
+        store,
+        coverage,
+    )
 
     store, coverage = reconcile_requirement_coverage(
         store,

@@ -1,7 +1,8 @@
 """Source-linked compiler drafts and the application-verified PRD artifact."""
+import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
 
 class StrictModel(BaseModel):
@@ -10,9 +11,25 @@ class StrictModel(BaseModel):
 
 class SourceReference(StrictModel):
     source_fact_ids: list[str] = Field(min_length=1, description="IDs from the supplied confirmed fact snapshot. Never invent IDs.")
-    category: str = Field(description="Exact canonical TOPIC.key, e.g. BUSINESS_RULES.approval_rules. Preserve source meaning.")
+    category: str = Field(
+        description=(
+            "Exact canonical TOPIC.key from the supplied fact taxonomy, e.g. "
+            "BUSINESS_RULES.approval_rules. USER_APP and ADMIN_DASHBOARD are "
+            "scopes, never categories."
+        )
+    )
     actor_ids: list[str] = Field(description="Actors involved, preserving ownership and capacity-specific restrictions; [] for product-wide claims.")
     conditions: list[str] = Field(description="All relevant source conditions, thresholds, exceptions and negations; [] when unconditional.")
+
+    @field_validator("category")
+    @classmethod
+    def category_must_be_canonical_topic_key(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Z][A-Z_]*\.[a-z][a-z0-9_]*", value):
+            raise ValueError(
+                "category must be a canonical TOPIC.key shape; scope labels "
+                "USER_APP/ADMIN_DASHBOARD are never valid categories"
+            )
+        return value
 
 
 class SourcedClaim(SourceReference):
@@ -34,6 +51,15 @@ class FunctionalRequirement(SourceReference):
     id: str = Field(min_length=1, description="Unique requirement ID such as FR-01.")
     description: str = Field(min_length=1)
     validation: str = Field(min_length=1, description="An acceptance criterion entailed by the cited sources, or TBD. Do not add new behavior.")
+
+
+class FeatureSpecification(StrictModel):
+    id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    overview: str = Field(min_length=1)
+    details: list[SourcedClaim] = Field(default_factory=list)
+    requirement_ids: list[str] = Field(default_factory=list)
+    source_fact_ids: list[str] = Field(default_factory=list)
 
 
 class PRDDraft(StrictModel):
@@ -62,6 +88,9 @@ class SourceFact(StrictModel):
     knowledge_state: Literal["CONFIRMED"]
     source_turn: int
     absence: Literal["none", "not_applicable"] | None = None
+    subject: str | None = None
+    relation: str | None = None
+    object: str | None = None
 
 
 class ClaimVerdict(StrictModel):
@@ -81,8 +110,49 @@ class SemanticCategories(StrictModel):
     explanation: str = Field(min_length=1)
 
 
+class PRDProseEdit(StrictModel):
+    claim_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    validation: str | None = None
+
+
+class PRDProseBundle(StrictModel):
+    edits: list[PRDProseEdit] = Field(default_factory=list)
+
+
+class ExternalSystemStatementContract(StrictModel):
+    value: str = Field(min_length=1)
+    evidence: str = Field(min_length=1)
+    source_turn: int
+    relation: str | None = None
+    object: str | None = None
+
+
+class ExternalSystemContract(StrictModel):
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    statements: list[ExternalSystemStatementContract] = Field(default_factory=list)
+
+
+class DeferredDecision(StrictModel):
+    id: str = Field(min_length=1)
+    kind: Literal["decision", "release_scope", "design_implementation"] = "decision"
+    decision: str = Field(min_length=1)
+    evidence: str = Field(min_length=1)
+    source_turn: int
+    resolution_stage: str | None = None
+    owner: str | None = None
+    downstream_consequence: str | None = None
+    requirement_id: str | None = None
+
+
 class PRDContract(PRDDraft):
-    schema_version: Literal["2.0"] = "2.0"
+    schema_version: Literal["2.0", "2.1"] = "2.1"
     discovery_scope: Literal["USER_APP", "ADMIN_DASHBOARD"]
     source_facts: list[SourceFact]
     validation_report: list[ClaimVerdict]
+    external_systems: list[ExternalSystemContract] = Field(default_factory=list)
+    deferred_decisions: list[DeferredDecision] = Field(default_factory=list)
+    feature_specifications: list[FeatureSpecification] = Field(default_factory=list)
+    constraint_source_ids: list[str] = Field(default_factory=list)
+    prose_polished: bool = False

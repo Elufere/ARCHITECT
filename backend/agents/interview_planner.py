@@ -1,21 +1,9 @@
-from agents.state import AgentState, DiscoveryScope, DiscoveryTopic, KnowledgeState, TopicMaturity, TopicStatus
+from agents.state import AgentState, DiscoveryScope, DiscoveryTopic, KnowledgeState
 from agents.role_utils import role_identity, roles_match, split_role_labels
 from agents.discovery_coverage import coverage_key, gap_resolved, facts_for_gap, fact_id, active_question_matches
 from agents.question_candidates import QuestionCandidate
 from agents.requirements import RequirementStatus
 from agents.consistency_validation import DiscoveryValidationIssue, ValidationIssueKind, ValidationResolution
-
-# Topic ordering
-TOPIC_PREREQUISITES = {
-    DiscoveryTopic.USER_ROLES: [],
-    DiscoveryTopic.USER_GOALS: [DiscoveryTopic.USER_ROLES],
-    DiscoveryTopic.CORE_WORKFLOW: [DiscoveryTopic.USER_ROLES, DiscoveryTopic.USER_GOALS],
-    DiscoveryTopic.BUSINESS_RULES: [DiscoveryTopic.CORE_WORKFLOW],
-    DiscoveryTopic.CONSTRAINTS: [DiscoveryTopic.BUSINESS_RULES],
-    DiscoveryTopic.MVP_SCOPE: [DiscoveryTopic.BUSINESS_RULES],
-    DiscoveryTopic.EXCEPTIONS: [DiscoveryTopic.CORE_WORKFLOW, DiscoveryTopic.BUSINESS_RULES],
-    DiscoveryTopic.EDGE_CASES: [DiscoveryTopic.EXCEPTIONS],
-}
 
 # Required knowledge for each topic
 DISCOVERY_TASKS = {
@@ -75,8 +63,11 @@ DISCOVERY_TASKS = {
             "question_hint": "Ask what event starts the process."
         },
         "workflow_steps": {
-            "objective": "Understand the stated normal interaction steps and their sequence.",
-            "question_hint": "Ask the user to describe the workflow from start to finish."
+            "objective": "Understand the meaningful product-level progression of the normal interaction.",
+            "question_hint": (
+                "Ask about one meaningful product action, handoff, decision, or state change at a time. "
+                "Do not request the full workflow and do not ask for button/screen interaction details."
+            )
         },
         "completion_condition": {  
             "objective": "Determine when the workflow is considered complete.",
@@ -210,39 +201,12 @@ PER_ROLE_TASKS = {
 }
 
 INTERNAL_ROLE_TERMS = {
-    "admin", "administrator", "administrators", "support", "moderator",
-    "moderators", "back office", "back-office", "internal staff",
+    "admin", "administrator", "administrators", "support agent", "support agents",
+    "support staff", "support team", "customer support agent", "customer support staff",
+    "moderator", "moderators", "back office", "back-office", "internal staff",
 }
 
 
-
-def assess_topic_maturity(state: AgentState, topic: DiscoveryTopic) -> TopicMaturity:
-    """Assess whether a concept can safely unlock dependent discovery."""
-    known = get_known_keys(state, topic)
-    if not known:
-        return TopicMaturity.UNSEEN
-    # Empty role sets can legitimately waive per-role fields. Completed coverage
-    # must still unlock dependent topics without manufacturing placeholder facts.
-    if not build_gap_info(state, topic)["missing_keys"]:
-        return TopicMaturity.DECISION_READY
-
-    if topic == DiscoveryTopic.CORE_WORKFLOW:
-        required = {"workflow_steps", "completion_condition"}
-        return TopicMaturity.COHERENT if required.issubset(known) else TopicMaturity.SKETCHED
-
-    coherence_requirements = {
-        DiscoveryTopic.USER_ROLES: {"primary_users", "responsibilities"},
-        DiscoveryTopic.USER_GOALS: {"primary_user_goals", "success_criteria"},
-        DiscoveryTopic.BUSINESS_RULES: {"validation_rules", "approval_rules"},
-        DiscoveryTopic.CONSTRAINTS: {"legal_constraints"},
-        DiscoveryTopic.MVP_SCOPE: {"must_have_features"},
-        DiscoveryTopic.EXCEPTIONS: {"user_cancellations", "recovery"},
-        DiscoveryTopic.EDGE_CASES: {"boundary_conditions"},
-    }
-    required = coherence_requirements.get(topic, set())
-    if required and required.issubset(known):
-        return TopicMaturity.COHERENT
-    return TopicMaturity.MENTIONED if len(known) == 1 else TopicMaturity.SKETCHED
 
 def get_roles_in_discovery_order(state: AgentState, topic: DiscoveryTopic) -> list[str]:
     """Keep the founder's role order and defer confirmed internal roles.
@@ -482,27 +446,13 @@ def _validation_plan(state: AgentState, issue: DiscoveryValidationIssue) -> dict
         "relevant_context": context,
         "next_discovery_move": "resolve_contradiction",
         "awaiting_confirmation": False,
+        "prd_confirmation_pending": False,
+        "ready_to_compile": False,
     }
 
 
 def consistency_resolved(state: AgentState) -> bool:
     return not state.get("validation_blocking", False)
-
-
-def _requirement_topic_unlocked(
-    state: AgentState,
-    candidate: QuestionCandidate,
-    topic_maturity: dict,
-) -> bool:
-    prerequisites = TOPIC_PREREQUISITES.get(candidate.topic, [])
-    for dep in prerequisites:
-        maturity = topic_maturity.get(dep)
-        if maturity is None:
-            maturity = assess_topic_maturity(state, dep)
-            topic_maturity[dep] = maturity
-        if maturity not in {TopicMaturity.COHERENT, TopicMaturity.DECISION_READY}:
-            return False
-    return True
 
 
 def _requirement_context(state: AgentState, candidate: QuestionCandidate) -> list[str]:
@@ -564,6 +514,8 @@ def _requirement_plan(state: AgentState, candidate: QuestionCandidate) -> dict:
             else "requirement_discovery"
         ),
         "awaiting_confirmation": False,
+        "prd_confirmation_pending": False,
+        "ready_to_compile": False,
     }
 
 
@@ -575,42 +527,194 @@ def active_requirements_resolved(state: AgentState) -> bool:
     )
 
 
+def all_required_gaps_resolved(state):
+    """Legacy diagnostic only.
+
+    Schema coverage remains useful for reporting/tests, but it no longer controls
+    whether the interview continues or completes.
+    """
+    return all(not build_gap_info(state, topic)["missing_keys"] for topic in DiscoveryTopic)
+
+
 def all_discovery_resolved(state: AgentState) -> bool:
+    if state.get("founder_requested_completion"):
+        return bool(
+            state.get("completion_arbitration_complete")
+            and consistency_resolved(state)
+        )
     return (
-        all_required_gaps_resolved(state)
+        not state.get("open_inquiries", [])
         and active_requirements_resolved(state)
         and consistency_resolved(state)
     )
 
 
-def all_required_gaps_resolved(state):
-    return all(not build_gap_info(state, topic)["missing_keys"] for topic in DiscoveryTopic)
+def _candidate_context(state: AgentState, candidate: QuestionCandidate) -> list[str]:
+    known_ids = set(candidate.known_fact_ids)
+    context = []
+    for item in state.get("discovered_knowledge", []):
+        if fact_id(item) not in known_ids:
+            continue
+        label = f"{item.topic.value}.{item.key}"
+        if item.role:
+            label += f"[{item.role}]"
+        context.append(f"{label}: {item.value}")
+    return context[:12]
+
+
+def _model_plan(state: AgentState, candidate: QuestionCandidate) -> dict:
+    return {
+        "planner_source": "model",
+        "selected_inquiry": candidate.model_dump(mode="json"),
+        "selected_requirement_candidate": None,
+        "selected_requirement_priority": state.get("question_candidate_priority", {}).get(candidate.id),
+        "selected_validation_issue": None,
+        "current_topic": candidate.topic,
+        "current_gap": candidate.anchor_gap,
+        "current_objective": candidate.objective,
+        "question_hint": candidate.question_hint,
+        "current_role": candidate.role,
+        "known_keys": list(get_known_keys(state, candidate.topic)),
+        "missing_keys": [],
+        "inferred_gap_evidence": [],
+        "known_gap_evidence": [],
+        "relevant_context": _candidate_context(state, candidate),
+        "next_discovery_move": (
+            "advance_discovery_thread" if candidate.thread_id
+            else "resolve_model_uncertainty"
+        ),
+        "awaiting_confirmation": False,
+        "prd_confirmation_pending": False,
+        "ready_to_compile": False,
+    }
+
+
+def _requirement_candidate_plan(state: AgentState, candidate: QuestionCandidate) -> dict:
+    plan = _requirement_plan(state, candidate)
+    return {
+        **plan,
+        "selected_inquiry": candidate.model_dump(mode="json"),
+    }
+
+
+def _validation_candidate_plan(state: AgentState, candidate: QuestionCandidate) -> dict:
+    issues = [
+        DiscoveryValidationIssue.model_validate(item)
+        for item in state.get("validation_issues", [])
+    ]
+    issue = next(
+        (
+            item for item in issues
+            if item.severity.value == "BLOCKING"
+            and item.resolution == ValidationResolution.USER_CLARIFICATION
+        ),
+        None,
+    )
+    if issue is None:
+        raise RuntimeError("Validation inquiry is stale; no blocking clarification remains")
+    plan = _validation_plan(state, issue)
+    return {
+        **plan,
+        "selected_inquiry": candidate.model_dump(mode="json"),
+    }
+
+
+def _plan_candidate(state: AgentState, candidate: QuestionCandidate) -> dict:
+    source = getattr(candidate.source, "value", candidate.source)
+    if source == "REQUIREMENT":
+        return _requirement_candidate_plan(state, candidate)
+    if source == "VALIDATION":
+        return _validation_candidate_plan(state, candidate)
+    return _model_plan(state, candidate)
+
+
+def _refresh_inquiry_frontier(state: AgentState) -> tuple[AgentState, dict]:
+    """Rebuild the derived inquiry frontier when planning is invoked directly.
+
+    The graph normally materializes these nodes before the planner. Recomputing
+    here keeps resumed legacy checkpoints and focused callers safe without
+    reintroducing schema traversal.
+    """
+    from agents.inquiries import identify_open_inquiries
+    from agents.question_candidates import (
+        arbitrate_completion_candidates,
+        build_question_candidates,
+        filter_question_candidates,
+    )
+    from agents.question_priority import prioritize_question_candidates
+
+    inquiries = identify_open_inquiries(state)
+    with_inquiries = {
+        **state,
+        "open_inquiries": [item.model_dump(mode="json") for item in inquiries],
+    }
+    candidates = build_question_candidates(with_inquiries)
+    with_candidates = {
+        **with_inquiries,
+        "question_candidates": [item.model_dump(mode="json") for item in candidates],
+    }
+    eligible, decisions = filter_question_candidates(with_candidates, candidates)
+    eligible, decisions, completion_complete = arbitrate_completion_candidates(
+        with_candidates,
+        eligible,
+        decisions,
+    )
+    with_eligible = {
+        **with_candidates,
+        "eligible_question_candidates": [
+            item.model_dump(mode="json") for item in eligible
+        ],
+        "question_candidate_eligibility": {
+            candidate_id: decision.model_dump(mode="json")
+            for candidate_id, decision in decisions.items()
+        },
+    }
+    ranked, scores = prioritize_question_candidates(with_eligible, eligible)
+    updates = {
+        "open_inquiries": with_inquiries["open_inquiries"],
+        "question_candidates": with_candidates["question_candidates"],
+        "eligible_question_candidates": with_eligible["eligible_question_candidates"],
+        "question_candidate_eligibility": with_eligible["question_candidate_eligibility"],
+        "ranked_question_candidates": [
+            item.model_dump(mode="json") for item in ranked
+        ],
+        "question_candidate_priority": {
+            candidate_id: score.model_dump(mode="json")
+            for candidate_id, score in scores.items()
+        },
+        "completion_arbitration_complete": completion_complete,
+    }
+    return {**with_eligible, **updates}, updates
 
 
 def interview_planner_node(state: AgentState) -> dict:
-    # The tracker supplies a receipt only after successful grounding and commit.
-    # Schema-gap coverage and requirement coverage are separate. A requirement
-    # question must never resolve its broad parent schema gap by accident.
+    # Deliberate answer receipts are retained as diagnostics for model-level
+    # inquiries, but schema coverage no longer drives routing or completion.
     coverage = dict(state.get("gap_coverage", {}))
     receipt = state.get("active_answer_result")
-    if state.get("planner_source", "schema") == "schema" and receipt and active_question_matches(state):
+    if state.get("planner_source", "model") in {"model", "schema"} and receipt and active_question_matches(state):
         scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
         topic, gap = state.get("current_topic"), state.get("current_gap")
-        if (receipt["scope"] == scope.value and receipt["topic"] == topic.value
-                and receipt["gap"] == gap and receipt["source_turn"] == state.get("turn_count", 0)):
+        if topic is not None and gap and (
+            receipt["scope"] == scope.value
+            and receipt["topic"] == topic.value
+            and receipt["gap"] == gap
+            and receipt["source_turn"] == state.get("turn_count", 0)
+        ):
             active_ids = {fact_id(item) for item in facts_for_gap(state, topic, gap)}
             if active_ids.intersection(receipt["fact_ids"]):
                 coverage[coverage_key(scope, topic, gap)] = {**receipt, "status": "RESOLVED"}
-                print(f"GAP RESOLVED: {scope.value}.{topic.value}.{gap} | {receipt['resolution']}")
+                print(
+                    f"MODEL INQUIRY RESOLVED: {scope.value}.{topic.value}.{gap} "
+                    f"| {receipt['resolution']}"
+                )
+
     state = {**state, "gap_coverage": coverage, "active_answer_result": None}
-    common = dict(gap_coverage=coverage, active_answer_result=None, awaiting_confirmation=False)
-    topic_status = dict(state.get("topic_status", {}))
-    topic_maturity = dict(state.get("topic_maturity", {}))
-    current_topic = state.get("current_topic")
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+
     print("\n=== INTERVIEW PLANNER ===")
     print("Scope:", scope.value)
-    print("Current topic:", current_topic)
+    print("Mode: model-driven inquiry frontier")
 
     validation_issues = [
         DiscoveryValidationIssue.model_validate(item)
@@ -635,159 +739,65 @@ def interview_planner_node(state: AgentState) -> dict:
         None,
     )
     if clarification is not None:
-        print("\nSelected validation issue:", clarification.id)
+        print("Selected validation issue:", clarification.id)
         return {
-            **common,
-            "topic_status": topic_status,
-            "topic_maturity": topic_maturity,
+            "gap_coverage": coverage,
+            "active_answer_result": None,
+            "selected_inquiry": None,
             **_validation_plan(state, clarification),
         }
 
+    frontier_updates = {}
     ranked = [
         QuestionCandidate.model_validate(item)
         for item in state.get("ranked_question_candidates", [])
     ]
-    askable_ranked = [
-        candidate for candidate in ranked
-        if _requirement_topic_unlocked(state, candidate, topic_maturity)
-    ]
-    if askable_ranked:
-        selected = askable_ranked[0]
-        print("\nSelected requirement:", selected.requirement_id)
-        print("Target facets:", selected.target_facets)
+    if not ranked:
+        state, frontier_updates = _refresh_inquiry_frontier(state)
+        ranked = [
+            QuestionCandidate.model_validate(item)
+            for item in state.get("ranked_question_candidates", [])
+        ]
+
+    if ranked:
+        selected = ranked[0]
+        print("Selected inquiry:", selected.inquiry_id or selected.id)
+        print("Source:", getattr(selected.source, "value", selected.source))
+        if selected.thread_id:
+            print("Thread:", selected.thread_id)
+            print("Decision:", selected.decision_key)
+        if selected.requirement_id:
+            print("Requirement:", selected.requirement_id)
+            print("Target facets:", selected.target_facets)
         return {
-            **common,
-            "topic_status": topic_status,
-            "topic_maturity": topic_maturity,
-            **_requirement_plan(state, selected),
+            **frontier_updates,
+            "gap_coverage": coverage,
+            "active_answer_result": None,
+            **_plan_candidate(state, selected),
         }
 
-    # No requirement candidate is currently askable. Fall back to the schema
-    # planner so foundational discovery can continue and potentially activate or
-    # unblock additional requirements. If the previous move was requirement-driven,
-    # do not let that requirement's topic hijack schema traversal.
-    if state.get("planner_source") == "requirement":
-        current_topic = None
+    completion_ready = bool(
+        state.get("founder_requested_completion")
+        and state.get("completion_arbitration_complete")
+    )
 
-    # Old in-memory/imported status flags are not deliberate coverage records.
-    for topic, status in list(topic_status.items()):
-        if status == TopicStatus.COMPLETED:
-            gaps = build_gap_info(state, DiscoveryTopic(topic))["missing_keys"]
-            if gaps:
-                print(f"=== TOPIC INVALIDATION ===\nTopic: {DiscoveryTopic(topic).value}\n"
-                      f"Old: COMPLETED\nNew: PARTIAL\nreason: deliberate gap coverage is missing\n"
-                      f"new gaps: {', '.join(gaps)}")
-                topic_status[topic] = TopicStatus.PARTIAL
-
-    # --------------------------------------------------------
-    # Stay on current topic, but only if it still has a real gap
-    # --------------------------------------------------------
-    if (
-        current_topic is not None
-        and topic_status.get(current_topic) != TopicStatus.COMPLETED
-    ):
-        maturity = assess_topic_maturity(state, current_topic)
-        topic_maturity[current_topic] = maturity
-        gap = build_gap_info(state, current_topic)
-
-        print("Knowledge present (not coverage):", gap["known_keys"])
-        print("Unresolved discovery gaps:", gap["missing_keys"])
-        print("Current gap:", gap["current_gap"])
-
-        # Maturity unlocks dependent topics; it is not permission to discard
-        # unanswered fields.  The old condition marked a topic COMPLETE as
-        # soon as it became merely coherent, which silently skipped fields
-        # such as role_transitions and permissions.
-        if gap["current_gap"] is not None:
-            return {
-                **common, "planner_source": "schema",
-                "selected_requirement_candidate": None,
-                "selected_requirement_priority": None,
-                "selected_validation_issue": None,
-                "topic_status": topic_status,
-                "current_topic": current_topic,
-                "topic_maturity": topic_maturity,
-                "next_discovery_move": (
-                    "confirm_existing" if gap["known_gap_evidence"] else
-                    "confirm_inference" if gap["inferred_gap_evidence"]
-                    else "deepen_understanding"
-                ),
-                **gap,
-            }
-
-        # No gaps left — mark complete and fall through to pick the next topic
-        # instead of returning a null objective/hint to the generator.
-        topic_status[current_topic] = TopicStatus.COMPLETED
-        current_topic = None
-
-    # --------------------------------------------------------
-    # Find next topic
-    # --------------------------------------------------------
-    for topic in DiscoveryTopic:
-        status = topic_status.get(topic)
-
-        if status == TopicStatus.COMPLETED:
-            continue
-
-        deps = TOPIC_PREREQUISITES.get(topic, [])
-        deps_met = all(
-            topic_maturity.get(dep, TopicMaturity.UNSEEN)
-            in {TopicMaturity.COHERENT, TopicMaturity.DECISION_READY}
-            for dep in deps
+    open_inquiries = state.get("open_inquiries", [])
+    if open_inquiries and not completion_ready:
+        raise RuntimeError(
+            "Open product inquiries exist but none survived candidate eligibility/prioritization"
         )
-        if not deps_met:
-            continue
 
-        updated = dict(topic_status)
-        if status is None:
-            updated[topic] = TopicStatus.IN_PROGRESS
-
-        gap = build_gap_info(state, topic)
-        maturity = assess_topic_maturity(state, topic)
-        topic_maturity[topic] = maturity
-
-        # A topic can be coherent yet still contain required discovery gaps.
-        # Only skip it when every schema-backed gap has been resolved.
-        if gap["current_gap"] is None:
-            topic_status = updated
-            topic_status[topic] = TopicStatus.COMPLETED
-            continue
-
-        print(f"\nSelected topic: {topic.value}")
-        print("Knowledge present (not coverage):", gap["known_keys"])
-        print("Unresolved discovery gaps:", gap["missing_keys"])
-        print("Current gap:", gap["current_gap"])
-
-        return {
-            **common,
-            "planner_source": "schema",
-            "selected_requirement_candidate": None,
-            "selected_requirement_priority": None,
-            "selected_validation_issue": None,
-            "current_topic": topic,
-            "topic_status": updated,
-            "topic_maturity": topic_maturity,
-            "next_discovery_move": (
-                "confirm_existing" if gap["known_gap_evidence"] else
-                "confirm_inference" if gap["inferred_gap_evidence"]
-                else "establish_foundation"
-            ),
-            **gap,
-        }
-
-    # All topics exhausted — persist the completion we just marked above
-    if not all_required_gaps_resolved(state):
-        raise RuntimeError("Discovery still has unresolved required schema gaps; compilation is blocked")
-    if not active_requirements_resolved(state):
+    if not active_requirements_resolved(state) and not completion_ready:
         blocked = [
             requirement.id
             for requirement in state.get("active_requirements", {}).values()
             if requirement.scope == scope and requirement.status == RequirementStatus.ACTIVE
         ]
         raise RuntimeError(
-            "Discovery has unresolved active requirements but none are currently askable: "
+            "Discovery has unresolved active requirements but no askable inquiry: "
             + ", ".join(blocked)
         )
+
     if not consistency_resolved(state):
         details = "; ".join(
             f"{issue.kind.value}: {issue.message}"
@@ -797,14 +807,29 @@ def interview_planner_node(state: AgentState) -> dict:
         raise RuntimeError(
             "Discovery consistency is still unresolved; compilation is blocked: " + details
         )
+
+    print("No material inquiry remains. Founder PRD confirmation is required.")
     return {
-        **common,
-        "planner_source": "schema",
+        **frontier_updates,
+        "gap_coverage": coverage,
+        "active_answer_result": None,
+        "planner_source": "model",
+        "selected_inquiry": None,
         "selected_requirement_candidate": None,
         "selected_requirement_priority": None,
         "selected_validation_issue": None,
         "current_topic": None,
-        "topic_status": topic_status,
-        "topic_maturity": topic_maturity,
-        "awaiting_confirmation": True,
+        "current_gap": None,
+        "current_objective": None,
+        "question_hint": None,
+        "current_role": None,
+        "known_keys": [],
+        "missing_keys": [],
+        "known_gap_evidence": [],
+        "inferred_gap_evidence": [],
+        "relevant_context": [],
+        "next_discovery_move": None,
+        "awaiting_confirmation": False,
+        "prd_confirmation_pending": True,
+        "ready_to_compile": False,
     }

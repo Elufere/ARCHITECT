@@ -15,11 +15,14 @@ from pydantic import BaseModel
 
 from agents.prd_schema import PRDContract
 from agents.requirements import ActiveRequirement
-from agents.state import DiscoveryScope, DiscoveryTopic, KnowledgeItem, TopicMaturity, TopicStatus
+from agents.state import DiscoveryScope, DiscoveryTopic, KnowledgeItem
 
 
-CURSORS = {"conversation_manager", "extract", "resolve_validation_answer", "activate_requirements", "cover_requirements", "resolve_requirements", "validate_consistency", "build_candidates", "filter_candidates", "prioritize_candidates", "plan", "generate", "guardrail", "compile_prd",
-           "waiting", "phase_complete", "completed"}
+CURSORS = {"conversation_manager", "extract", "resolve_validation_answer", "infer_implications",
+           "activate_requirements", "cover_requirements", "resolve_requirements",
+           "validate_consistency", "plan_threads", "identify_inquiries", "build_candidates",
+           "filter_candidates", "prioritize_candidates", "plan", "generate",
+           "guardrail", "request_prd_confirmation", "compile_prd", "waiting", "phase_complete", "completed"}
 
 
 def checkpoint_directory():
@@ -76,19 +79,41 @@ def load_checkpoint(session_id):
     if document.get("version") != 1 or document.get("session_id") != str(UUID(session_id)):
         raise ValueError("Unsupported or mismatched interview checkpoint")
     state = document["state"]
+    had_thread_state = "discovery_threads" in state
     if state.get("checkpoint_cursor") not in CURSORS:
         raise ValueError("Invalid checkpoint processing cursor")
     state["messages"] = messages_from_dict(state.get("messages", []))
     state["discovery_scope"] = DiscoveryScope(state["discovery_scope"])
     if state.get("current_topic"):
         state["current_topic"] = DiscoveryTopic(state["current_topic"])
-    state["topic_status"] = {DiscoveryTopic(key): TopicStatus(value) for key, value in state.get("topic_status", {}).items()}
-    state["topic_maturity"] = {DiscoveryTopic(key): TopicMaturity(value) for key, value in state.get("topic_maturity", {}).items()}
+    # Legacy checkpoints may still contain topic_status/topic_maturity. They are
+    # deliberately discarded: topics are taxonomy labels, not interview state.
+    state.pop("topic_status", None)
+    state.pop("topic_maturity", None)
     state["discovered_knowledge"] = [KnowledgeItem.model_validate(item) for item in state.get("discovered_knowledge", [])]
     state["active_requirements"] = {
         key: ActiveRequirement.model_validate(item)
         for key, item in state.get("active_requirements", {}).items()
     }
+    state.setdefault("product_concepts", [])
+    state.setdefault("external_systems", [])
+    state.setdefault("captured_observations", [])
+    state.setdefault("discovery_boundaries", [])
+    state.setdefault("founder_gap_guidance", [])
+    state.setdefault("awaiting_gap_guidance", False)
+    state.setdefault("model_implications", [])
+    state.setdefault("thread_planning_enabled", True)
+    state.setdefault("discovery_threads", {})
+    state.setdefault("active_discovery_thread", None)
+    state.setdefault("thread_frontier", None)
+    state.setdefault("thread_relevant_requirement_ids", [])
+    if not had_thread_state and state.get("checkpoint_cursor") in {
+        "identify_inquiries", "build_candidates", "filter_candidates",
+        "prioritize_candidates", "plan", "generate", "guardrail",
+    }:
+        # Resume pre-thread checkpoints through the new conversation planner
+        # instead of silently restoring the legacy model frontier.
+        state["checkpoint_cursor"] = "plan_threads"
     state.setdefault("requirement_coverage", {})
     state.setdefault("requirement_dependency_state", {})
     state.setdefault("eligible_requirement_keys", [])
@@ -98,7 +123,11 @@ def load_checkpoint(session_id):
     state.setdefault("ranked_question_candidates", [])
     state.setdefault("question_candidate_priority", {})
     state.setdefault("requirement_question_history", [])
-    state.setdefault("planner_source", "schema")
+    state.setdefault("open_inquiries", [])
+    state.setdefault("selected_inquiry", None)
+    state.setdefault("planner_source", "model")
+    if state.get("planner_source") == "schema":
+        state["planner_source"] = "model"
     state.setdefault("selected_requirement_candidate", None)
     state.setdefault("selected_requirement_priority", None)
     state.setdefault("validation_issues", [])
@@ -106,6 +135,29 @@ def load_checkpoint(session_id):
     state.setdefault("validation_blocking", False)
     state.setdefault("validation_candidate_blocking", False)
     state.setdefault("selected_validation_issue", None)
+    state.setdefault("question_retry_count", 0)
+    state.setdefault("question_retry_exhausted", False)
+    state.setdefault("answer_followup", None)
+    state.setdefault("founder_requested_completion", False)
+    state.setdefault("completion_request_evidence", None)
+    state.setdefault("completion_arbitration_complete", False)
+
+    # Migrate pre-confirmation checkpoints safely. Older planner versions used
+    # awaiting_confirmation as an automatic compile trigger; never treat that
+    # legacy flag as founder approval.
+    legacy_confirmation = bool(state.get("awaiting_confirmation", False))
+    state.setdefault("prd_confirmation_pending", legacy_confirmation)
+    state.setdefault("ready_to_compile", False)
+    if (
+        legacy_confirmation
+        and not state.get("prd_contract")
+        and state.get("checkpoint_cursor") == "compile_prd"
+        and not state.get("ready_to_compile")
+    ):
+        state["checkpoint_cursor"] = "request_prd_confirmation"
+        state["interview_status"] = "AWAITING_PRD_CONFIRMATION"
+    state["awaiting_confirmation"] = False
+
     if state.get("prd_contract"):
         state["prd_contract"] = PRDContract.model_validate(state["prd_contract"])
     if (state.get("answer_followup") or {}).get("scope"):
@@ -163,7 +215,19 @@ def durable_node(name, node, next_node):
             merged["messages"] = add_messages(deepcopy(state.get("messages", [])), update["messages"])
         cursor = next_node(merged)
         status = {"conversation_manager": "PROCESSING_ANSWER", "extract": "PROCESSING_ANSWER",
-                  "resolve_validation_answer": "RESOLVING_DISCOVERY_CONFLICT", "activate_requirements": "PROCESSING_REQUIREMENTS", "cover_requirements": "ASSESSING_REQUIREMENT_COVERAGE", "resolve_requirements": "RESOLVING_REQUIREMENTS", "validate_consistency": "VALIDATING_DISCOVERY_STATE", "build_candidates": "BUILDING_QUESTION_CANDIDATES", "filter_candidates": "FILTERING_QUESTION_CANDIDATES", "prioritize_candidates": "PRIORITIZING_QUESTION_CANDIDATES", "plan": "ACTIVE", "generate": "GENERATING_QUESTION", "guardrail": "VALIDATING_QUESTION",
+                  "resolve_validation_answer": "RESOLVING_DISCOVERY_CONFLICT",
+                  "infer_implications": "INFERRING_PRODUCT_IMPLICATIONS",
+                  "activate_requirements": "PROCESSING_REQUIREMENTS",
+                  "cover_requirements": "ASSESSING_REQUIREMENT_COVERAGE",
+                  "resolve_requirements": "RESOLVING_REQUIREMENTS",
+                  "validate_consistency": "VALIDATING_DISCOVERY_STATE",
+                  "plan_threads": "PLANNING_DISCOVERY_THREAD",
+                  "identify_inquiries": "IDENTIFYING_PRODUCT_INQUIRIES",
+                  "build_candidates": "BUILDING_QUESTION_CANDIDATES",
+                  "filter_candidates": "FILTERING_QUESTION_CANDIDATES",
+                  "prioritize_candidates": "PRIORITIZING_QUESTION_CANDIDATES",
+                  "plan": "ACTIVE", "generate": "GENERATING_QUESTION", "guardrail": "VALIDATING_QUESTION",
+                  "request_prd_confirmation": "AWAITING_PRD_CONFIRMATION",
                   "compile_prd": "COMPILING_PRD", "waiting": "WAITING_FOR_USER",
                   "phase_complete": "AWAITING_PHASE_CHOICE", "completed": "COMPLETED"}[cursor]
         metadata = dict(checkpoint_cursor=cursor, interview_status=status)

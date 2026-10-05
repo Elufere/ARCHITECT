@@ -4,6 +4,7 @@ from __future__ import annotations
 from enum import Enum
 from itertools import combinations
 import json
+import re
 from typing import Dict, Iterable, List, Sequence
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -82,6 +83,12 @@ Do NOT label as contradiction when:
 Examples:
 - "buyers may cancel before approval" and "buyers cannot cancel after approval"
   are compatible.
+- A later state-qualified rule can refine a previously broad answer. Use each
+  fact's source_question and source_turn as interpretation context: if the broad
+  answer was given before a later lifecycle state was introduced, do not call
+  the pair contradictory merely because the newer rule narrows behavior in that
+  newly introduced state. Require explicit evidence that the old rule was meant
+  to apply across that state too.
 - "maximum 5 active requests" and "maximum 10 active requests" for the same actor
   and same conditions are contradictory unless one is explicitly historical or
   scoped differently.
@@ -92,10 +99,27 @@ Use only the supplied facts. Do not use outside domain assumptions.
 Return exactly one verdict for every pair_id. When uncertain, contradiction=false.
 """
 
+FACT_CONFLICT_REPAIR_INSTRUCTION = FACT_CONFLICT_INSTRUCTION + """
+PROTOCOL REPAIR:
+The previous review omitted one or more required pair verdicts. Review ONLY the
+pairs supplied in this repair request.
+
+Return exactly one verdict for every supplied pair_id and no verdicts for any
+other ID. Preserve each pair_id exactly as supplied. Do not summarize, rename,
+merge, or omit pairs. This repair is only for protocol coverage; use the same
+conservative contradiction standard above.
+"""
+
+
 
 # Cross-field pairs where mutually exclusive product decisions can be expressed
 # under different schema keys. The semantic reviewer still decides whether the
 # actual assertions conflict.
+ADDITIVE_FACT_FIELDS = {
+    (DiscoveryTopic.USER_ROLES, "responsibilities"),
+    (DiscoveryTopic.CORE_WORKFLOW, "workflow_steps"),
+}
+
 CROSS_FIELD_CONFLICT_PAIRS = {
     frozenset({
         (DiscoveryTopic.MVP_SCOPE, "must_have_features"),
@@ -135,6 +159,11 @@ def _same_semantic_bucket(first: KnowledgeItem, second: KnowledgeItem) -> bool:
         and first.key == second.key
         and first.knowledge_state == second.knowledge_state == KnowledgeState.CONFIRMED
     ):
+        return False
+    if (first.topic, first.key) in ADDITIVE_FACT_FIELDS:
+        # Independent actions/steps are cumulative. Corrections are handled
+        # during reconciliation; pairwise contradiction review here creates
+        # quadratic model calls without useful signal.
         return False
     if first.topic == DiscoveryTopic.USER_ROLES and first.key in {"primary_users", "secondary_users"}:
         # Actor declarations are field-level membership assertions. Different
@@ -210,6 +239,35 @@ def _deterministic_absence_conflicts(
     return list(unique.values())
 
 
+LIFECYCLE_STATE_TERMS = {
+    "draft", "pending", "active", "approved", "rejected", "cancelled",
+    "canceled", "completed", "closed", "archived", "deleted", "disabled",
+    "expired", "shipped", "funded", "paid", "unpaid",
+}
+
+
+def _explicit_state_terms(item: KnowledgeItem) -> set[str]:
+    # Deterministic compatibility must come from founder assertions themselves.
+    # source_question is useful to the semantic reviewer, but is not product evidence.
+    text = f"{item.value} {item.evidence}".lower()
+    words = set(re.findall(r"[a-z]+", text))
+    return words & LIFECYCLE_STATE_TERMS
+
+
+def _deterministically_disjoint_conditions(
+    first: KnowledgeItem,
+    second: KnowledgeItem,
+) -> bool:
+    """Facts scoped to different explicit lifecycle states are compatible."""
+    first_states = _explicit_state_terms(first)
+    second_states = _explicit_state_terms(second)
+    return bool(
+        first_states
+        and second_states
+        and first_states.isdisjoint(second_states)
+    )
+
+
 def _semantic_pair_candidates(
     knowledge: Sequence[KnowledgeItem],
     scope: DiscoveryScope,
@@ -224,9 +282,43 @@ def _semantic_pair_candidates(
     for first, second in combinations(confirmed, 2):
         if first.value.strip().lower() == second.value.strip().lower():
             continue
+        if _deterministically_disjoint_conditions(first, second):
+            continue
         if _same_semantic_bucket(first, second) or _configured_cross_field_pair(first, second):
             pairs.append((first, second))
     return pairs
+
+
+def _invoke_conflict_review(payload: List[dict], *, repair: bool = False) -> FactConflictBatch:
+    """Run one semantic conflict review while preserving LLM/network failures."""
+    instruction = FACT_CONFLICT_REPAIR_INSTRUCTION if repair else FACT_CONFLICT_INSTRUCTION
+    try:
+        result = conflict_model().invoke([
+            SystemMessage(content=instruction),
+            HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+        ])
+        return (
+            result
+            if isinstance(result, FactConflictBatch)
+            else FactConflictBatch.model_validate(result)
+        )
+    except Exception as exc:
+        raise_if_llm_failure(exc)
+        raise ExtractionFailed(
+            "Fact consistency repair failed" if repair else "Fact consistency review failed"
+        ) from exc
+
+
+def _expected_conflict_verdicts(
+    result: FactConflictBatch,
+    expected_ids: set[str],
+) -> Dict[str, FactConflictVerdict]:
+    """Keep only supplied pair IDs; invented IDs never enter persistent cache."""
+    return {
+        verdict.pair_id: verdict
+        for verdict in result.verdicts
+        if verdict.pair_id in expected_ids
+    }
 
 
 def _review_unknown_pairs(
@@ -250,21 +342,49 @@ def _review_unknown_pairs(
             }
             for first, second in batch
         ]
-        try:
-            result = conflict_model().invoke([
-                SystemMessage(content=FACT_CONFLICT_INSTRUCTION),
-                HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
-            ])
-            if not isinstance(result, FactConflictBatch):
-                result = FactConflictBatch.model_validate(result)
-        except Exception as exc:
-            raise_if_llm_failure(exc)
-            raise ExtractionFailed("Fact consistency review failed") from exc
-
-        by_pair_id = {item.pair_id: item for item in result.verdicts}
         expected = {_pair_id(first, second) for first, second in batch}
-        if set(by_pair_id) != expected:
-            raise ExtractionFailed("Fact consistency review omitted or invented pair verdicts")
+        result = _invoke_conflict_review(payload)
+        by_pair_id = _expected_conflict_verdicts(result, expected)
+
+        missing = expected - set(by_pair_id)
+        unexpected = {
+            verdict.pair_id
+            for verdict in result.verdicts
+            if verdict.pair_id not in expected
+        }
+        if missing or unexpected:
+            print(
+                "FACT CONSISTENCY PROTOCOL MISMATCH: "
+                f"expected={len(expected)} returned_valid={len(by_pair_id)} "
+                f"missing={sorted(missing)} unexpected={sorted(unexpected)}"
+            )
+
+        if missing:
+            payload_by_id = {item["pair_id"]: item for item in payload}
+            repair_payload = [
+                payload_by_id[pair_id]
+                for pair_id in sorted(missing)
+            ]
+            repair_result = _invoke_conflict_review(repair_payload, repair=True)
+            repaired = _expected_conflict_verdicts(repair_result, missing)
+            by_pair_id.update(repaired)
+
+            still_missing = expected - set(by_pair_id)
+            repair_unexpected = {
+                verdict.pair_id
+                for verdict in repair_result.verdicts
+                if verdict.pair_id not in missing
+            }
+            if still_missing or repair_unexpected:
+                print(
+                    "FACT CONSISTENCY REPAIR MISMATCH: "
+                    f"still_missing={sorted(still_missing)} "
+                    f"unexpected={sorted(repair_unexpected)}"
+                )
+            if still_missing:
+                raise ExtractionFailed(
+                    "Fact consistency review omitted required pair verdicts after repair"
+                )
 
         for first, second in batch:
             verdict = by_pair_id[_pair_id(first, second)]

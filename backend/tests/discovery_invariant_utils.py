@@ -56,13 +56,18 @@ def assert_discovery_invariants(state):
             requirement.status == RequirementStatus.ACTIVE and status == "RESOLVED"
         )
 
-    # Every eligible/ranked candidate must point at a live ACTIVE requirement and
-    # must not bypass dependency blocking.
+    # Requirement-sourced candidates must point at a live ACTIVE requirement and
+    # must not bypass dependency blocking. Model and validation inquiries are
+    # intentionally not requirement-backed.
     for bucket in (
         state.get("eligible_question_candidates", []),
         state.get("ranked_question_candidates", []),
     ):
         for candidate in bucket:
+            source = candidate.get("source", "REQUIREMENT")
+            if source != "REQUIREMENT":
+                assert candidate.get("requirement_key") is None
+                continue
             key = candidate["requirement_key"]
             requirement = requirements.get(key)
             assert requirement is not None, f"candidate references missing requirement {key}"
@@ -72,8 +77,11 @@ def assert_discovery_invariants(state):
                 f"candidate bypassed dependency block for {key}"
             )
 
-    # A candidate suppressed by consistency validation must never survive ranking.
+    # Blocking product contradictions suppress ordinary requirement/model depth,
+    # but the clarification itself is a VALIDATION inquiry and may survive.
     if state.get("validation_candidate_blocking"):
-        assert state.get("question_candidates", []) == []
-        assert state.get("eligible_question_candidates", []) == []
-        assert state.get("ranked_question_candidates", []) == []
+        for bucket in (
+            state.get("eligible_question_candidates", []),
+            state.get("ranked_question_candidates", []),
+        ):
+            assert all(candidate.get("source") == "VALIDATION" for candidate in bucket)
