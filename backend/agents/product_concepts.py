@@ -22,6 +22,12 @@ class ProductConceptKind(str, Enum):
     ENTITY = "ENTITY"
     RELATIONSHIP = "RELATIONSHIP"
     ATTRIBUTE = "ATTRIBUTE"
+    OWNERSHIP = "OWNERSHIP"
+    PERSISTENCE = "PERSISTENCE"
+    BOUNDARY = "BOUNDARY"
+    STATE = "STATE"
+    TRANSITION = "TRANSITION"
+    OPERATION_RULE = "OPERATION_RULE"
 
 
 class ProductConcept(BaseModel):
@@ -40,7 +46,7 @@ class ProductConcept(BaseModel):
     def semantic_shape(self):
         if not self.subject.strip():
             raise ValueError("Product concept requires a subject")
-        if self.kind in {ProductConceptKind.RELATIONSHIP, ProductConceptKind.ATTRIBUTE}:
+        if self.kind != ProductConceptKind.ENTITY:
             if not self.relation or not self.relation.strip():
                 raise ValueError(f"{self.kind.value} concept requires relation")
             if not self.object or not self.object.strip():
