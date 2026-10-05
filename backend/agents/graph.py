@@ -95,8 +95,24 @@ def request_prd_confirmation_node(state: AgentState) -> dict:
         )
     if not state.get("prd_confirmation_pending"):
         raise RuntimeError("PRD confirmation was not requested by the planner")
+    deferred_obligations = [
+        item
+        for item in (state.get("founder_obligations", []) or [])
+        if isinstance(item, dict)
+        and item.get("status") == "DEFERRED"
+        and item.get("description")
+    ]
+    prompt = PRD_CONFIRMATION_PROMPT
+    if deferred_obligations:
+        prompt = (
+            "I think we've covered the decisions you chose to resolve now. "
+            "The following founder-requested decisions are still explicitly deferred "
+            "and will be carried into the PRD as open/deferred decisions:\n"
+            + "\n".join(f"- {item['description']}" for item in deferred_obligations)
+            + "\n\nDo you want me to generate the PRD with those decisions left open?"
+        )
     return {
-        "messages": [AIMessage(content=PRD_CONFIRMATION_PROMPT)],
+        "messages": [AIMessage(content=prompt)],
         "ready_to_compile": False,
         "awaiting_confirmation": False,
     }
