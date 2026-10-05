@@ -534,3 +534,158 @@ def test_thread_planner_repairs_malformed_first_structured_response(monkeypatch)
     assert len(calls) == 2
     assert plan.thread_id == "access"
     assert plan.frontier.decision_key == "group_access"
+
+
+
+def _simple_todo_depth_state(*, with_creation_shape=True, material=False):
+    knowledge = [
+        KnowledgeItem(
+            topic=T.USER_ROLES,
+            scope=S.USER_APP,
+            key="primary_users",
+            value="individual user",
+            evidence="individual user",
+            roles=["user"],
+            confidence=1,
+            source_turn=0,
+        ),
+        KnowledgeItem(
+            topic=T.USER_ROLES,
+            scope=S.USER_APP,
+            key="secondary_users",
+            value="none",
+            evidence="There are no other user roles",
+            roles=[],
+            confidence=1,
+            source_turn=0,
+            absence="none",
+        ),
+        KnowledgeItem(
+            topic=T.USER_ROLES,
+            scope=S.USER_APP,
+            key="responsibilities",
+            value="A user can create tasks",
+            evidence="A user can create tasks",
+            role="user",
+            confidence=1,
+            source_turn=0,
+        ),
+    ]
+    if with_creation_shape:
+        knowledge.append(
+            KnowledgeItem(
+                topic=T.BUSINESS_RULES,
+                scope=S.USER_APP,
+                key="validation_rules",
+                value="The task title must not be empty",
+                evidence="The title cannot be empty",
+                confidence=1,
+                source_turn=1,
+            )
+        )
+    if material:
+        knowledge.append(
+            KnowledgeItem(
+                topic=T.CORE_WORKFLOW,
+                scope=S.USER_APP,
+                key="workflow_steps",
+                value="The buyer funds payment before completion",
+                evidence="The buyer funds payment before completion",
+                confidence=1,
+                source_turn=1,
+            )
+        )
+    return {
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": knowledge,
+        "external_systems": [],
+        "captured_observations": [],
+        "discovery_boundaries": [],
+    }
+
+
+def _frontier(decision_key, objective, hint, reason="Unspecified product behavior."):
+    return threads.DiscoveryThreadPlan(
+        thread_id="core_task_management",
+        thread_label="Core task management",
+        thread_objective="Understand the task product.",
+        frontier=threads.ThreadFrontierInquiry(
+            decision_key=decision_key,
+            topic=T.CORE_WORKFLOW,
+            objective=objective,
+            question_hint=hint,
+            reason=reason,
+        ),
+    )
+
+
+def test_one_creation_shape_question_is_allowed_before_shape_is_known():
+    plan = _frontier(
+        "task_creation_details",
+        "Clarify how a user creates a task.",
+        "What information is required when creating a task, and what validation applies?",
+    )
+
+    assert threads._low_signal_crud_depth_frontier(
+        plan,
+        _simple_todo_depth_state(with_creation_shape=False),
+        S.USER_APP,
+    ) is False
+
+
+@pytest.mark.parametrize(
+    "decision_key,objective,hint",
+    [
+        (
+            "task_editing_behavior",
+            "Clarify how users edit tasks.",
+            "What fields can users edit and what validations or restrictions apply?",
+        ),
+        (
+            "historical_effect_of_modifications",
+            "Clarify historical effects of editing.",
+            "Should edits keep history or simply update the task without past versions?",
+        ),
+        (
+            "removal_lifecycle",
+            "Clarify task deletion behavior.",
+            "Should deleted tasks be permanent, archived, or restorable after a grace period?",
+        ),
+        (
+            "task_completion_reversibility",
+            "Clarify completion behavior.",
+            "Can a completed task be reopened or undone after completion?",
+        ),
+        (
+            "task_list_view_behavior",
+            "Clarify how tasks are viewed.",
+            "How should active and completed tasks be displayed and what interactions are available?",
+        ),
+    ],
+)
+def test_low_risk_single_actor_product_rejects_crud_policy_drilling(
+    decision_key,
+    objective,
+    hint,
+):
+    plan = _frontier(decision_key, objective, hint)
+
+    assert threads._low_signal_crud_depth_frontier(
+        plan,
+        _simple_todo_depth_state(),
+        S.USER_APP,
+    ) is True
+
+
+def test_material_payment_context_does_not_trigger_low_risk_crud_suppression():
+    plan = _frontier(
+        "transaction_editing",
+        "Clarify editing after payment.",
+        "Can users edit transaction terms after funding, and what restrictions apply?",
+    )
+
+    assert threads._low_signal_crud_depth_frontier(
+        plan,
+        _simple_todo_depth_state(material=True),
+        S.USER_APP,
+    ) is False
