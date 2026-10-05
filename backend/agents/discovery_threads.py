@@ -24,7 +24,7 @@ from agents.discovery_deferrals import (
 from agents.llm import get_structured_model
 from agents.llm_errors import ExtractionFailed, raise_if_llm_failure
 from agents.state import AgentState, DiscoveryScope, DiscoveryTopic, KnowledgeState, TOPIC_KEY_MAP
-from agents.product_concepts import ProductConcept
+from agents.product_concepts import ProductConcept, ProductConceptKind
 from agents.external_systems import ExternalSystem
 
 
