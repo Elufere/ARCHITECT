@@ -37,6 +37,10 @@ from agents.external_systems import ExternalSystem
 
 logger = logging.getLogger(__name__)
 
+MAX_COMPILE_ATTEMPTS = 3
+COMPILER_MAX_OUTPUT_TOKENS = 8192
+COMPILER_CONTEXT_BUDGET = 65536
+
 structured_llm = get_structured_model(
     call_name="pm_compile.compile",
     schema=PRDDraft,
@@ -46,9 +50,6 @@ structured_llm = get_structured_model(
 audit_llm = get_structured_model(call_name="pm_compile.audit", schema=ClaimVerdict, include_raw=True, max_tokens=1024)
 category_llm = get_structured_model(call_name="pm_compile.classification", schema=SemanticCategories, include_raw=True, max_tokens=1024)
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
-MAX_COMPILE_ATTEMPTS = 3
-COMPILER_MAX_OUTPUT_TOKENS = 8192
-COMPILER_CONTEXT_BUDGET = 65536
 
 
 def _draft_source_references(draft: PRDDraft):
