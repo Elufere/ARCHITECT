@@ -115,11 +115,17 @@ def review_gap_guidance(
                 f"Founder message: {founder_message}"
             )),
         ])
-        return (
+        review = (
             result
             if isinstance(result, GapGuidanceReview)
             else GapGuidanceReview.model_validate(result)
         )
+        if review.is_gap_guidance and not review.unresolved_items:
+            return GapGuidanceReview(
+                is_gap_guidance=False,
+                reason="Gap-guidance verdict named no unresolved items.",
+            )
+        return review
     except Exception as exc:
         raise_if_llm_failure(exc)
         print(f"GAP GUIDANCE REVIEW SKIPPED: {exc}")
@@ -420,9 +426,11 @@ def conversation_manager_node(state: AgentState) -> dict:
             ),
             "",
         )
-        control_updates = apply_deferral(
-            state,
-            FreeTextDeferralReview(
+        control_updates = {
+            **control_updates,
+            **apply_deferral(
+                state,
+                FreeTextDeferralReview(
                 action="defer",
                 primary_control_intent=True,
                 kind=DeferralKind.DESIGN_IMPLEMENTATION,
@@ -434,9 +442,9 @@ def conversation_manager_node(state: AgentState) -> dict:
                 reason=(
                     "Founder explicitly delegated this decision to design or engineering."
                 ),
+                messages[-1].content,
             ),
-            messages[-1].content,
-        )
+        }
 
     # Completion intent has priority over free-text deferral. A founder asking
     # to finish/generate the PRD must never be reinterpreted as "decide later".
@@ -471,11 +479,17 @@ def conversation_manager_node(state: AgentState) -> dict:
                 reason="No explicit postponement/delegation language.",
             )
         if review.action == "defer":
-            control_updates = apply_deferral(state, review, messages[-1].content)
+            control_updates = {
+                **control_updates,
+                **apply_deferral(state, review, messages[-1].content),
+            }
             if review.primary_control_intent:
                 intent = "decision_deferral"
         elif review.action == "reopen":
-            control_updates = apply_reopen(state, review)
+            control_updates = {
+                **control_updates,
+                **apply_reopen(state, review),
+            }
             if review.primary_control_intent:
                 intent = "reopen_deferral"
 
