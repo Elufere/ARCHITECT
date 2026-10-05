@@ -153,7 +153,17 @@ def _entity_for_source(source: SourceFact, entities: tuple[str, ...]) -> str | N
     if source.subject:
         return _singular(source.subject)
 
-    text_words = _words(f"{source.value} {source.evidence}")
+    semantic_text = " ".join(
+        value
+        for value in (
+            source.value,
+            source.subject or "",
+            source.relation or "",
+            source.object or "",
+        )
+        if value
+    )
+    text_words = _words(semantic_text)
     for entity in entities:
         entity_words = _words(entity)
         plural_words = {_singular(word) for word in text_words}
@@ -168,7 +178,19 @@ def _entity_for_source(source: SourceFact, entities: tuple[str, ...]) -> str | N
 
 
 def _family_for_source(source: SourceFact) -> str | None:
-    text = f"{source.value} {source.evidence}"
+    # Group by the source's asserted meaning, never by its evidence span. One
+    # founder sentence can support several atomic facts and may mention unrelated
+    # capabilities; using evidence here would contaminate bundle classification.
+    text = " ".join(
+        value
+        for value in (
+            source.value,
+            source.subject or "",
+            source.relation or "",
+            source.object or "",
+        )
+        if value
+    )
     for family, pattern in CAPABILITY_FAMILIES:
         if pattern.search(text):
             return family
@@ -231,6 +253,72 @@ def _bundle_title(kind: str, entity: str | None, role: str | None) -> str:
     if kind == "rules":
         return "Product Rules & Exceptions"
     return "Core Product Capabilities"
+
+
+def _bundle_overview(
+    kind: str,
+    title: str,
+    entity: str | None,
+    role: str | None,
+    sources: list[SourceFact],
+) -> str:
+    subject = _humanize(entity) if entity else None
+    role_name = _humanize(role) if role else "Users"
+
+    if kind == "entity_core" and subject:
+        has_actions = any(
+            source.topic == "USER_ROLES"
+            and source.key in {"responsibilities", "permissions"}
+            for source in sources
+        )
+        has_model = any(source.topic == "PRODUCT_MODEL" for source in sources)
+        if has_actions and has_model:
+            return (
+                f"Covers how {role_name.lower() if role else 'users'} manage "
+                f"{subject.lower()} records and the confirmed data, states, and "
+                f"rules that define each {subject.lower()}."
+            )
+        if has_actions:
+            return (
+                f"Covers the confirmed actions available for managing "
+                f"{subject.lower()} records."
+            )
+        return (
+            f"Defines the confirmed data, states, relationships, and rules for "
+            f"{subject.lower()} records."
+        )
+
+    if kind == "persistence":
+        noun = f"{subject.lower()} data" if subject else "product data"
+        return (
+            f"Defines how {noun} is retained and made available according to the "
+            f"confirmed persistence and access decisions."
+        )
+    if kind == "authentication":
+        return "Defines the confirmed account access and authentication behavior."
+    if kind == "payments":
+        return "Defines the confirmed payment, billing, and money-movement behavior."
+    if kind == "scheduling":
+        return "Defines the confirmed scheduling and time-based product behavior."
+    if kind == "communication":
+        return "Defines the confirmed communication capabilities and boundaries."
+    if kind == "notifications":
+        return "Defines the confirmed notification and reminder behavior."
+    if kind == "reporting":
+        return "Defines the confirmed reporting, analytics, and insight capabilities."
+    if kind == "submission":
+        return "Defines the confirmed submission and content-handling workflow."
+    if kind == "approval":
+        return "Defines the confirmed review and approval workflow."
+    if kind == "search":
+        return "Defines the confirmed search, filtering, and organization behavior."
+    if kind == "actor_capability":
+        return f"Groups the confirmed product capabilities available to {role_name}."
+    if kind == "workflow":
+        return "Describes the confirmed end-to-end product workflow."
+    if kind == "rules":
+        return "Groups the confirmed product rules, exceptions, and edge-case behavior."
+    return f"Groups the confirmed requirements that make up {title.lower()}."
 
 
 def _join_items(values: list[str]) -> str:
@@ -351,9 +439,12 @@ def build_feature_specifications(
             FeatureSpecification(
                 id=f"FEATURE-{index:02d}",
                 title=title,
-                overview=(
-                    f"Defines the confirmed product behavior, data, and rules for "
-                    f"{title.lower()}."
+                overview=_bundle_overview(
+                    kind,
+                    title,
+                    entity,
+                    role,
+                    sources,
                 ),
                 details=details,
                 requirement_ids=requirement_ids,
