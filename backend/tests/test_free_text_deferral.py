@@ -2,7 +2,10 @@ from uuid import uuid4
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from agents.conversation_manager import conversation_manager_node
+from agents.conversation_manager import (
+    GapGuidanceReview,
+    conversation_manager_node,
+)
 from agents.discovery_deferrals import (
     DeferralKind,
     FreeTextDeferralReview,
@@ -270,3 +273,142 @@ def test_question_candidate_for_active_deferral_is_ineligible():
     assert CandidateBlockReason.EXPLICITLY_DEFERRED_DECISION in decisions[
         candidate.id
     ].reasons
+
+
+
+def test_open_question_list_after_continue_discovery_is_gap_guidance_not_deferral(
+    monkeypatch,
+):
+    state = create_initial_discovery_state(
+        "A personal todo app.",
+        session_id=str(uuid4()),
+    )
+    state["awaiting_gap_guidance"] = True
+    state["prd_confirmation_pending"] = False
+    state["messages"].append(
+        AIMessage(
+            content="Sure. What product decision or area do you want to add or revisit?"
+        )
+    )
+    founder_text = (
+        "What information a task contains — for example, just a title, or title + description.\n"
+        "Whether active and completed tasks are shown together or in separate views/filters.\n"
+        "Whether completed tasks can still be edited or deleted.\n"
+        "What exactly happens on delete — immediate deletion or confirmation first.\n"
+        "How tasks are ordered, if ordering matters at all.\n"
+        "Whether tasks should persist after closing/reopening the app."
+    )
+    state["messages"].append(HumanMessage(content=founder_text))
+    state["turn_count"] = 4
+
+    import agents.conversation_manager as manager
+
+    monkeypatch.setattr(
+        manager,
+        "review_gap_guidance",
+        lambda current, message: GapGuidanceReview(
+            is_gap_guidance=True,
+            contains_product_decisions=False,
+            unresolved_items=[
+                "What information a task should contain",
+                "Whether active and completed tasks need separate views or filters",
+                "Whether completed tasks can still be edited or deleted",
+                "What should happen when a task is deleted",
+                "How tasks should be ordered, if ordering matters",
+                "Whether tasks should persist after closing and reopening the app",
+            ],
+            reason="Founder named unresolved product questions.",
+        ),
+    )
+    monkeypatch.setattr(
+        manager,
+        "review_free_text_deferral",
+        lambda *_: pytest.fail(
+            "Pure gap guidance must not be sent through deferral classification"
+        ),
+    )
+
+    update = conversation_manager_node(state)
+    merged = {**state, **update}
+
+    assert update["conversation_intent"] == "gap_guidance"
+    assert update["awaiting_gap_guidance"] is False
+    assert route_after_conversation_manager(merged) == "plan_threads"
+    assert update.get("discovery_boundaries", state["discovery_boundaries"]) == []
+    assert len(update["founder_gap_guidance"]) == 1
+    guidance = update["founder_gap_guidance"][0]
+    assert guidance["evidence"] == founder_text
+    assert "completed tasks can still be edited or deleted" in " ".join(
+        guidance["items"]
+    ).lower()
+    assert "defer" not in guidance["instruction"].lower()
+
+
+def test_deferral_model_cannot_create_boundary_without_explicit_postponement(
+    monkeypatch,
+):
+    state, key = _state_with_requirement()
+    state["messages"].append(
+        HumanMessage(
+            content=(
+                "Whether completed tasks can still be edited or deleted. "
+                "What exactly happens on delete."
+            )
+        )
+    )
+
+    import agents.conversation_manager as manager
+
+    monkeypatch.setattr(
+        manager,
+        "review_free_text_deferral",
+        lambda current, message: FreeTextDeferralReview(
+            action="defer",
+            primary_control_intent=True,
+            kind=DeferralKind.DECISION,
+            decision_summary="Completed task behavior",
+            reason="Incorrect model verdict.",
+        ),
+    )
+    monkeypatch.setattr(
+        manager,
+        "question_is_clarification",
+        lambda *_: False,
+    )
+
+    update = conversation_manager_node(state)
+
+    assert update["conversation_intent"] == "product_information"
+    assert "discovery_boundaries" not in update
+    assert state["active_requirements"][key].status == RequirementStatus.ACTIVE
+
+
+def test_continue_discovery_sets_gap_guidance_boundary_for_next_founder_turn():
+    state = create_initial_discovery_state(
+        "A personal todo app.",
+        session_id=str(uuid4()),
+    )
+    state["prd_confirmation_pending"] = True
+    state["messages"].append(
+        AIMessage(
+            content=(
+                "I think we've covered the important product decisions.\n\n"
+                "Do you think everything important has been covered before I generate the PRD?"
+            )
+        )
+    )
+    state["messages"].append(
+        HumanMessage(
+            content="There is more I want to cover.",
+            additional_kwargs={"architect_turn_type": "continue_discovery"},
+        )
+    )
+
+    update = conversation_manager_node(state)
+
+    assert update["conversation_intent"] == "continue_discovery"
+    assert update["awaiting_gap_guidance"] is True
+    assert update["prd_confirmation_pending"] is False
+    assert update["messages"][0].content == (
+        "Sure. What product decision or area do you want to add or revisit?"
+    )
