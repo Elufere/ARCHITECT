@@ -18,6 +18,7 @@ from agents.prd_schema import (
     ExternalSystemContract,
     ExternalSystemStatementContract,
     PRDContract,
+    PRDDraft,
     PRDProseBundle,
     SemanticCategories,
 )
@@ -45,7 +46,7 @@ prose_llm = get_structured_model(
     call_name="pm_compile.prose",
     schema=PRDProseBundle,
     include_raw=True,
-    max_tokens=4096,
+    max_tokens=PROSE_MAX_OUTPUT_TOKENS,
 )
 audit_llm = get_structured_model(call_name="pm_compile.audit", schema=ClaimVerdict, include_raw=True, max_tokens=1024)
 category_llm = get_structured_model(call_name="pm_compile.classification", schema=SemanticCategories, include_raw=True, max_tokens=1024)
