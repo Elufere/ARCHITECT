@@ -362,3 +362,49 @@ def build_feature_specifications(
         )
 
     return result
+
+
+
+def validate_feature_specifications(
+    features: list[FeatureSpecification],
+    draft: PRDDraft,
+    model: CanonicalProductModel,
+) -> None:
+    expected_source_ids = {
+        ref
+        for requirement in draft.functional_requirements
+        for ref in requirement.source_fact_ids
+    }
+    requirement_ids = {requirement.id for requirement in draft.functional_requirements}
+    constraint_ids = {source.fact_id for source in model.constraint_sources}
+
+    assigned: list[str] = []
+    for feature in features:
+        if len(feature.source_fact_ids) != len(set(feature.source_fact_ids)):
+            raise ValueError(f"{feature.id}: duplicate source IDs in feature bundle.")
+        if any(ref in constraint_ids for ref in feature.source_fact_ids):
+            raise ValueError(
+                f"{feature.id}: constraint-only source leaked into feature bundle."
+            )
+        if any(req not in requirement_ids for req in feature.requirement_ids):
+            raise ValueError(f"{feature.id}: unknown functional requirement ID.")
+        detail_ids = {
+            ref
+            for detail in feature.details
+            for ref in detail.source_fact_ids
+        }
+        if detail_ids != set(feature.source_fact_ids):
+            raise ValueError(
+                f"{feature.id}: feature details do not exactly cover bundle sources."
+            )
+        assigned.extend(feature.source_fact_ids)
+
+    if len(assigned) != len(set(assigned)):
+        raise ValueError("A functional source was assigned to multiple feature bundles.")
+    if set(assigned) != expected_source_ids:
+        missing = sorted(expected_source_ids - set(assigned))
+        extra = sorted(set(assigned) - expected_source_ids)
+        raise ValueError(
+            "Feature specification coverage does not match functional source ledger: "
+            f"missing={missing}, extra={extra}."
+        )
