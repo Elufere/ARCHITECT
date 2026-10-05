@@ -130,7 +130,7 @@ def build_source_snapshot(state):
             key=key,
             value=concept.value,
             evidence=concept.evidence,
-            source_question=None,
+            source_question=concept.source_question,
             roles=None,
             aliases=None,
             role=None,
