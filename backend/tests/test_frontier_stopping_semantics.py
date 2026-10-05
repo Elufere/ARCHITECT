@@ -385,3 +385,68 @@ def test_completion_ready_can_reach_prd_confirmation_with_nonblocking_backlog(
     assert update["prd_confirmation_pending"] is True
     assert planner.all_discovery_resolved(routed_state) is True
     assert route_after_plan(routed_state) == "request_prd_confirmation"
+
+
+
+def test_generated_question_cannot_jump_to_another_founder_named_gap():
+    from agents.guardrails import founder_gap_objective_drift
+
+    state = {
+        "planner_source": "model",
+        "discovery_scope": SCOPE,
+        "current_objective": (
+            "Clarify whether tasks should persist after closing and reopening the app."
+        ),
+        "question_hint": (
+            "Should tasks remain saved and visible after the user closes and reopens "
+            "the app, or should the task list reset each time?"
+        ),
+        "founder_gap_guidance": [
+            {
+                "scope": SCOPE.value,
+                "items": [
+                    "What exactly happens on delete",
+                    "How tasks are ordered",
+                    "Whether tasks should persist after closing/reopening the app",
+                ],
+            }
+        ],
+    }
+
+    reason = founder_gap_objective_drift(
+        state,
+        "When a user deletes a task, should it delete immediately or ask for confirmation?",
+    )
+
+    assert reason is not None
+    assert "another founder-named open gap" in reason
+
+
+def test_generated_question_allows_selected_founder_gap():
+    from agents.guardrails import founder_gap_objective_drift
+
+    state = {
+        "planner_source": "model",
+        "discovery_scope": SCOPE,
+        "current_objective": (
+            "Clarify whether tasks should persist after closing and reopening the app."
+        ),
+        "question_hint": (
+            "Should tasks remain saved and visible after the user closes and reopens "
+            "the app, or should the task list reset each time?"
+        ),
+        "founder_gap_guidance": [
+            {
+                "scope": SCOPE.value,
+                "items": [
+                    "What exactly happens on delete",
+                    "Whether tasks should persist after closing/reopening the app",
+                ],
+            }
+        ],
+    }
+
+    assert founder_gap_objective_drift(
+        state,
+        "Should tasks remain saved after the user closes and reopens the app?",
+    ) is None
