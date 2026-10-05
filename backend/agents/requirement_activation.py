@@ -25,6 +25,7 @@ class FactCondition:
     require_substantive: bool = True
     value_equals: Optional[str] = None
     value_word_prefixes: tuple[str, ...] = ()
+    value_all_word_prefix_groups: tuple[tuple[str, ...], ...] = ()
     value_excludes_word_prefixes: tuple[str, ...] = ()
 
     def matches(self, item: KnowledgeItem, scope: DiscoveryScope) -> bool:
@@ -48,6 +49,14 @@ class FactCondition:
                 for prefix in self.value_word_prefixes
             ):
                 return False
+        if self.value_all_word_prefix_groups:
+            for group in self.value_all_word_prefix_groups:
+                if not any(
+                    word.startswith(prefix.lower())
+                    for word in words
+                    for prefix in group
+                ):
+                    return False
         if self.value_excludes_word_prefixes:
             if any(
                 word.startswith(prefix.lower())
@@ -349,12 +358,53 @@ LIFECYCLE_ACTIVATION_RULES: tuple[RequirementActivationRule, ...] = (
     ),
     RequirementActivationRule(
         id="lifecycle.modification.v1",
-        description="Explicit edit/update/modify behavior implies lifecycle rules around changes to existing state.",
+        description=(
+            "Modification lifecycle expansion requires both an edit-like action "
+            "and a grounded material-risk/lifecycle signal. Ordinary CRUD editing "
+            "does not create a requirement to interrogate history, authority, or "
+            "state restrictions."
+        ),
         when=(
-            FactCondition(topic=DiscoveryTopic.USER_ROLES, key="responsibilities", value_word_prefixes=("edit", "updat", "modif", "chang")),
-            FactCondition(topic=DiscoveryTopic.USER_ROLES, key="permissions", value_word_prefixes=("edit", "updat", "modif", "chang")),
-            FactCondition(topic=DiscoveryTopic.CORE_WORKFLOW, key="workflow_steps", value_word_prefixes=("edit", "updat", "modif", "chang")),
-            FactCondition(topic=DiscoveryTopic.BUSINESS_RULES, key="ownership_rules", value_word_prefixes=("edit", "updat", "modif", "chang")),
+            FactCondition(
+                topic=DiscoveryTopic.USER_ROLES,
+                key="responsibilities",
+                value_all_word_prefix_groups=(
+                    ("edit", "updat", "modif", "chang", "rename"),
+                    ("fund", "pay", "approv", "authoriz", "permit", "compliance",
+                     "legal", "regulat", "security", "ownership", "contract",
+                     "audit", "histor", "retain", "lock", "escrow"),
+                ),
+            ),
+            FactCondition(
+                topic=DiscoveryTopic.USER_ROLES,
+                key="permissions",
+                value_all_word_prefix_groups=(
+                    ("edit", "updat", "modif", "chang", "rename"),
+                    ("fund", "pay", "approv", "authoriz", "permit", "compliance",
+                     "legal", "regulat", "security", "ownership", "contract",
+                     "audit", "histor", "retain", "lock", "escrow"),
+                ),
+            ),
+            FactCondition(
+                topic=DiscoveryTopic.CORE_WORKFLOW,
+                key="workflow_steps",
+                value_all_word_prefix_groups=(
+                    ("edit", "updat", "modif", "chang", "rename"),
+                    ("fund", "pay", "approv", "authoriz", "permit", "compliance",
+                     "legal", "regulat", "security", "ownership", "contract",
+                     "audit", "histor", "retain", "lock", "escrow"),
+                ),
+            ),
+            FactCondition(
+                topic=DiscoveryTopic.BUSINESS_RULES,
+                key="ownership_rules",
+                value_all_word_prefix_groups=(
+                    ("edit", "updat", "modif", "chang", "rename"),
+                    ("fund", "pay", "approv", "authoriz", "permit", "compliance",
+                     "legal", "regulat", "security", "ownership", "contract",
+                     "audit", "histor", "retain", "lock", "escrow"),
+                ),
+            ),
         ),
         match_all=False,
         activates=(
@@ -376,15 +426,73 @@ LIFECYCLE_ACTIVATION_RULES: tuple[RequirementActivationRule, ...] = (
     ),
     RequirementActivationRule(
         id="lifecycle.removal.v1",
-        description="Explicit delete/disable/archive behavior implies lifecycle rules for removal and historical effects.",
+        description=(
+            "Removal lifecycle expansion is reserved for archive/disable semantics "
+            "or deletion tied to a material-risk/history signal. Ordinary delete/"
+            "remove CRUD actions are already meaningful facts and do not imply "
+            "restoration or retention questions."
+        ),
         when=(
-            # "remove" is intentionally excluded. Ordinary content/list removal
-            # does not by itself imply archival, durable deletion, historical
-            # retention, restoration, or a lifecycle worth interrogating.
-            FactCondition(topic=DiscoveryTopic.USER_ROLES, key="responsibilities", value_word_prefixes=("delet", "disabl", "archiv", "deactiv")),
-            FactCondition(topic=DiscoveryTopic.USER_ROLES, key="permissions", value_word_prefixes=("delet", "disabl", "archiv", "deactiv")),
-            FactCondition(topic=DiscoveryTopic.CORE_WORKFLOW, key="workflow_steps", value_word_prefixes=("delet", "disabl", "archiv", "deactiv")),
-            FactCondition(topic=DiscoveryTopic.BUSINESS_RULES, key="ownership_rules", value_word_prefixes=("delet", "disabl", "archiv", "deactiv")),
+            FactCondition(
+                topic=DiscoveryTopic.USER_ROLES,
+                key="responsibilities",
+                value_word_prefixes=("disabl", "archiv", "deactiv"),
+            ),
+            FactCondition(
+                topic=DiscoveryTopic.USER_ROLES,
+                key="permissions",
+                value_word_prefixes=("disabl", "archiv", "deactiv"),
+            ),
+            FactCondition(
+                topic=DiscoveryTopic.CORE_WORKFLOW,
+                key="workflow_steps",
+                value_word_prefixes=("disabl", "archiv", "deactiv"),
+            ),
+            FactCondition(
+                topic=DiscoveryTopic.BUSINESS_RULES,
+                key="ownership_rules",
+                value_word_prefixes=("disabl", "archiv", "deactiv"),
+            ),
+            FactCondition(
+                topic=DiscoveryTopic.USER_ROLES,
+                key="responsibilities",
+                value_all_word_prefix_groups=(
+                    ("delet",),
+                    ("fund", "pay", "approv", "authoriz", "permit", "compliance",
+                     "legal", "regulat", "security", "ownership", "contract",
+                     "audit", "histor", "retain", "restore", "escrow"),
+                ),
+            ),
+            FactCondition(
+                topic=DiscoveryTopic.USER_ROLES,
+                key="permissions",
+                value_all_word_prefix_groups=(
+                    ("delet",),
+                    ("fund", "pay", "approv", "authoriz", "permit", "compliance",
+                     "legal", "regulat", "security", "ownership", "contract",
+                     "audit", "histor", "retain", "restore", "escrow"),
+                ),
+            ),
+            FactCondition(
+                topic=DiscoveryTopic.CORE_WORKFLOW,
+                key="workflow_steps",
+                value_all_word_prefix_groups=(
+                    ("delet",),
+                    ("fund", "pay", "approv", "authoriz", "permit", "compliance",
+                     "legal", "regulat", "security", "ownership", "contract",
+                     "audit", "histor", "retain", "restore", "escrow"),
+                ),
+            ),
+            FactCondition(
+                topic=DiscoveryTopic.BUSINESS_RULES,
+                key="ownership_rules",
+                value_all_word_prefix_groups=(
+                    ("delet",),
+                    ("fund", "pay", "approv", "authoriz", "permit", "compliance",
+                     "legal", "regulat", "security", "ownership", "contract",
+                     "audit", "histor", "retain", "restore", "escrow"),
+                ),
+            ),
         ),
         match_all=False,
         activates=(
@@ -530,11 +638,112 @@ def reconcile_active_requirements(
     return updated
 
 
+HIGH_MATERIALITY_PATTERN = re.compile(
+    r"\b(?:payment|pay|paid|money|fund|escrow|approval|approve|authoriz|"
+    r"permission|compliance|legal|regulat|security|identity|verification|"
+    r"dispute|contract|ownership|entitlement|audit|retention|retain|"
+    r"external|integration|inventory|capacity)\w*\b",
+    re.I,
+)
+
+LOW_RISK_SUPPRESSED_REQUIREMENTS = {
+    "lifecycle.modification_behavior",
+    "lifecycle.removal_behavior",
+    "lifecycle.state_transition_behavior",
+    "lifecycle.post_completion_behavior",
+}
+
+
+def _low_risk_single_actor_context(state: AgentState, scope: DiscoveryScope) -> bool:
+    knowledge = [
+        item
+        for item in state.get("discovered_knowledge", [])
+        if item.scope == scope and item.knowledge_state == KnowledgeState.CONFIRMED
+    ]
+    primary_roles = {
+        role
+        for item in knowledge
+        if item.topic == DiscoveryTopic.USER_ROLES
+        and item.key == "primary_users"
+        and not item.absence
+        for role in (item.roles or [])
+    }
+    secondary_positive = any(
+        item.topic == DiscoveryTopic.USER_ROLES
+        and item.key == "secondary_users"
+        and not item.absence
+        for item in knowledge
+    )
+    secondary_absent = any(
+        item.topic == DiscoveryTopic.USER_ROLES
+        and item.key == "secondary_users"
+        and item.absence
+        for item in knowledge
+    )
+    role_complexity = any(
+        item.topic == DiscoveryTopic.USER_ROLES
+        and item.key in {"multiple_roles", "role_transitions"}
+        and not item.absence
+        for item in knowledge
+    )
+    material_fact = any(
+        HIGH_MATERIALITY_PATTERN.search(f"{item.value} {item.evidence}")
+        for item in knowledge
+        if not item.absence
+    )
+    external_systems = [
+        item
+        for item in state.get("external_systems", []) or []
+        if getattr(getattr(item, "scope", None), "value", getattr(item, "scope", None))
+        == scope.value
+    ]
+    return bool(
+        len(primary_roles) == 1
+        and secondary_absent
+        and not secondary_positive
+        and not role_complexity
+        and not material_fact
+        and not external_systems
+    )
+
+
+def _suppress_low_risk_lifecycle_requirements(
+    store: RequirementStore,
+    state: AgentState,
+    scope: DiscoveryScope,
+) -> RequirementStore:
+    if not _low_risk_single_actor_context(state, scope):
+        return store
+
+    updated = dict(store)
+    for key, requirement in list(updated.items()):
+        if (
+            requirement.scope == scope
+            and requirement.id in LOW_RISK_SUPPRESSED_REQUIREMENTS
+            and requirement.status == RequirementStatus.ACTIVE
+        ):
+            updated[key] = requirement.model_copy(
+                update={
+                    "status": RequirementStatus.INACTIVE,
+                    "metadata": {
+                        **requirement.metadata,
+                        "suppressed_reason": "low_risk_single_actor_crud",
+                    },
+                }
+            )
+    return updated
+
+
 def requirement_activation_node(state: AgentState) -> dict:
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
     reconciled = reconcile_active_requirements(
         state.get("active_requirements", {}),
         state.get("discovered_knowledge", []),
+        scope,
+    )
+    reconciled = _suppress_low_risk_lifecycle_requirements(
+        reconciled,
+        state,
         scope,
     )
     return {"active_requirements": reconciled}
