@@ -12,6 +12,7 @@ from agents.diagnostic_log import (
     log_messages_since,
     log_state_snapshot,
     session_log_exists,
+    runtime_code_identity,
 )
 
 
@@ -170,3 +171,26 @@ def test_diagnostic_log_contains_state_conversation_and_python_logging(
     assert "Leave this to engineering." in content
     assert "ARCHITECT:" in content
     assert "Understood. I will move on." in content
+
+
+
+def test_diagnostic_session_records_runtime_code_revision(tmp_path, monkeypatch):
+    monkeypatch.setenv("ARCHITECT_LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.setenv("ARCHITECT_GIT_BRANCH", "feature/test-branch")
+    monkeypatch.setenv("ARCHITECT_GIT_SHA", "abc123runtime")
+    monkeypatch.setenv("ARCHITECT_GIT_DIRTY", "no")
+    runtime_code_identity.cache_clear()
+    session_id = str(uuid4())
+
+    with diagnostic_session(
+        session_id,
+        project_id="todo-test-a1b2c3d4",
+        operation="project_initialization",
+    ):
+        print("revision marker")
+
+    content = diagnostic_log_path(session_id).read_text(encoding="utf-8")
+    assert "code_branch: feature/test-branch" in content
+    assert "code_revision: abc123runtime" in content
+    assert "code_dirty: no" in content
+    runtime_code_identity.cache_clear()
