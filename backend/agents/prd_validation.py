@@ -32,6 +32,24 @@ PRODUCT_MODEL_DEFINITIONS = {
     "PRODUCT_MODEL.relationship": (
         "An explicitly stated structural relationship between product entities."
     ),
+    "PRODUCT_MODEL.ownership": (
+        "An explicitly stated ownership or scoping relationship for a product entity."
+    ),
+    "PRODUCT_MODEL.persistence": (
+        "An explicitly stated persistence, storage-location, or cross-device data requirement."
+    ),
+    "PRODUCT_MODEL.boundary": (
+        "An explicitly stated entity-local closed/open set or schema boundary."
+    ),
+    "PRODUCT_MODEL.state": (
+        "An explicitly stated allowed or current state of a product entity."
+    ),
+    "PRODUCT_MODEL.transition": (
+        "An explicitly stated transition or reversal between product entity states."
+    ),
+    "PRODUCT_MODEL.operation_rule": (
+        "Explicit semantics governing an entity operation such as deletion/recovery."
+    ),
 }
 
 
@@ -131,6 +149,12 @@ def build_source_snapshot(state):
             ProductConceptKind.ENTITY: "entity",
             ProductConceptKind.ATTRIBUTE: "attribute",
             ProductConceptKind.RELATIONSHIP: "relationship",
+            ProductConceptKind.OWNERSHIP: "ownership",
+            ProductConceptKind.PERSISTENCE: "persistence",
+            ProductConceptKind.BOUNDARY: "boundary",
+            ProductConceptKind.STATE: "state",
+            ProductConceptKind.TRANSITION: "transition",
+            ProductConceptKind.OPERATION_RULE: "operation_rule",
         }[concept.kind]
         digest = concept_id(concept)[:24]
         source = SourceFact(
@@ -197,8 +221,8 @@ Then check every part of the generated text, name, description, conditions,
 actor_ids and validation criterion. Reject any added or changed behavior.
 Preserve source categories, actor ownership, capacities, thresholds, boundaries,
 polarity, exceptions and qualifiers. Missing a relevant condition also fails.
-PRODUCT_MODEL.entity / PRODUCT_MODEL.attribute / PRODUCT_MODEL.relationship are
-first-class grounded product-model facts. They may support PRD scope, summaries,
+PRODUCT_MODEL categories (entity, attribute, relationship, ownership, persistence,
+boundary, state, transition, operation_rule) are first-class grounded product-model facts. They may support PRD scope, summaries,
 or functional requirements exactly to the extent stated by their evidence; do
 not turn a structural attribute into an unrelated workflow or business rule.
 NARROW OVERLAP RULE: CORE_WORKFLOW.completion_condition and
@@ -227,10 +251,9 @@ hidden context. Return categories actually supported by each assertion. Multiple
 categories may coexist: an explicit ordered actor journey can support both
 responsibilities and workflow_steps. Do not invent additional interpretations.
 An approval rule concerns approving actions; a visibility rule concerns who can
-see information. They are different assertions. When the text explicitly names
-a domain entity, an entity property/state/display/default/order attribute, or a
-structural relationship between entities, include the corresponding
-PRODUCT_MODEL.entity / PRODUCT_MODEL.attribute / PRODUCT_MODEL.relationship
+see information. They are different assertions. When the text explicitly names domain structure, include the most precise
+PRODUCT_MODEL category: entity, attribute, relationship, ownership, persistence,
+boundary, state, transition, or operation_rule
 category as well as any other independently supported semantic category. Product
 model categories describe explicit domain structure; they do not erase an
 overlapping workflow/rule meaning.
