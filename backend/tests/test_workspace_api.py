@@ -243,12 +243,18 @@ def test_workspace_renders_feature_specs_instead_of_raw_requirement_ledger():
         "prose_polished": False,
     })
 
-    sections = _prd_sections(contract)
+    sections = _prd_sections(
+        contract,
+        "A personal todo app for creating and managing tasks.",
+    )
     section_ids = [section.id for section in sections]
 
     assert "overview" in section_ids
     assert "feature_1" in section_ids
     assert "functional_requirements" not in section_ids
+    overview = next(section for section in sections if section.id == "overview")
+    assert overview.title == "Executive Summary"
+    assert "A personal todo app" in overview.body
     feature = next(section for section in sections if section.id == "feature_1")
     assert feature.title == "Feature 1: Task Management"
     assert "User can create tasks." in feature.body
