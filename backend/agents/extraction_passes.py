@@ -243,6 +243,16 @@ proposition.
 
 For every claim:
 - evidence MUST be one exact contiguous, case-sensitive substring of latest_response;
+- when latest_response is a short/contextual answer such as "yes", "no",
+  "delete immediately", "latest to oldest", or a pronoun-led fragment, evidence
+  MUST be copied from latest_response itself. NEVER copy or paraphrase wording
+  from the previous PM question into evidence. The previous question may resolve
+  what the short answer means, but it is source_question context, not evidence.
+- when a coordinated sentence states several actions (for example "create X,
+  edit or delete it, and mark it complete"), each claim may cite the SAME longer
+  exact founder sentence/clause when a shorter exact span would require rewriting
+  a pronoun or omitted noun. Do not reconstruct "edit X" if the founder literally
+  said "edit or delete it".
 - value must preserve only what that evidence states, including conditions/negation;
 - role is REQUIRED for primary_actor, secondary_actor, actor_action,
   authorization_boundary, and desired_outcome. Use one canonical actor ID.
