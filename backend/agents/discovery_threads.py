@@ -21,6 +21,11 @@ from agents.discovery_deferrals import (
     FreeTextDeferralReview,
     apply_deferral,
 )
+from agents.discovery_obligations import (
+    is_open_obligation,
+    open_founder_obligations,
+    reconcile_active_obligation,
+)
 from agents.llm import get_structured_model
 from agents.llm_errors import ExtractionFailed, raise_if_llm_failure
 from agents.state import AgentState, DiscoveryScope, DiscoveryTopic, KnowledgeState, TOPIC_KEY_MAP
@@ -32,6 +37,12 @@ class ThreadStatus(str, Enum):
     ACTIVE = "ACTIVE"
     PAUSED = "PAUSED"
     COMPLETE = "COMPLETE"
+
+
+class PlanExitReason(str, Enum):
+    FRONTIER = "FRONTIER"
+    STOPPING_TEST = "STOPPING_TEST"
+    EXHAUSTED = "EXHAUSTED"
 
 
 class DiscoveryThread(BaseModel):
@@ -47,6 +58,7 @@ class DiscoveryThread(BaseModel):
 
 class ThreadFrontierInquiry(BaseModel):
     decision_key: str = Field(pattern=r"^[a-z0-9][a-z0-9_.-]{1,79}$")
+    obligation_id: Optional[str] = None
     topic: DiscoveryTopic
     anchor_gap: Optional[str] = None
     objective: str
@@ -102,6 +114,7 @@ class DiscoveryThreadPlan(BaseModel):
     relevant_requirement_ids: List[str] = Field(default_factory=list)
     feedback: Optional[ThreadFeedback] = None
     rationale: str = ""
+    exit_reason: PlanExitReason = PlanExitReason.STOPPING_TEST
 
     @field_validator("thread_id", "parent_thread_id", mode="before")
     @classmethod
@@ -110,6 +123,12 @@ class DiscoveryThreadPlan(BaseModel):
             return value
         normalized = re.sub(r"[^a-z0-9_.-]+", "_", value.strip().lower()).strip("_.-")
         return normalized[:80] or None
+
+    @model_validator(mode="after")
+    def normalize_exit_reason(self):
+        if self.frontier is not None and self.exit_reason == PlanExitReason.STOPPING_TEST:
+            self.exit_reason = PlanExitReason.FRONTIER
+        return self
 
 
 _thread_planner = None
@@ -213,27 +232,33 @@ authoritative; requirements are a backlog of decisions, not an interview agenda.
 
 The interview should feel like an excellent human PM conversation:
 
-FOUNDER-NAMED OPEN GAPS:
-The payload may contain founder_gap_guidance. These entries are meta-level
-discovery guidance: areas/questions the founder explicitly says are still
-unresolved. They are NOT confirmed product facts, NOT answers, and NOT deferred
-decisions. Treat them as strong candidates for the next discovery move when they
-remain materially unresolved. Do not claim the founder "established" or "decided"
-anything from them. Do not force low-value/UI/implementation items merely because
-they appear in the list; apply the same stopping/materiality rules. When one is
-already answered by confirmed founder evidence, move to another unresolved item
-or finish.
+FOUNDER-NAMED OPEN DECISIONS:
+The payload contains founder_obligations for decisions/areas the founder explicitly
+said still need to be covered. They are CONTROL STATE, not product facts. An OPEN
+obligation is authoritative about whether work remains: you may choose its order
+relative to other important decisions, but you may NOT silently discard it because
+you consider the detail low-value.
+
+When your frontier is resolving an OPEN obligation, copy its exact id into
+frontier.obligation_id. Keep obligation_id=null for ordinary model-generated
+frontiers. An OPEN obligation remains open until it is answered, explicitly
+deferred/withdrawn, or directly resolved by later confirmed evidence. If an
+obligation is primarily UI/implementation detail, do not interrogate internals;
+ask a product-owner-level disposition question that lets the founder decide it or
+explicitly leave it to design/engineering.
+
+founder_gap_guidance is retained as provenance/history. founder_obligations is the
+authoritative lifecycle state.
 
 STOPPING TEST — apply this BEFORE proposing a frontier:
 Ask whether a competent product/engineering team could implement the founder's
 MVP without inventing a MATERIAL business/product decision. If yes, return
 frontier=null. Do not keep interviewing merely to choose ordinary defaults.
-A missing detail is not automatically a founder decision. Reversible choices
-about history, undo, delete permanence, confirmation prompts, display behavior,
-interaction flow, exact CRUD timing, or other conventional mechanics should
-normally be left to design/engineering unless founder evidence makes them
-material to authorization, money, compliance, multi-party coordination,
-external dependencies, ownership, or another consequential product boundary.
+A missing detail is not automatically a founder decision. Reversible conventional
+mechanics should normally be left to design/engineering unless founder evidence
+makes them materially consequential. This default NEVER closes an OPEN
+founder_obligation: an explicitly requested decision must be answered,
+deferred/withdrawn, or resolved by confirmed evidence before discovery can finish.
 
 1. Start by understanding what CHANGED in the founder's latest answer. The
    payload explicitly identifies facts, product concepts, and grounded external
@@ -710,10 +735,12 @@ frontier before a question is generated.
 Do NOT decide coverage from topical similarity. Separate what is KNOWN from what
 the proposed frontier still asks the founder to supply.
 
-founder_gap_guidance, when supplied, is meta-level founder guidance about
-questions/areas that remain open. It is not evidence that any answer is true.
-Use it only to recognize founder-prioritized unresolved areas. Coverage must still
-come from confirmed facts/observations or the latest direct answer.
+founder_gap_guidance is historical meta-level guidance and is not evidence that
+an answer is true. founder_obligations is the authoritative lifecycle state.
+When proposed_frontier.obligation_id references an OPEN obligation, do not reject
+the frontier merely because the same decision would normally be considered low
+marginal value. Coverage still comes only from confirmed founder evidence or the
+latest direct answer.
 
 Return:
 - supporting_observation_ids: only UNIQUE observation IDs whose founder evidence
@@ -1173,7 +1200,13 @@ def _semantic_frontier_problem(
     if frontier is None:
         return None
 
-    if _low_signal_crud_depth_frontier(plan, state, scope):
+    obligation_frontier = is_open_obligation(
+        state,
+        frontier.obligation_id,
+        scope,
+    )
+
+    if _low_signal_crud_depth_frontier(plan, state, scope) and not obligation_frontier:
         return (
             "LOW_MARGINAL_VALUE: The frontier invents policy depth around an "
             "already-confirmed ordinary content-management action without founder "
@@ -1211,6 +1244,10 @@ def _semantic_frontier_problem(
         },
         "captured_founder_observations": _observation_payload(state, scope),
         "founder_gap_guidance": _gap_guidance_payload(state, scope),
+        "founder_obligations": [
+            item.model_dump(mode="json")
+            for item in open_founder_obligations(state, scope)
+        ],
         "discovery_boundaries": [
             item for item in state.get("discovery_boundaries", [])[-50:]
             if not item.get("scope") or item.get("scope") == scope.value
@@ -1332,13 +1369,13 @@ Do not change the proposed frontier."""),
     }, ensure_ascii=False, indent=2, default=str))
     print("===== END STAGE 4 =====\n")
 
-    if assessment.repeats_rejected_frontier:
+    if assessment.repeats_rejected_frontier and not obligation_frontier:
         return (
             "The proposed frontier repeats an underlying decision that was already "
             "rejected during this planning cycle. Choose a materially different "
             "decision or thread."
         )
-    if assessment.repeats_prior_decision:
+    if assessment.repeats_prior_decision and not obligation_frontier:
         return (
             "The proposed frontier semantically repeats a decision already delivered "
             "in the interview, even though its ID/wording may differ. Prior question: "
@@ -1365,7 +1402,8 @@ Do not change the proposed frontier."""),
             f"is a recap of known information ({support}): {assessment.reason}"
         )
     if (
-        assessment.higher_value_elsewhere
+        not obligation_frontier
+        and assessment.higher_value_elsewhere
         and assessment.best_alternative_value > assessment.current_frontier_value
         and assessment.best_alternative_focus.strip()
     ):
@@ -1375,7 +1413,7 @@ Do not change the proposed frontier."""),
             f"{assessment.best_alternative_focus}. This is a ranking preference, "
             "not a semantic rejection."
         )
-    if assessment.should_move_on:
+    if assessment.should_move_on and not obligation_frontier:
         alternative = (
             f" Possible next area: {assessment.best_alternative_focus}."
             if assessment.best_alternative_focus.strip() else ""
@@ -1400,6 +1438,26 @@ def _plan_problem(
     rejected_frontiers: list[dict] | None = None,
 ) -> str | None:
     frontier = plan.frontier
+    open_obligations = open_founder_obligations(
+        state,
+        state.get("discovery_scope", DiscoveryScope.USER_APP),
+    )
+    if frontier is None and open_obligations:
+        return (
+            "OPEN_FOUNDER_OBLIGATIONS: Explicit founder-requested decisions remain "
+            "unresolved. Select one of them (copy its id to obligation_id), or a "
+            "different high-value frontier while keeping those obligations open. "
+            "Do not return a stopping frontier."
+        )
+    if (
+        frontier is not None
+        and frontier.obligation_id
+        and not any(item.id == frontier.obligation_id for item in open_obligations)
+    ):
+        return (
+            "The frontier references an unknown or already-closed founder obligation. "
+            "Use an exact OPEN founder_obligation id or set obligation_id=null."
+        )
     if (
         frontier is not None
         and plan.feedback is not None
@@ -1484,6 +1542,10 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "confirmed_external_systems": _external_system_payload(state, scope),
         "captured_observations": _observation_payload(state, scope),
         "founder_gap_guidance": _gap_guidance_payload(state, scope),
+        "founder_obligations": [
+            item.model_dump(mode="json")
+            for item in open_founder_obligations(state, scope)
+        ],
         "current_threads": state.get("discovery_threads", {}),
         "active_thread_id": state.get("active_discovery_thread"),
         "delivered_question_history": _history_payload(state),
@@ -1514,9 +1576,11 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
                     "instruction": (
                         "Choose a materially different valid next move when the prior "
                         "problem is a breadth preference. Every item in rejected_frontiers "
-                        "is semantically forbidden for this planning cycle: do not repeat "
-                        "a HARD-rejected item with a new decision_key, narrower wording, "
-                        "or a paraphrase. Choose EXACTLY ONE independently answerable "
+                        "is semantically forbidden for this planning cycle UNLESS it is tied "
+                        "to a still-OPEN founder_obligation. For an OPEN obligation, repair "
+                        "the abstraction/wording without discarding the underlying decision. "
+                        "For other rejected items, do not retry with a new decision_key, "
+                        "narrower wording, or paraphrase. Choose EXACTLY ONE independently answerable "
                         "product decision. Stay on the current thread only when its NEXT "
                         "question is at least as valuable as the best unresolved alternative. "
                         "If the rejected frontier was already covered, repeated in prior "
@@ -1604,6 +1668,54 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
             if rejected not in rejected_frontiers:
                 rejected_frontiers.append(rejected)
 
+    remaining_obligations = open_founder_obligations(state, scope)
+    if remaining_obligations:
+        obligation = remaining_obligations[0]
+        existing_threads = state.get("discovery_threads", {})
+        fallback_thread_id = state.get("active_discovery_thread") or "founder_obligations"
+        existing_thread = existing_threads.get(fallback_thread_id, {})
+        print(
+            "DISCOVERY OBLIGATION FALLBACK: bounded model repair exhausted while "
+            "an explicit founder obligation remains open"
+        )
+        return DiscoveryThreadPlan(
+            thread_id=fallback_thread_id,
+            thread_label=existing_thread.get("label") or "Founder-requested decisions",
+            thread_objective=(
+                existing_thread.get("objective")
+                or "Resolve decisions the founder explicitly asked Architect to cover."
+            ),
+            frontier=ThreadFrontierInquiry(
+                decision_key=f"founder_obligation.{obligation.id[-16:]}",
+                obligation_id=obligation.id,
+                topic=state.get("current_topic") or DiscoveryTopic.CORE_WORKFLOW,
+                objective=obligation.description,
+                question_hint=(
+                    "Ask one focused product-owner question that resolves this explicitly "
+                    f"requested decision: {obligation.description}. If it is primarily "
+                    "design/implementation detail, ask whether the founder wants to decide "
+                    "it now or explicitly defer it."
+                ),
+                reason=(
+                    "The founder explicitly identified this decision as unresolved, so it "
+                    "cannot be silently removed by generic marginal-value heuristics."
+                ),
+                information_gain=0.8,
+                causal_relevance=1.0,
+                conversation_continuity=1.0,
+                architecture_impact=0.6,
+                business_risk=0.5,
+                question_cost=0.1,
+            ),
+            relevant_requirement_ids=[],
+            feedback=captured_feedback,
+            rationale=(
+                "Model repair was exhausted; preserving the explicit founder obligation "
+                "as the next safe discovery frontier."
+            ),
+            exit_reason=PlanExitReason.EXHAUSTED,
+        )
+
     if soft_breadth_fallback is not None:
         if soft_breadth_fallback.feedback is None and captured_feedback is not None:
             soft_breadth_fallback = soft_breadth_fallback.model_copy(
@@ -1652,12 +1764,16 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
             "No model-generated thread frontier survived semantic validation. "
             "Fallback to existing grounded inquiry and requirement candidates."
         ),
+        exit_reason=PlanExitReason.EXHAUSTED,
     )
 
 
 def discovery_thread_node(state: AgentState) -> dict:
     if not state.get("thread_planning_enabled", False):
         return {}
+
+    reconciled_obligations = reconcile_active_obligation(state)
+    state = {**state, "founder_obligations": reconciled_obligations}
 
     if state.get("founder_requested_completion"):
         # Founder closure is a strong stopping preference. Do not invent a fresh
@@ -1681,7 +1797,9 @@ def discovery_thread_node(state: AgentState) -> dict:
             if requirement_id:
                 relevant_requirements.append(requirement_id)
         return {
+            "founder_obligations": reconciled_obligations,
             "thread_frontier": None,
+            "thread_plan_exit_reason": PlanExitReason.STOPPING_TEST.value,
             "thread_relevant_requirement_ids": list(dict.fromkeys(relevant_requirements)),
             "completion_arbitration_complete": False,
             "question_retry_exhausted": False,
@@ -1691,6 +1809,7 @@ def discovery_thread_node(state: AgentState) -> dict:
     # ordinary conversational trajectory is reconsidered.
     if state.get("validation_candidate_blocking") or state.get("answer_followup"):
         return {
+            "founder_obligations": reconciled_obligations,
             "thread_frontier": None,
             "thread_relevant_requirement_ids": [],
         }
@@ -1808,9 +1927,11 @@ def discovery_thread_node(state: AgentState) -> dict:
 
     return {
         **control_updates,
+        "founder_obligations": reconciled_obligations,
         "discovery_threads": threads,
         "active_discovery_thread": plan.thread_id,
         "thread_frontier": frontier,
+        "thread_plan_exit_reason": plan.exit_reason.value,
         "thread_relevant_requirement_ids": list(plan.relevant_requirement_ids),
         "discovery_boundaries": boundaries[-50:],
         "question_retry_exhausted": False,
