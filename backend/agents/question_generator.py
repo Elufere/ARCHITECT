@@ -7,6 +7,7 @@ from agents.product_model import format_product_model
 from agents.discovery_fields import FIELD_DEFINITIONS
 from agents.answer_contract import additional_actors_question
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from agents.conversation_language import message_text
 
 
 SCOPE_RULES = {
@@ -47,9 +48,9 @@ def format_recent_messages(messages: list) -> str:
         if isinstance(msg, SystemMessage):
             continue
         elif isinstance(msg, HumanMessage):
-            formatted_strings.append(f"User: {msg.content}")
+            formatted_strings.append(f"User: {message_text(msg.content)}")
         elif isinstance(msg, AIMessage):
-            formatted_strings.append(f"PM: {msg.content}")
+            formatted_strings.append(f"PM: {message_text(msg.content)}")
 
     return "\n".join(formatted_strings)
 
@@ -691,7 +692,7 @@ OUTPUT
     if planner_source in {"requirement", "model"}:
         latest_founder = next(
             (
-                message.content
+                message_text(message.content)
                 for message in reversed(state.get("messages", []))
                 if isinstance(message, HumanMessage)
             ),
@@ -739,11 +740,17 @@ OUTPUT
     print("===== END STAGE 6 =====\n")
 
     response = chat_llm.invoke(generation_messages)
+    response_text = message_text(response.content)
+    # Keep metadata/usage attached to the original AIMessage while normalizing
+    # provider-specific content blocks for every downstream discovery component.
+    if response.content != response_text:
+        response = response.model_copy(update={"content": response_text})
+
     print("===== DISCOVERY ABSTRACTION DEBUG | STAGE 7: GENERATED QUESTION =====")
     print(json.dumps({
         "current_objective": current_objective,
-        "generated_response": response.content,
+        "generated_response": response_text,
     }, ensure_ascii=False, indent=2, default=str))
     print("===== END STAGE 7 =====\n")
-    print("response:", response.content)
+    print("response:", response_text)
     return {"messages": [response]}
