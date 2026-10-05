@@ -350,6 +350,17 @@ for the user.
 """
 
     if planner_source == "model":
+        obligation_guidance = ""
+        if selected_inquiry.get("obligation_id"):
+            obligation_guidance = """
+FOUNDER-REQUESTED OBLIGATION
+This inquiry exists because the founder explicitly said this decision still needs
+to be covered. Do not apologize for revisiting it and do not silently substitute
+another topic. Ask the smallest founder-facing question that can actually resolve
+the requested decision. If it is primarily design/implementation detail, ask for
+a product-owner disposition (decide now versus explicitly defer) rather than
+interrogating implementation mechanics.
+"""
         model_guidance = f"""
 MODEL-DRIVEN DISCOVERY
 Why this inquiry exists: {selected_inquiry.get('reason', 'The current product model has a material uncertainty.')}
@@ -392,6 +403,7 @@ from X to Y" request, or a combined journey for multiple actors.
 The anchor field below exists only so extraction can normalize the answer.
 It is NOT a checklist item and does not need to be exhaustively completed.
 Ask only what materially resolves the selected product uncertainty.
+{obligation_guidance}
 """
 
     # When in ADMIN_DASHBOARD phase, surface what was learned about the
