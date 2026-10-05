@@ -127,18 +127,27 @@ def project_prd(sources: list[SourceFact]) -> ProjectionResult:
     non_functional: list[SourcedClaim] = []
 
     requirement_index = 1
+    persona_by_actor: dict[str, UserPersona] = {}
+
+    # Create actor shells first so later responsibility facts can enrich the
+    # correct persona deterministically without asking the LLM to join records.
+    for source in visible:
+        if _section_for(source) != "personas":
+            continue
+        persona = _persona(
+            source,
+            secondary=(
+                source.topic == "USER_ROLES"
+                and source.key == "secondary_users"
+            ),
+        )
+        personas.append(persona)
+        for actor_id in persona.actor_ids:
+            persona_by_actor.setdefault(actor_id, persona)
+
     for source in visible:
         section = _section_for(source)
         if section == "personas":
-            personas.append(
-                _persona(
-                    source,
-                    secondary=(
-                        source.topic == "USER_ROLES"
-                        and source.key == "secondary_users"
-                    ),
-                )
-            )
             continue
         if section == "scope.out_of_scope":
             out_of_scope.append(_claim(source))
@@ -153,6 +162,19 @@ def project_prd(sources: list[SourceFact]) -> ProjectionResult:
         if section == "non_functional_constraints":
             non_functional.append(_claim(source))
             continue
+
+        if (
+            source.topic == "USER_ROLES"
+            and source.key in {"responsibilities", "permissions"}
+        ):
+            behavior = _claim(source)
+            for actor_id in source_actor_ids(source):
+                persona = persona_by_actor.get(actor_id)
+                if persona is not None and all(
+                    behavior.source_fact_ids != existing.source_fact_ids
+                    for existing in persona.key_behaviors
+                ):
+                    persona.key_behaviors.append(behavior.model_copy(deep=True))
 
         functional.append(
             FunctionalRequirement(
@@ -212,6 +234,14 @@ def claim_slots(draft: PRDDraft) -> list[dict]:
             "category": persona.category,
             "source_fact_ids": persona.source_fact_ids,
         })
+        for behavior_index, behavior in enumerate(persona.key_behaviors):
+            slots.append({
+                "claim_id": f"personas/{index}/key_behaviors/{behavior_index}",
+                "text": behavior.text,
+                "validation": None,
+                "category": behavior.category,
+                "source_fact_ids": behavior.source_fact_ids,
+            })
     for requirement in draft.functional_requirements:
         slots.append({
             "claim_id": f"functional_requirements/{requirement.id}",
@@ -253,6 +283,12 @@ def apply_prose_edits(draft: PRDDraft, edits) -> PRDDraft:
         edit = by_id.get(f"personas/{index}")
         if edit:
             persona.description = edit.text.strip()
+        for behavior_index, behavior in enumerate(persona.key_behaviors):
+            behavior_edit = by_id.get(
+                f"personas/{index}/key_behaviors/{behavior_index}"
+            )
+            if behavior_edit:
+                behavior.text = behavior_edit.text.strip()
     for requirement in result.functional_requirements:
         edit = by_id.get(f"functional_requirements/{requirement.id}")
         if edit:
