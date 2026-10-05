@@ -212,6 +212,18 @@ product-manager interview. You do not create product facts. Confirmed facts are
 authoritative; requirements are a backlog of decisions, not an interview agenda.
 
 The interview should feel like an excellent human PM conversation:
+
+STOPPING TEST — apply this BEFORE proposing a frontier:
+Ask whether a competent product/engineering team could implement the founder's
+MVP without inventing a MATERIAL business/product decision. If yes, return
+frontier=null. Do not keep interviewing merely to choose ordinary defaults.
+A missing detail is not automatically a founder decision. Reversible choices
+about history, undo, delete permanence, confirmation prompts, display behavior,
+interaction flow, exact CRUD timing, or other conventional mechanics should
+normally be left to design/engineering unless founder evidence makes them
+material to authorization, money, compliance, multi-party coordination,
+external dependencies, ownership, or another consequential product boundary.
+
 1. Start by understanding what CHANGED in the founder's latest answer. The
    payload explicitly identifies facts, product concepts, and grounded external
    systems captured on the latest turn. Treat that as strong continuity context,
@@ -764,6 +776,15 @@ those details are unspecified. In that situation set should_move_on=true and
 material_product_consequence=false. The product can still be represented in a
 PRD without those invented policy decisions.
 
+For low-risk, single-actor products with no positive secondary actors, external
+systems, money movement, authorization/compliance/security boundary, or other
+material-risk signal, be especially conservative. After the core entity shape
+and core capabilities are clear, ordinary CRUD policy differences are normally
+safe implementation/design defaults rather than founder questions. Do not call
+"data integrity" or "user experience" a material product consequence by itself.
+A material consequence must change the product contract, not merely the code or
+screen behavior.
+
 A thread is coherent enough to pause when its governing product shape can be
 represented without guessing: the important actors/entities, the core relation
 or rule, and the material state/decision currently being discussed are clear
@@ -817,24 +838,115 @@ Unknown does not mean worth asking.
 
 
 CRUD_ACTION_PATTERN = re.compile(
-    r"\b(?:create|add|remove|edit|rename|mark|view|check|uncheck)\w*\b",
+    r"\b(?:create|add|remove|delete|edit|update|rename|mark|complete|view|"
+    r"check|uncheck|archive|restore|reopen)\w*\b",
     re.I,
 )
 CRUD_DEPTH_PATTERN = re.compile(
-    r"\b(?:rules?|restrictions?|conditions?|limits?|undo|restore|restoration|"
-    r"recover|recovery|permanent(?:ly)?|history|historical|retention|retain|"
-    r"archive|archived|lock|locked|confirmation|confirm|after\s+completion|"
-    r"completed\s+(?:state|list|item))\b",
+    r"\b(?:rules?|restrictions?|conditions?|constraints?|limits?|validations?|"
+    r"fields?|information|attributes?|special\s+behavio[u]?rs?|undo|restore|"
+    r"restoration|recover|recovery|permanent(?:ly)?|grace\s+period|history|"
+    r"historical|retention|retain|archive|archived|lock|locked|confirmation|"
+    r"confirm|reopen|revers(?:e|ible|ibility)|side\s+effects?|additional\s+"
+    r"behavio[u]?r|what\s+happens\s+next|display|interactions?|after\s+"
+    r"completion|completed\s+(?:state|list|item|task))\b",
     re.I,
 )
-MATERIAL_DEPTH_SIGNAL_PATTERN = re.compile(
-    r"\b(?:archive|archived|delete|deleted|deletion|disable|disabled|"
-    r"restore|restoration|history|historical|retain|retention|irreversible|"
-    r"approval|permission|only\s+.*\s+can|cannot|can't|must\s+not|"
-    r"compliance|legal|regulat|security|locked|lock|active\s+state|"
-    r"completed\s+(?:state|list)|undo)\b",
+CREATION_SHAPE_PATTERN = re.compile(
+    r"\b(?:create|creation|add)\w*\b.*\b(?:field|information|attribute|"
+    r"provide|enter|required|validation)\w*\b",
     re.I,
 )
+MATERIAL_COMPLEXITY_PATTERN = re.compile(
+    r"\b(?:payment|pay|paid|money|fund|escrow|approval|approve|authoriz|"
+    r"permission|compliance|legal|regulat|security|identity|verification|"
+    r"dispute|contract|ownership|entitlement|audit|retention|retain|"
+    r"external|integration|inventory|capacity)\w*\b",
+    re.I,
+)
+
+
+def _low_risk_single_actor_context(
+    state: AgentState,
+    scope: DiscoveryScope,
+) -> bool:
+    knowledge = [
+        item
+        for item in state.get("discovered_knowledge", [])
+        if item.scope == scope
+        and item.knowledge_state == KnowledgeState.CONFIRMED
+    ]
+    primary_roles = {
+        role
+        for item in knowledge
+        if item.topic == DiscoveryTopic.USER_ROLES
+        and item.key == "primary_users"
+        and not item.absence
+        for role in (item.roles or [])
+    }
+    secondary_positive = any(
+        item.topic == DiscoveryTopic.USER_ROLES
+        and item.key == "secondary_users"
+        and not item.absence
+        for item in knowledge
+    )
+    secondary_absent = any(
+        item.topic == DiscoveryTopic.USER_ROLES
+        and item.key == "secondary_users"
+        and item.absence
+        for item in knowledge
+    )
+    role_complexity = any(
+        item.topic == DiscoveryTopic.USER_ROLES
+        and item.key in {"multiple_roles", "role_transitions"}
+        and not item.absence
+        for item in knowledge
+    )
+    material_fact = any(
+        MATERIAL_COMPLEXITY_PATTERN.search(f"{item.value} {item.evidence}")
+        for item in knowledge
+        if not item.absence
+    )
+    external_systems = [
+        item
+        for item in state.get("external_systems", []) or []
+        if getattr(getattr(item, "scope", None), "value", getattr(item, "scope", None))
+        == scope.value
+    ]
+    return bool(
+        len(primary_roles) == 1
+        and secondary_absent
+        and not secondary_positive
+        and not role_complexity
+        and not material_fact
+        and not external_systems
+    )
+
+
+def _creation_shape_already_known(
+    state: AgentState,
+    scope: DiscoveryScope,
+) -> bool:
+    for item in state.get("discovered_knowledge", []):
+        if (
+            item.scope != scope
+            or item.knowledge_state != KnowledgeState.CONFIRMED
+            or item.absence
+        ):
+            continue
+        text = f"{item.value} {item.evidence}".lower()
+        if (
+            item.key == "validation_rules"
+            or (
+                item.key in {"responsibilities", "workflow_steps", "must_have_features"}
+                and re.search(
+                    r"\b(?:provide|enter|required|field|title|name|attribute)\w*\b",
+                    text,
+                )
+            )
+        ):
+            return True
+    return False
 
 
 def _low_signal_crud_depth_frontier(
@@ -842,7 +954,7 @@ def _low_signal_crud_depth_frontier(
     state: AgentState,
     scope: DiscoveryScope,
 ) -> bool:
-    """Reject speculative policy depth around an already-known ordinary action."""
+    """Reject founder interrogation about ordinary CRUD defaults in simple products."""
     frontier = plan.frontier
     if frontier is None:
         return False
@@ -855,19 +967,18 @@ def _low_signal_crud_depth_frontier(
     ):
         return False
 
-    founder_text = " ".join(
-        item.value + " " + item.evidence
-        for item in state.get("discovered_knowledge", [])
-        if item.scope == scope
-        and item.knowledge_state == KnowledgeState.CONFIRMED
-    )
-    founder_text += " " + " ".join(
-        str(item.get("evidence") or "")
-        for item in state.get("captured_observations", [])
-        if item.get("scope") == scope.value
-        and item.get("admission_status") != "SEMANTIC_REJECTED"
-    )
-    return MATERIAL_DEPTH_SIGNAL_PATTERN.search(founder_text) is None
+    # One creation/entity-shape question can be material: the team may genuinely
+    # need to know what object the founder is asking them to create. Once creation
+    # shape/validation is known, do not mirror the same checklist across edit,
+    # delete, completion, history, and display behavior.
+    if (
+        CREATION_SHAPE_PATTERN.search(proposal)
+        and not _creation_shape_already_known(state, scope)
+    ):
+        return False
+
+    return _low_risk_single_actor_context(state, scope)
+
 
 
 def _semantic_frontier_problem(
