@@ -769,3 +769,193 @@ def test_founder_gap_guidance_payload_preserves_open_questions_as_control_only()
 
     assert payload == state["founder_gap_guidance"]
     assert "edited or deleted" in payload[0]["items"][0]
+
+
+
+def _todo_completion_state(*, include_goal=False, include_title=False):
+    facts = [
+        KnowledgeItem(
+            topic=T.USER_ROLES,
+            scope=S.USER_APP,
+            key="primary_users",
+            value="user",
+            evidence="A user can manage tasks.",
+            roles=["user"],
+            confidence=1,
+        ),
+        KnowledgeItem(
+            topic=T.USER_ROLES,
+            scope=S.USER_APP,
+            key="secondary_users",
+            value="none",
+            evidence="There are no other user roles.",
+            roles=[],
+            absence="none",
+            confidence=1,
+        ),
+        KnowledgeItem(
+            topic=T.USER_ROLES,
+            scope=S.USER_APP,
+            key="responsibilities",
+            value="create, edit, delete, and complete tasks",
+            evidence="A user can create tasks, edit or delete them, and mark them as completed.",
+            role="user",
+            confidence=1,
+        ),
+    ]
+    if include_goal:
+        facts.append(
+            KnowledgeItem(
+                topic=T.USER_GOALS,
+                scope=S.USER_APP,
+                key="primary_user_goals",
+                value="keep track of things they need to do",
+                evidence="keep track of things they need to do",
+                role="user",
+                confidence=1,
+            )
+        )
+
+    concepts = [
+        ProductConcept(
+            kind=ProductConceptKind.ENTITY,
+            scope=S.USER_APP,
+            subject="task",
+            value="Task",
+            evidence="tasks",
+            confidence=1,
+        ),
+        ProductConcept(
+            kind=ProductConceptKind.ATTRIBUTE,
+            scope=S.USER_APP,
+            subject="task",
+            relation="status",
+            object="active or completed",
+            value="A task can be active or completed.",
+            evidence="Tasks can be either active or completed.",
+            confidence=1,
+        ),
+    ]
+    if include_title:
+        concepts.append(
+            ProductConcept(
+                kind=ProductConceptKind.ATTRIBUTE,
+                scope=S.USER_APP,
+                subject="task",
+                relation="title",
+                object="title",
+                value="A task has a title.",
+                evidence="Each task has a title.",
+                confidence=1,
+            )
+        )
+
+    return {
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": facts,
+        "product_concepts": [item.model_dump(mode="json") for item in concepts],
+        "requirement_question_history": [],
+        "discovery_boundaries": [],
+        "captured_observations": [],
+        "founder_gap_guidance": [],
+        "external_systems": [],
+        "active_requirements": {},
+        "requirement_coverage": {},
+        "eligible_requirement_keys": [],
+        "discovery_threads": {},
+        "messages": [],
+        "turn_count": 0,
+    }
+
+
+def _null_plan():
+    return threads.DiscoveryThreadPlan(
+        thread_id="mvp_complete",
+        thread_label="MVP complete",
+        thread_objective="Determine whether discovery can finish.",
+        frontier=None,
+        rationale="No material inquiry remains.",
+    )
+
+
+def test_null_frontier_rejected_when_product_has_no_founder_outcome():
+    problem = threads._plan_problem(
+        _null_plan(),
+        _todo_completion_state(include_goal=False),
+        [],
+    )
+
+    assert problem is not None
+    assert "user outcome" in problem.lower() or "product goal" in problem.lower()
+
+
+def test_null_frontier_rejected_when_created_entity_shape_is_undefined():
+    problem = threads._plan_problem(
+        _null_plan(),
+        _todo_completion_state(include_goal=True, include_title=False),
+        [],
+    )
+
+    assert problem is not None
+    assert "entity" in problem.lower()
+    assert "information" in problem.lower() or "shape" in problem.lower()
+
+
+def test_foundational_completion_guard_releases_once_outcome_and_entity_shape_exist():
+    problem = threads._plan_problem(
+        _null_plan(),
+        _todo_completion_state(include_goal=True, include_title=True),
+        [],
+    )
+
+    assert problem is None
+
+
+def test_completed_task_editability_is_not_hard_rejected_as_crud_depth(monkeypatch):
+    state = _todo_completion_state(include_goal=True, include_title=True)
+    frontier = threads.ThreadFrontierInquiry(
+        decision_key="completed_task_editability",
+        topic=T.CORE_WORKFLOW,
+        anchor_gap=None,
+        objective="Clarify whether completed tasks can still be edited.",
+        question_hint="After a task is completed, can the user still edit it?",
+        reason="This changes the task lifecycle and availability of the edit action.",
+    )
+    plan = threads.DiscoveryThreadPlan(
+        thread_id="task_lifecycle",
+        thread_label="Task lifecycle",
+        thread_objective="Understand task state behavior.",
+        frontier=frontier,
+        rationale="Completed is a confirmed state with unresolved behavior.",
+    )
+    assessment = {
+        "supporting_observation_ids": [],
+        "recent_answer_supports": False,
+        "information_need_resolved": False,
+        "missing_information": ["whether completed tasks remain editable"],
+        "too_broad": False,
+        "recap_of_known_information": False,
+        "should_move_on": False,
+        "repeats_rejected_frontier": False,
+        "repeats_prior_decision": False,
+        "matching_prior_question": "",
+        "abstraction_level": "PRODUCT_BEHAVIOR",
+        "material_product_consequence": True,
+        "current_frontier_value": 0.8,
+        "best_alternative_value": 0.0,
+        "higher_value_elsewhere": False,
+        "best_alternative_focus": "",
+        "depth_reason": "Editability changes the completed-state product contract.",
+        "reason": "The founder has not defined completed-task editability.",
+    }
+    monkeypatch.setattr(
+        threads,
+        "inquiry_assessment_model",
+        lambda: SimpleNamespace(invoke=lambda _: assessment),
+    )
+
+    assert threads._semantic_frontier_problem(
+        plan,
+        state,
+        S.USER_APP,
+    ) is None
