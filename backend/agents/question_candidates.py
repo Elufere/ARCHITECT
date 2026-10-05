@@ -23,6 +23,7 @@ from agents.requirement_coverage import (
 )
 from agents.requirements import ActiveRequirement, RequirementStatus
 from agents.state import AgentState, DiscoveryScope, DiscoveryTopic
+from agents.discovery_obligations import is_open_obligation
 
 
 class QuestionCandidate(BaseModel):
@@ -49,6 +50,7 @@ class QuestionCandidate(BaseModel):
     question_cost: float = Field(default=0.0, ge=0, le=1)
     thread_id: Optional[str] = None
     decision_key: Optional[str] = None
+    obligation_id: Optional[str] = None
     information_gain: float = Field(default=0.5, ge=0, le=1)
     causal_relevance: float = Field(default=0.5, ge=0, le=1)
     conversation_continuity: float = Field(default=0.5, ge=0, le=1)
@@ -128,6 +130,7 @@ def _candidate_from_inquiry(inquiry: ProductInquiry) -> QuestionCandidate:
         question_cost=inquiry.question_cost,
         thread_id=inquiry.thread_id,
         decision_key=inquiry.decision_key,
+        obligation_id=inquiry.obligation_id,
         information_gain=inquiry.information_gain,
         causal_relevance=inquiry.causal_relevance,
         conversation_continuity=inquiry.conversation_continuity,
@@ -286,6 +289,16 @@ def _control_boundary_block_reason(
             ),
         ))
         if not matches:
+            continue
+
+        if (
+            candidate.obligation_id
+            and is_open_obligation(state, candidate.obligation_id, scope)
+            and boundary_type == "rejected_inquiry"
+        ):
+            # The founder rejected this wording/inquiry, not the explicitly named
+            # underlying decision. Keep the obligation open and let planning
+            # reframe it.
             continue
 
         if boundary_type in {
@@ -481,6 +494,11 @@ def filter_question_candidates(
 
     for candidate in candidates:
         reasons: List[CandidateBlockReason] = []
+        obligation_candidate = is_open_obligation(
+            state,
+            candidate.obligation_id,
+            scope,
+        )
         if candidate.scope != scope:
             reasons.append(CandidateBlockReason.WRONG_SCOPE)
 
@@ -501,13 +519,18 @@ def filter_question_candidates(
             and repeat_count == 1
             and state.get("extraction_status") == "NO_FACTS_FOUND"
         )
-        if signature in recent_signatures and not ambiguous_thread_retry:
+        if (
+            signature in recent_signatures
+            and not ambiguous_thread_retry
+            and not obligation_candidate
+        ):
             reasons.append(CandidateBlockReason.RECENTLY_ASKED_SAME_TARGET)
 
-        if repeat_count >= 2:
-            reasons.append(CandidateBlockReason.REPEATED_THREAD_DECISION)
-        elif repeat_count == 1 and state.get("extraction_status") != "NO_FACTS_FOUND":
-            reasons.append(CandidateBlockReason.REPEATED_THREAD_DECISION)
+        if not obligation_candidate:
+            if repeat_count >= 2:
+                reasons.append(CandidateBlockReason.REPEATED_THREAD_DECISION)
+            elif repeat_count == 1 and state.get("extraction_status") != "NO_FACTS_FOUND":
+                reasons.append(CandidateBlockReason.REPEATED_THREAD_DECISION)
 
         decision = CandidateEligibilityDecision(
             candidate_id=candidate.id,
