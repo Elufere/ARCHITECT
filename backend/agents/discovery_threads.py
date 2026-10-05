@@ -114,6 +114,7 @@ class DiscoveryThreadPlan(BaseModel):
 
 
 _thread_planner = None
+_thread_planner_repair = None
 _inquiry_assessment_model = None
 
 
@@ -206,6 +207,16 @@ def thread_planner_model():
             schema=DiscoveryThreadPlan,
         )
     return _thread_planner
+
+
+def thread_planner_repair_model():
+    global _thread_planner_repair
+    if _thread_planner_repair is None:
+        _thread_planner_repair = get_structured_model(
+            call_name="discovery_threads.plan_repair",
+            schema=DiscoveryThreadPlan,
+        )
+    return _thread_planner_repair
 
 
 THREAD_PLANNER_INSTRUCTION = """You choose the NEXT move in a grounded
@@ -1504,8 +1515,9 @@ def _plan_problem(
     return None
 
 
-def _invoke_thread_plan(messages) -> DiscoveryThreadPlan:
-    result = thread_planner_model().invoke(messages)
+def _invoke_thread_plan(messages, *, repair: bool = False) -> DiscoveryThreadPlan:
+    model = thread_planner_repair_model() if repair else thread_planner_model()
+    result = model.invoke(messages)
     return (
         result
         if isinstance(result, DiscoveryThreadPlan)
@@ -1589,10 +1601,13 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         proposed = None
         try:
             proposed = _normalize_plan(
-                _invoke_thread_plan([
-                    SystemMessage(content=system_instruction),
-                    HumanMessage(content=json.dumps(attempt_payload, ensure_ascii=False)),
-                ]),
+                _invoke_thread_plan(
+                    [
+                        SystemMessage(content=system_instruction),
+                        HumanMessage(content=json.dumps(attempt_payload, ensure_ascii=False)),
+                    ],
+                    repair=attempt > 0,
+                ),
                 state,
                 scope,
             )
