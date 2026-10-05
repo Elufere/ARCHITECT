@@ -11,7 +11,9 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 import logging
 import os
+from functools import lru_cache
 from pathlib import Path
+import subprocess
 import sys
 import traceback
 from threading import RLock
@@ -141,6 +143,34 @@ def install_diagnostic_streams() -> None:
             _log_handler = handler
 
 
+@lru_cache(maxsize=1)
+def runtime_code_identity() -> tuple[str, str, str]:
+    """Return branch, commit and dirty state for the code producing a log."""
+    root = Path(__file__).resolve().parents[2]
+    branch = os.getenv("ARCHITECT_GIT_BRANCH")
+    revision = os.getenv("ARCHITECT_GIT_SHA")
+    dirty = os.getenv("ARCHITECT_GIT_DIRTY")
+
+    def git(*args: str) -> str | None:
+        try:
+            return subprocess.check_output(
+                ["git", *args],
+                cwd=root,
+                text=True,
+                stderr=subprocess.DEVNULL,
+                timeout=2,
+            ).strip()
+        except Exception:
+            return None
+
+    branch = branch or git("rev-parse", "--abbrev-ref", "HEAD") or "unknown"
+    revision = revision or git("rev-parse", "HEAD") or "unknown"
+    if dirty is None:
+        status = git("status", "--porcelain")
+        dirty = "unknown" if status is None else ("yes" if status else "no")
+    return branch, revision, dirty
+
+
 def _stamp() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -162,6 +192,7 @@ def diagnostic_session(
     operation_token = _operation.set(operation)
     status = "completed"
     try:
+        branch, revision, dirty = runtime_code_identity()
         print(
             "\n"
             + "=" * 88
@@ -170,6 +201,9 @@ def diagnostic_session(
             + f"\nproject: {project_id or 'cli'}"
             + f"\nsession: {canonical}"
             + f"\noperation: {operation}"
+            + f"\ncode_branch: {branch}"
+            + f"\ncode_revision: {revision}"
+            + f"\ncode_dirty: {dirty}"
             + "\n"
             + "=" * 88
         )
