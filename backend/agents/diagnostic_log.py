@@ -284,6 +284,16 @@ def log_state_snapshot(state: dict, *, label: str) -> None:
         ),
         "discovery_boundaries": len(state.get("discovery_boundaries", []) or []),
         "founder_gap_guidance": len(state.get("founder_gap_guidance", []) or []),
+        "founder_obligations": len(state.get("founder_obligations", []) or []),
+        "open_founder_obligations": sum(
+            1
+            for item in (state.get("founder_obligations", []) or [])
+            if (
+                (item.get("status") if isinstance(item, dict) else getattr(item, "status", None))
+                == "OPEN"
+            )
+        ),
+        "thread_plan_exit_reason": state.get("thread_plan_exit_reason"),
         "awaiting_gap_guidance": state.get("awaiting_gap_guidance", False),
         "founder_requested_completion": state.get("founder_requested_completion", False),
         "completion_arbitration_complete": state.get("completion_arbitration_complete", False),
