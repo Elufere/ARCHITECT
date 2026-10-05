@@ -843,3 +843,34 @@ def test_category_normalization_does_not_hide_wrong_claim_meaning(
     assert calls["compile"]
     assert not calls["audit"]
     assert "independently classified" in result["compilation_errors"][0]
+
+
+
+def test_compiler_payload_includes_machine_readable_section_obligations():
+    sources = build_source_snapshot(state())
+
+    obligations = pm.compiler_required_coverage(sources)
+
+    assert obligations == [
+        {
+            "fact_id": sources[0].fact_id,
+            "category": "BUSINESS_RULES.approval_rules",
+            "value": "Orders over $100 require manager approval",
+            "required_section": "functional_requirements",
+        }
+    ]
+
+
+def test_compile_call_receives_required_source_coverage(monkeypatch, tmp_path):
+    calls = setup(monkeypatch, tmp_path)
+
+    result = pm.pm_compile_node(state())
+
+    assert result["pm_is_complete"] is True
+    payload = calls["compile"][0][1]
+    assert payload["required_source_coverage"][0]["fact_id"] == (
+        payload["confirmed_facts"][0]["fact_id"]
+    )
+    assert payload["required_source_coverage"][0]["required_section"] == (
+        "functional_requirements"
+    )
