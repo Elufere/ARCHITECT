@@ -1,18 +1,43 @@
 """Source-linked compiler drafts and the application-verified PRD artifact."""
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
+
+from agents.discovery_fields import FIELD_DEFINITIONS
 
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+CANONICAL_PRD_CATEGORIES = frozenset(
+    f"{topic.value}.{key}"
+    for topic, fields in FIELD_DEFINITIONS.items()
+    for key in fields
+)
+
+
 class SourceReference(StrictModel):
     source_fact_ids: list[str] = Field(min_length=1, description="IDs from the supplied confirmed fact snapshot. Never invent IDs.")
-    category: str = Field(description="Exact canonical TOPIC.key, e.g. BUSINESS_RULES.approval_rules. Preserve source meaning.")
+    category: str = Field(
+        description=(
+            "Exact canonical TOPIC.key from the supplied fact taxonomy, e.g. "
+            "BUSINESS_RULES.approval_rules. USER_APP and ADMIN_DASHBOARD are "
+            "scopes, never categories."
+        )
+    )
     actor_ids: list[str] = Field(description="Actors involved, preserving ownership and capacity-specific restrictions; [] for product-wide claims.")
     conditions: list[str] = Field(description="All relevant source conditions, thresholds, exceptions and negations; [] when unconditional.")
+
+    @field_validator("category")
+    @classmethod
+    def category_must_be_canonical_topic_key(cls, value: str) -> str:
+        if value not in CANONICAL_PRD_CATEGORIES:
+            raise ValueError(
+                "category must be an exact canonical TOPIC.key; scope labels "
+                "USER_APP/ADMIN_DASHBOARD are never valid categories"
+            )
+        return value
 
 
 class SourcedClaim(SourceReference):
