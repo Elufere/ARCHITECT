@@ -688,7 +688,7 @@ OUTPUT
         system_prompt += "\nRevise the rejected draft using this feedback:\n" + state["messages"][-1].content
 
     generation_messages = [SystemMessage(content=system_prompt)]
-    if planner_source == "requirement":
+    if planner_source in {"requirement", "model"}:
         latest_founder = next(
             (
                 message.content
@@ -697,11 +697,17 @@ OUTPUT
             ),
             "",
         )
+        authority = (
+            "selected REQUIREMENT"
+            if planner_source == "requirement"
+            else "selected MODEL inquiry/objective"
+        )
         generation_messages.append(HumanMessage(content=(
-            "Generate the next PM response using the selected REQUIREMENT above as "
-            "the sole authority for what the final question asks. The founder's "
-            "latest answer is conversational background only and must not replace "
-            "the selected requirement:\n"
+            f"Generate the next PM response using the {authority} above as the "
+            "sole authority for what the FINAL question asks. The founder's latest "
+            "answer is background/acknowledgement context only and must not replace "
+            "or shift the selected objective. Do not continue a different open gap "
+            "from recent conversation unless it is the selected objective:\n"
             + latest_founder
         )))
     else:
