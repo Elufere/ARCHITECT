@@ -660,3 +660,120 @@ def test_omitting_product_concept_fails_prd_coverage_before_audit(monkeypatch, t
     assert result["pm_is_complete"] is False
     assert "omitted" in result["compilation_errors"][0]
     assert not calls["audit"]
+
+
+
+def test_operational_fact_cited_only_in_scope_is_not_a_complete_prd(
+    monkeypatch,
+    tmp_path,
+):
+    action = fact(
+        topic=T.USER_ROLES,
+        key="responsibilities",
+        value="Users can create tasks",
+        evidence="Users can create tasks",
+        role="user",
+    )
+
+    def scope_only(sources):
+        source = sources[0]
+        claim = dict(
+            text="Users can create tasks.",
+            category="USER_ROLES.responsibilities",
+            actor_ids=["user"],
+            conditions=[],
+            source_fact_ids=[source["fact_id"]],
+        )
+        return dict(
+            product_name=None,
+            elevator_pitch=[],
+            scope=dict(in_scope=[claim], out_of_scope=[]),
+            personas=[],
+            functional_requirements=[],
+            non_functional_constraints=[],
+            deferred_items=[],
+            open_questions=[],
+        )
+
+    calls = setup(
+        monkeypatch,
+        tmp_path,
+        make_draft=scope_only,
+        classify=lambda _: ["USER_ROLES.responsibilities"],
+    )
+    result = pm.pm_compile_node(state(action))
+
+    assert result["pm_is_complete"] is False
+    assert "functional_requirements" in result["compilation_errors"][0]
+    assert not calls["audit"]
+
+
+def test_primary_actor_must_appear_in_personas_not_only_overview(
+    monkeypatch,
+    tmp_path,
+):
+    actor = fact(
+        topic=T.USER_ROLES,
+        key="primary_users",
+        value="user",
+        evidence="The product is for individual users",
+        role=None,
+        roles=["user"],
+    )
+
+    def overview_only(sources):
+        source = sources[0]
+        return dict(
+            product_name=None,
+            elevator_pitch=[
+                dict(
+                    text="The product is for individual users.",
+                    category="USER_ROLES.primary_users",
+                    actor_ids=["user"],
+                    conditions=[],
+                    source_fact_ids=[source["fact_id"]],
+                )
+            ],
+            scope=dict(in_scope=[], out_of_scope=[]),
+            personas=[],
+            functional_requirements=[],
+            non_functional_constraints=[],
+            deferred_items=[],
+            open_questions=[],
+        )
+
+    calls = setup(
+        monkeypatch,
+        tmp_path,
+        make_draft=overview_only,
+        classify=lambda _: ["USER_ROLES.primary_users"],
+    )
+    result = pm.pm_compile_node(state(actor))
+
+    assert result["pm_is_complete"] is False
+    assert "personas/users-and-roles" in result["compilation_errors"][0]
+    assert not calls["audit"]
+
+
+def test_product_concept_source_question_survives_snapshot():
+    concept = ProductConcept(
+        kind=ProductConceptKind.ATTRIBUTE,
+        scope=S.USER_APP,
+        subject="task",
+        relation="has attribute",
+        object="optional description",
+        value="an optional description",
+        evidence="an optional description",
+        source_question="What fields or information should each task have?",
+        confidence=1,
+        source_turn=3,
+    )
+    sources = build_source_snapshot({
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [],
+        "product_concepts": [concept.model_dump(mode="json")],
+    })
+
+    assert sources[0].source_question == (
+        "What fields or information should each task have?"
+    )
