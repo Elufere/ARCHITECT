@@ -308,10 +308,15 @@ def test_missing_evidence_or_empty_snapshot_blocks_before_generation(monkeypatch
     assert not calls["compile"]
 
 
-def test_long_snapshot_is_not_silently_truncated(monkeypatch, tmp_path):
+def test_long_evidence_is_not_silently_truncated_during_verification(monkeypatch, tmp_path):
     calls = setup(monkeypatch, tmp_path)
     result = pm.pm_compile_node(state(fact(evidence="x" * 40000)))
-    assert not calls["compile"] and "context budget" in result["compilation_errors"][0]
+
+    # Compilation uses the compact semantic fact payload, but the independent
+    # verifier still receives exact evidence. Oversized evidence must therefore
+    # fail closed at verification rather than being silently truncated.
+    assert calls["compile"]
+    assert "context budget" in result["compilation_errors"][0]
 
 
 def test_all_factual_sections_are_enumerated_for_validation():
