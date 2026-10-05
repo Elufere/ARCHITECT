@@ -9,6 +9,7 @@ from agents.discovery_fields import FIELD_DEFINITIONS
 from agents.prd_schema import ClaimVerdict, PRDDraft, SourceFact, SemanticCategories
 from agents.state import DiscoveryScope, KnowledgeItem, KnowledgeState
 from agents.product_concepts import ProductConcept, ProductConceptKind, concept_id
+from agents.prd_projection import is_constraint_source
 
 
 class PRDValidationError(ValueError):
@@ -346,9 +347,23 @@ def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier
                 f"the cited fact categories {sorted(categories)}."
             )
     cited = {ref for _, claim in claims for ref in claim["source_fact_ids"]}
-    if set(source_map) - cited:
+    visible_source_ids = {
+        source.fact_id for source in sources if not is_constraint_source(source)
+    }
+    constraint_source_ids = {
+        source.fact_id for source in sources if is_constraint_source(source)
+    }
+    missing_visible = visible_source_ids - cited
+    if missing_visible:
         raise PRDValidationError(
-            f"Confirmed facts omitted from the draft: {sorted(set(source_map) - cited)}."
+            "Visible confirmed facts omitted from the draft: "
+            f"{sorted(missing_visible)}."
+        )
+    leaked_constraints = cited & constraint_source_ids
+    if leaked_constraints:
+        raise PRDValidationError(
+            "Constraint-only facts must govern the PRD without being forced into "
+            f"visible claims: {sorted(leaked_constraints)}."
         )
 
     section_refs = _section_source_refs(draft)
