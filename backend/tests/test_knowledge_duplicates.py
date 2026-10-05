@@ -140,3 +140,28 @@ def test_distinct_atomic_actor_actions_are_never_collapsed_as_refinements():
 
     assert compare_candidate(delete, [edit], unexpected) == ("new", None)
     assert compare_candidate(complete, [edit, delete], unexpected) == ("new", None)
+
+
+
+def test_state_adjective_does_not_merge_edit_and_delete_completed_tasks():
+    edit = fact("edit completed tasks", role="user")
+    delete = fact("delete completed tasks", role="user")
+
+    def unexpected(*_):
+        pytest.fail(
+            "Disjoint primary action families must not reach semantic comparison"
+        )
+
+    assert compare_candidate(delete, [edit], unexpected) == ("new", None)
+
+
+def test_state_adjective_does_not_merge_delete_and_complete_actions():
+    delete = fact("delete completed tasks", role="user")
+    complete = fact("mark tasks as completed", role="user")
+
+    def unexpected(*_):
+        pytest.fail(
+            "Delete and mark-complete are independent responsibilities"
+        )
+
+    assert compare_candidate(complete, [delete], unexpected) == ("new", None)
