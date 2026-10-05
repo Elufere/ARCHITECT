@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 import agents.conversation_manager as conversation
