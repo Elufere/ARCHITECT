@@ -485,3 +485,54 @@ def test_many_source_questions_do_not_overflow_compiler_prompt_before_generation
     assert calls["compile"]
     assert not result["pm_is_complete"]
     assert "context budget" not in result["compilation_errors"][0]
+
+
+
+def test_scope_label_is_never_a_valid_prd_claim_category():
+    source = build_source_snapshot(state())[0].model_dump(mode="json")
+    value = draft([source])
+    value["scope"]["in_scope"] = [
+        {
+            "text": "The user app supports manager approval.",
+            "category": "USER_APP",
+            "actor_ids": [],
+            "conditions": [],
+            "source_fact_ids": [source["fact_id"]],
+        }
+    ]
+
+    with pytest.raises(Exception, match="canonical TOPIC.key"):
+        PRDDraft.model_validate(value)
+
+
+def test_invalid_scope_category_is_repaired_on_next_compile_attempt(
+    monkeypatch,
+    tmp_path,
+):
+    attempts = 0
+
+    def make(sources):
+        nonlocal attempts
+        attempts += 1
+        value = draft(sources)
+        if attempts == 1:
+            value["scope"]["in_scope"] = [
+                {
+                    "text": "The user app includes the confirmed approval behavior.",
+                    "category": "USER_APP",
+                    "actor_ids": [],
+                    "conditions": [],
+                    "source_fact_ids": [sources[0]["fact_id"]],
+                }
+            ]
+        return value
+
+    calls = setup(monkeypatch, tmp_path, make_draft=make)
+    result = pm.pm_compile_node(state())
+
+    assert result["pm_is_complete"] is True
+    assert len(calls["compile"]) == 2
+    second_payload = calls["compile"][1][1]
+    assert second_payload["repair_errors"]
+    assert "canonical TOPIC.key" in second_payload["repair_errors"][0]
+    assert "USER_APP/ADMIN_DASHBOARD" in second_payload["repair_instruction"]
