@@ -36,6 +36,11 @@ from agents.prd_projection import (
     project_prd,
     validate_projection,
 )
+from agents.prd_specification import (
+    build_feature_specifications,
+    build_product_model,
+    validate_feature_specifications,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -226,6 +231,16 @@ def pm_compile_node(state: AgentState) -> dict:
 
         projection = project_prd(sources)
         validate_projection(projection, sources)
+        product_model = build_product_model(sources)
+        feature_specifications = build_feature_specifications(
+            projection.draft,
+            product_model,
+        )
+        validate_feature_specifications(
+            feature_specifications,
+            projection.draft,
+            product_model,
+        )
         base_draft = projection.draft
         final_draft = base_draft
         verdicts = []
@@ -293,6 +308,7 @@ def pm_compile_node(state: AgentState) -> dict:
             validation_report=verdicts,
             external_systems=build_prd_external_systems(state, scope),
             deferred_decisions=build_deferred_decisions(state, scope),
+            feature_specifications=feature_specifications,
             constraint_source_ids=sorted(projection.constraint_source_ids),
             prose_polished=prose_polished,
         )
