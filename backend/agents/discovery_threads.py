@@ -892,13 +892,25 @@ CRUD_ACTION_PATTERN = re.compile(
 )
 CRUD_DEPTH_PATTERN = re.compile(
     r"\b(?:rules?|restrictions?|conditions?|constraints?|limits?|validations?|"
-    r"fields?|information|attributes?|special\s+behavio[u]?rs?|undo|restore|"
-    r"restoration|recover|recovery|permanent(?:ly)?|grace\s+period|history|"
-    r"historical|retention|retain|archive|archived|lock|locked|confirmation|"
-    r"confirm|reopen|revers(?:e|ible|ibility)|side\s+effects?|additional\s+"
-    r"behavio[u]?r|what\s+happens\s+next|display|interactions?|after\s+"
-    r"completion|completed\s+(?:state|list|item|task)|timing|immediately|"
+    r"fields?|information|attributes?|aspects?|parts?|anything\s+else|"
+    r"special\s+behavio[u]?rs?|undo|restore|restoration|recover|recovery|"
+    r"permanent(?:ly)?|grace\s+period|history|historical|retention|retain|"
+    r"archive|archived|lock|locked|confirmation|confirm|reopen|"
+    r"revers(?:e|ible|ibility)|side\s+effects?|additional\s+behavio[u]?r|"
+    r"what\s+happens(?:\s+next|\s+immediately)?|who\s+(?:can|should)|"
+    r"allowed|authoriz(?:e|ed|ation)|display|interactions?|after\s+completion|"
+    r"completed\s+(?:state|list|item|task)|timing|immediately|invalid|error|"
+    r"message|toast|notification|feedback|guidance|automatic|automatically|"
+    r"reset|clear|focus|screen|wording|look\s+like|cancel|abort|"
     r"during\s+creation|at\s+creation)\b",
+    re.I,
+)
+LOW_RISK_INTERACTION_DETAIL_PATTERN = re.compile(
+    r"\b(?:confirmation\s+message|success\s+message|toast|notification|"
+    r"microcopy|wording|look\s+like|how\s+should\s+the\s+user\s+interact|"
+    r"input\s+form|reset|clear(?:ing)?|focus|screen\s+changes?|ui\s+updates?|"
+    r"automatic\s+(?:action|update)|immediate\s+ui|post[- ](?:creation|"
+    r"deletion|completion)|error\s+message|user\s+guidance)\b",
     re.I,
 )
 CREATION_SHAPE_PATTERN = re.compile(
@@ -920,6 +932,17 @@ MATERIAL_COMPLEXITY_PATTERN = re.compile(
     r"external|integration|inventory|capacity)\w*\b",
     re.I,
 )
+
+
+def _positive_materiality_fact(item: KnowledgeItem) -> bool:
+    """Only positive in-scope facts may make discovery materially complex."""
+    if item.absence:
+        return False
+    if item.topic == DiscoveryTopic.MVP_SCOPE and item.key == "out_of_scope":
+        return False
+    return bool(
+        MATERIAL_COMPLEXITY_PATTERN.search(f"{item.value} {item.evidence}")
+    )
 
 
 def _low_risk_single_actor_context(
@@ -958,11 +981,7 @@ def _low_risk_single_actor_context(
         and not item.absence
         for item in knowledge
     )
-    material_fact = any(
-        MATERIAL_COMPLEXITY_PATTERN.search(f"{item.value} {item.evidence}")
-        for item in knowledge
-        if not item.absence
-    )
+    material_fact = any(_positive_materiality_fact(item) for item in knowledge)
     external_systems = []
     for item in state.get("external_systems", []) or []:
         raw_scope = (
@@ -1062,10 +1081,7 @@ def _known_ordinary_crud_action(
         and item.knowledge_state == KnowledgeState.CONFIRMED
         and not item.absence
     ]
-    if any(
-        MATERIAL_COMPLEXITY_PATTERN.search(f"{item.value} {item.evidence}")
-        for item in knowledge
-    ):
+    if any(_positive_materiality_fact(item) for item in knowledge):
         return False
 
     if any(
@@ -1101,6 +1117,13 @@ def _low_signal_crud_depth_frontier(
         filter(None, [frontier.objective, frontier.question_hint, frontier.reason])
     )
     low_risk = _low_risk_single_actor_context(state, scope)
+
+    # For a genuinely low-risk product, micro-interaction choices belong to
+    # design/engineering unless the founder volunteered a material consequence.
+    # They must never be promoted into founder interview obligations merely
+    # because the planner can imagine another UI decision.
+    if low_risk and LOW_RISK_INTERACTION_DETAIL_PATTERN.search(proposal):
+        return True
 
     # Asking for the start/entry point is a recap when a low-risk product already
     # has an explicit create/add responsibility. The planner should lift to a
