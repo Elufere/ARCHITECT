@@ -1,0 +1,59 @@
+name: Deployment smoke
+
+on:
+  push:
+    branches:
+      - main
+      - feature/model-driven-understanding-recap
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deployment-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build production image
+        run: docker build -t architect-smoke .
+
+      - name: Start Architect
+        run: |
+          docker run -d \
+            --name architect-smoke \
+            -p 8000:8000 \
+            -e OPENAI_API_KEY=test-placeholder \
+            -e ARCHITECT_PUBLIC_DEMO_POSTS_PER_HOUR=0 \
+            architect-smoke
+
+      - name: Verify API and frontend
+        run: |
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/api/health > /tmp/health.json; then
+              break
+            fi
+            sleep 2
+          done
+
+          cat /tmp/health.json
+          grep -q '"status":"ok"' /tmp/health.json
+          curl --fail --silent http://127.0.0.1:8000/ > /tmp/index.html
+          grep -qi '<div id="root"' /tmp/index.html
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs architect-smoke
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f architect-smoke || true
