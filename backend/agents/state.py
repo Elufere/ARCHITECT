@@ -147,12 +147,14 @@ class AgentState(TypedDict):
     captured_observations: List[dict]
     discovery_boundaries: List[dict]
     founder_gap_guidance: List[dict]
+    founder_obligations: List[dict]
     awaiting_gap_guidance: bool
     model_implications: List[dict]
     thread_planning_enabled: bool
     discovery_threads: Dict[str, dict]
     active_discovery_thread: Optional[str]
     thread_frontier: Optional[dict]
+    thread_plan_exit_reason: Optional[str]
     thread_relevant_requirement_ids: List[str]
     active_requirements: Dict[str, Any]
     requirement_coverage: Dict[str, dict]
