@@ -654,6 +654,16 @@ LOW_RISK_SUPPRESSED_REQUIREMENTS = {
 }
 
 
+def _positive_materiality_fact(item: KnowledgeItem) -> bool:
+    if item.absence:
+        return False
+    if item.topic == DiscoveryTopic.MVP_SCOPE and item.key == "out_of_scope":
+        return False
+    return bool(
+        HIGH_MATERIALITY_PATTERN.search(f"{item.value} {item.evidence}")
+    )
+
+
 def _low_risk_single_actor_context(state: AgentState, scope: DiscoveryScope) -> bool:
     knowledge = [
         item
@@ -686,11 +696,7 @@ def _low_risk_single_actor_context(state: AgentState, scope: DiscoveryScope) -> 
         and not item.absence
         for item in knowledge
     )
-    material_fact = any(
-        HIGH_MATERIALITY_PATTERN.search(f"{item.value} {item.evidence}")
-        for item in knowledge
-        if not item.absence
-    )
+    material_fact = any(_positive_materiality_fact(item) for item in knowledge)
     external_systems = []
     for item in state.get("external_systems", []) or []:
         raw_scope = (
