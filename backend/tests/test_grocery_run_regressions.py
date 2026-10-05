@@ -410,3 +410,56 @@ def test_generic_negative_statement_is_not_promoted_to_scope_exclusion():
     )
 
     assert tracker._recover_unclassified_scope_exclusion(claim).kind == "unclassified"
+
+
+
+def test_rewritten_coordinated_action_evidence_falls_back_to_literal_founder_turn():
+    text = (
+        "A user can create tasks, edit or delete them, and mark them as completed."
+    )
+    claim = NeutralClaim(
+        kind="actor_action",
+        role="user",
+        value="edit tasks",
+        evidence="A user can edit tasks",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+    )
+
+    repaired = tracker._literalize_semantic_claim_evidence(claim, text)
+
+    assert repaired.evidence == text
+    assert repaired.value == "edit tasks"
+
+
+def test_short_contextual_answer_uses_founder_answer_not_pm_question_as_evidence():
+    answer = "delete immediately"
+    claim = NeutralClaim(
+        kind="actor_action",
+        role="user",
+        value="A user deletes a task immediately without confirmation",
+        evidence="when a user deletes a task, should the app delete it immediately",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+    )
+
+    repaired = tracker._literalize_semantic_claim_evidence(claim, answer)
+
+    assert repaired.evidence == "delete immediately"
+    assert "when a user" not in repaired.evidence
+
+
+def test_explicit_scope_exclusion_is_recovered_even_when_capture_omits_it():
+    text = (
+        "There are no other user roles, payments, integrations, or admin features."
+    )
+
+    claim = tracker._explicit_product_scope_exclusion_claim(text)
+
+    assert claim is not None
+    assert claim.kind == "mvp_out_of_scope"
+    assert claim.evidence == text
+    assert "payments" in claim.value.lower()
+    assert "integrations" in claim.value.lower()
+    assert "admin features" in claim.value.lower()
+    assert "user roles" not in claim.value.lower()
