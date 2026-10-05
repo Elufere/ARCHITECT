@@ -301,10 +301,18 @@ def _prd_sections(
     if success:
         goal_parts.append("Success metrics:\n" + _bullet_block(success))
     if goal_parts:
+        has_goals = bool(goals or motivations)
+        title = (
+            "Goals and Success Metrics"
+            if has_goals and success
+            else "Goals"
+            if has_goals
+            else "Success Metrics"
+        )
         sections.append(
             PrdSection(
                 id="goals",
-                title="Goals and Success Metrics",
+                title=title,
                 body="\n\n".join(goal_parts),
             )
         )
@@ -425,9 +433,23 @@ def _prd_sections(
             if subject not in by_subject:
                 by_subject[subject] = []
                 subject_order.append(subject)
-            value = source.value.strip()
+
+            # The entity declaration is represented by the heading itself; do not
+            # repeat raw extraction prose such as "Tasks are a product entity".
+            if source.key == "entity":
+                continue
+
+            relation = (source.relation or "").strip().replace("_", " ")
+            obj = (source.object or "").strip()
+            if relation and obj:
+                label = relation[:1].upper() + relation[1:]
+                value = f"{label}: {obj}"
+            else:
+                value = source.value.strip()
+
             if value and value not in by_subject[subject]:
                 by_subject[subject].append(value)
+
         blocks = []
         for subject in subject_order:
             block = subject
