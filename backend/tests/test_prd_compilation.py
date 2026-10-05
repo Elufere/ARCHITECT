@@ -8,6 +8,7 @@ from langchain_core.messages import HumanMessage
 from agents import pm_agent as pm
 from agents.prd_schema import ClaimVerdict, PRDDraft
 from agents.prd_validation import build_source_snapshot, draft_claims
+from agents.product_concepts import ProductConcept, ProductConceptKind
 from agents.state import DiscoveryScope as S, DiscoveryTopic as T, KnowledgeItem, KnowledgeState as K
 
 
@@ -541,3 +542,121 @@ def test_invalid_scope_category_is_repaired_on_next_compile_attempt(
     assert second_payload["repair_errors"]
     assert "canonical TOPIC.key" in second_payload["repair_errors"][0]
     assert "USER_APP/ADMIN_DASHBOARD" in second_payload["repair_instruction"]
+
+
+
+def test_product_concepts_are_first_class_prd_sources():
+    concept = ProductConcept(
+        kind=ProductConceptKind.ATTRIBUTE,
+        scope=S.USER_APP,
+        subject="task",
+        relation="has attribute",
+        object="required title",
+        value="Each task should have a required title",
+        evidence="Each task should have a required title",
+        confidence=1,
+        source_turn=3,
+    )
+    initial = {
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [],
+        "product_concepts": [concept.model_dump(mode="json")],
+    }
+
+    sources = build_source_snapshot(initial)
+
+    assert len(sources) == 1
+    source = sources[0]
+    assert source.fact_id.startswith("concept_")
+    assert source.topic == "PRODUCT_MODEL"
+    assert source.key == "attribute"
+    assert source.subject == "task"
+    assert source.relation == "has attribute"
+    assert source.object == "required title"
+    assert source.evidence == "Each task should have a required title"
+
+
+def test_product_concept_cannot_disappear_from_verified_prd(monkeypatch, tmp_path):
+    concept = ProductConcept(
+        kind=ProductConceptKind.ATTRIBUTE,
+        scope=S.USER_APP,
+        subject="task",
+        relation="ordered by",
+        object="creation time latest to oldest",
+        value="Tasks are ordered by creation time from latest to oldest",
+        evidence="organized by creation time. from latest to oldest",
+        confidence=1,
+        source_turn=7,
+    )
+    initial = {
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [],
+        "product_concepts": [concept.model_dump(mode="json")],
+        "messages": [HumanMessage(content=concept.evidence)],
+        "raw_idea": "todo",
+        "pm_is_complete": False,
+    }
+
+    def make(sources):
+        assert sources[0]["topic"] == "PRODUCT_MODEL"
+        assert sources[0]["key"] == "attribute"
+        assert sources[0]["relation"] == "ordered by"
+        return dict(
+            product_name=None,
+            elevator_pitch=[],
+            scope=dict(in_scope=[], out_of_scope=[]),
+            personas=[],
+            non_functional_constraints=[],
+            deferred_items=[],
+            open_questions=[],
+            functional_requirements=[
+                dict(
+                    id="FR-01",
+                    description="Tasks are ordered by creation time from latest to oldest.",
+                    category="PRODUCT_MODEL.attribute",
+                    actor_ids=[],
+                    conditions=[],
+                    validation="TBD",
+                    source_fact_ids=[sources[0]["fact_id"]],
+                )
+            ],
+        )
+
+    calls = setup(
+        monkeypatch,
+        tmp_path,
+        make_draft=make,
+        classify=lambda _: ["PRODUCT_MODEL.attribute"],
+    )
+    result = pm.pm_compile_node(initial)
+
+    assert result["pm_is_complete"] is True
+    assert calls["audit"]
+    assert result["prd_contract"].source_facts[0].topic == "PRODUCT_MODEL"
+    assert (
+        result["prd_contract"].functional_requirements[0].category
+        == "PRODUCT_MODEL.attribute"
+    )
+
+
+def test_omitting_product_concept_fails_prd_coverage_before_audit(monkeypatch, tmp_path):
+    concept = ProductConcept(
+        kind=ProductConceptKind.ATTRIBUTE,
+        scope=S.USER_APP,
+        subject="task",
+        relation="has attribute",
+        object="optional description",
+        value="Each task may have an optional description",
+        evidence="an optional description",
+        confidence=1,
+        source_turn=3,
+    )
+    initial = state()
+    initial["product_concepts"] = [concept.model_dump(mode="json")]
+
+    calls = setup(monkeypatch, tmp_path)
+    result = pm.pm_compile_node(initial)
+
+    assert result["pm_is_complete"] is False
+    assert "omitted" in result["compilation_errors"][0]
+    assert not calls["audit"]
