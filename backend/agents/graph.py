@@ -54,7 +54,7 @@ def route_after_conversation_manager(state: AgentState) -> str:
         # replanning to a different decision first.
         return "generate"
     if state.get("conversation_intent") in {
-        "objection", "design_deferral", "uncertainty",
+        "objection", "design_deferral", "uncertainty", "gap_guidance",
         "decision_deferral", "reopen_deferral", "close_discovery",
     }:
         # Interview feedback is control state, not product knowledge. Re-plan
