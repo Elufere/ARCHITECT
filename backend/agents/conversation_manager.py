@@ -21,6 +21,13 @@ from agents.discovery_completion import (
     review_completion_intent,
     should_review_completion_intent,
 )
+from agents.discovery_obligations import (
+    append_founder_obligations,
+    defer_active_obligation,
+    defer_open_obligations,
+    is_open_obligation,
+    withdraw_active_obligation,
+)
 
 
 class ClarificationIntentReview(BaseModel):
@@ -145,10 +152,10 @@ def _append_gap_guidance(
         "evidence": founder_message,
         "items": list(dict.fromkeys(review.unresolved_items)),
         "instruction": (
-            "Founder identified these as unresolved areas to consider during "
-            "discovery. They are not confirmed product facts, not answers, and "
-            "not deferred decisions. Prioritize only items that remain material "
-            "and unanswered under the normal stopping rules."
+            "Founder explicitly identified these as unresolved discovery obligations. "
+            "They are not confirmed product facts, not answers, and not deferred "
+            "decisions. Keep each obligation open until it is answered, explicitly "
+            "deferred/withdrawn, or directly resolved by later confirmed evidence."
         ),
     })
     return guidance[-30:]
@@ -416,8 +423,32 @@ def conversation_manager_node(state: AgentState) -> dict:
                 latest_text,
                 gap_review,
             )
+            control_updates["founder_obligations"] = append_founder_obligations(
+                state,
+                evidence=latest_text,
+                items=gap_review.unresolved_items,
+            )
             if not gap_review.contains_product_decisions:
                 intent = "gap_guidance"
+
+    withdrawal_pattern = re.compile(
+        r"\b(?:forget|drop|remove)\s+(?:that|this|it)\b|"
+        r"\b(?:don'?t|do\s+not)\s+(?:need|want)\s+to\s+"
+        r"(?:cover|discuss|decide|clarify)\s+(?:that|this|it)\b",
+        re.I,
+    )
+    selected_obligation_id = (state.get("selected_inquiry") or {}).get("obligation_id")
+    if (
+        not structured_turn
+        and selected_obligation_id
+        and is_open_obligation(state, selected_obligation_id)
+        and withdrawal_pattern.search(latest_text)
+    ):
+        intent = "obligation_withdrawal"
+        control_updates["founder_obligations"] = withdraw_active_obligation(
+            state,
+            reason="Founder explicitly withdrew this requested discovery decision.",
+        )
 
     if intent == "design_deferral":
         previous_question = next(
@@ -448,6 +479,11 @@ def conversation_manager_node(state: AgentState) -> dict:
                 messages[-1].content,
             ),
         }
+        obligation_state = {**state, **control_updates}
+        control_updates["founder_obligations"] = defer_active_obligation(
+            obligation_state,
+            reason="Founder explicitly delegated this decision to design or engineering.",
+        )
 
     # Completion intent has priority over free-text deferral. A founder asking
     # to finish/generate the PRD must never be reinterpreted as "decide later".
@@ -465,6 +501,14 @@ def conversation_manager_node(state: AgentState) -> dict:
                 "completion_request_evidence": messages[-1].content,
                 "completion_arbitration_complete": False,
             }
+            obligation_state = {**state, **control_updates}
+            control_updates["founder_obligations"] = defer_open_obligations(
+                obligation_state,
+                reason=(
+                    "Founder explicitly requested discovery to finish before these "
+                    "requested decisions were answered."
+                ),
+            )
 
     if (
         not structured_turn
@@ -488,6 +532,11 @@ def conversation_manager_node(state: AgentState) -> dict:
             }
             if review.primary_control_intent:
                 intent = "decision_deferral"
+                obligation_state = {**state, **control_updates}
+                control_updates["founder_obligations"] = defer_active_obligation(
+                    obligation_state,
+                    reason=review.reason or "Founder explicitly deferred this decision.",
+                )
         elif review.action == "reopen":
             control_updates = {
                 **control_updates,
@@ -539,6 +588,14 @@ def conversation_manager_node(state: AgentState) -> dict:
         return {
             **update,
             "awaiting_gap_guidance": False,
+        }
+
+    if intent == "obligation_withdrawal":
+        return {
+            **update,
+            "messages": [AIMessage(content=(
+                "Okay—I’ll remove that from the decisions we still need to cover."
+            ))],
         }
 
     if intent == "clarification":
