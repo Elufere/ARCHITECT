@@ -101,6 +101,16 @@ class SemanticCategories(StrictModel):
     explanation: str = Field(min_length=1)
 
 
+class PRDProseEdit(StrictModel):
+    claim_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    validation: str | None = None
+
+
+class PRDProseBundle(StrictModel):
+    edits: list[PRDProseEdit] = Field(default_factory=list)
+
+
 class ExternalSystemStatementContract(StrictModel):
     value: str = Field(min_length=1)
     evidence: str = Field(min_length=1)
@@ -134,3 +144,5 @@ class PRDContract(PRDDraft):
     validation_report: list[ClaimVerdict]
     external_systems: list[ExternalSystemContract] = Field(default_factory=list)
     deferred_decisions: list[DeferredDecision] = Field(default_factory=list)
+    constraint_source_ids: list[str] = Field(default_factory=list)
+    prose_polished: bool = False
