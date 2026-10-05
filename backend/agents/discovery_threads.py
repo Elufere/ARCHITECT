@@ -907,12 +907,16 @@ def _low_risk_single_actor_context(
         for item in knowledge
         if not item.absence
     )
-    external_systems = [
-        item
-        for item in state.get("external_systems", []) or []
-        if getattr(getattr(item, "scope", None), "value", getattr(item, "scope", None))
-        == scope.value
-    ]
+    external_systems = []
+    for item in state.get("external_systems", []) or []:
+        raw_scope = (
+            item.get("scope")
+            if isinstance(item, dict)
+            else getattr(item, "scope", None)
+        )
+        normalized_scope = getattr(raw_scope, "value", raw_scope)
+        if normalized_scope == scope.value:
+            external_systems.append(item)
     return bool(
         len(primary_roles) == 1
         and secondary_absent
