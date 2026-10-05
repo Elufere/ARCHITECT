@@ -412,7 +412,7 @@ def test_out_of_scope_payment_does_not_prevent_low_risk_lifecycle_suppression():
     end = fact(
         T.CORE_WORKFLOW,
         "end_state",
-        "The task becomes completed",
+        "The task status becomes completed",
     )
 
     result = requirement_activation_node({
