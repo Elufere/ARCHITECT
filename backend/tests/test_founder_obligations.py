@@ -541,12 +541,15 @@ def test_incidental_later_answer_can_resolve_non_active_founder_obligation(monke
         "turn_count": 3,
     })
 
-    review = obligations.ObligationResolutionReview(
-        resolved=True,
-        resolution_kind="RESOLVED_BY_FACT",
-        supporting_ids=[],
-        reason="The founder explicitly defined deletion as permanent.",
-    )
+    review = obligations.ObligationResolutionBatch(items=[
+        obligations.ObligationResolutionReview(
+            obligation_id=obligation.id,
+            resolved=True,
+            resolution_kind="RESOLVED_BY_FACT",
+            supporting_ids=[],
+            reason="The founder explicitly defined deletion as permanent.",
+        )
+    ])
     monkeypatch.setattr(
         obligations,
         "obligation_resolution_model",
