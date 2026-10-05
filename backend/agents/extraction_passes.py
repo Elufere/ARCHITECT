@@ -215,6 +215,13 @@ Kinds:
   is permanent/recoverable, not merely that a user can perform the action.
   Put the entity in subject, the operation in relation, and the stated behavior
   in object.
+
+SPECIFICITY RULE: Prefer ownership_relationship, persistence_requirement,
+entity_boundary, entity_state, state_transition, or operation_rule over the
+generic entity_relationship/entity_attribute kinds whenever one of those precise
+meanings is explicitly present. A state transition may coexist with an actor_action
+when the same quote independently states both the user's capability and the entity
+state change.
 - external_system: an explicitly identified software/service/provider outside the
   product boundary that this product integrates with, calls, depends on, routes
   through, or exchanges data/events with. Put the external system/service name in
