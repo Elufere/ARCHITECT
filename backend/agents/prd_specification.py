@@ -205,10 +205,12 @@ def _bundle_key(source: SourceFact, model: CanonicalProductModel) -> tuple[str, 
     # own feature even when it concerns an existing entity.
     if family in {"persistence", "authentication", "payments", "scheduling", "communication",
                   "notifications", "reporting", "submission", "approval", "search"}:
-        return (family, entity, source.role)
+        # Entity-centered capabilities combine actor actions with structural
+        # product-model facts even though only the former carry role metadata.
+        return (family, entity, None if entity else source.role)
 
     if entity:
-        return ("entity_core", entity, source.role)
+        return ("entity_core", entity, None)
 
     if source.role:
         return ("actor_capability", None, source.role)
