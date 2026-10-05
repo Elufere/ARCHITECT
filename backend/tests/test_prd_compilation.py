@@ -150,15 +150,19 @@ def test_blind_classification_blocks_visibility_even_if_auditor_would_approve(mo
     assert "independently classified" in result["compilation_errors"][0]
 
 
-def test_blind_evidence_check_cannot_use_the_fact_value_to_fill_missing_words(monkeypatch, tmp_path):
+def test_blind_source_classifier_abstention_defers_to_semantic_auditor(monkeypatch, tmp_path):
     def classify(payload):
-        assert payload == {"evidence": "orders over $100", "source_question": None}
-        return []
+        if "evidence" in payload:
+            assert payload == {"evidence": "orders over $100", "source_question": None}
+            return []
+        return ["BUSINESS_RULES.approval_rules"]
+
     calls = setup(monkeypatch, tmp_path, classify=classify)
     result = pm.pm_compile_node(state(fact(evidence="orders over $100")))
-    assert not result["pm_is_complete"] and not calls["audit"]
-    assert len(calls["classify"]) == 1  # Immutable source classification reused on repair.
-    assert "source evidence does not independently support" in result["compilation_errors"][0]
+
+    assert result["pm_is_complete"]
+    assert calls["audit"]
+    assert calls["audit"][0]["cited_facts"][0]["evidence"] == "orders over $100"
 
 
 def test_overlapping_supported_categories_remain_valid(monkeypatch, tmp_path):
@@ -432,3 +436,52 @@ def test_completion_condition_claim_can_cite_compatible_end_state_fact(
     assert saved["elevator_pitch"][0]["category"] == (
         "CORE_WORKFLOW.completion_condition"
     )
+
+
+
+def test_compiler_payload_omits_repeated_provenance_but_keeps_fact_meaning():
+    source = build_source_snapshot(
+        state(
+            fact(
+                evidence="yes",
+                source_question="Must managers approve orders over $100?",
+            )
+        )
+    )[0]
+
+    payload = pm.compiler_source_payload([source])[0]
+
+    assert payload["fact_id"] == source.fact_id
+    assert payload["topic"] == source.topic
+    assert payload["key"] == source.key
+    assert payload["value"] == source.value
+    assert "evidence" not in payload
+    assert "source_question" not in payload
+    assert "confidence" not in payload
+    assert "source_turn" not in payload
+
+
+def test_many_source_questions_do_not_overflow_compiler_prompt_before_generation(
+    monkeypatch,
+    tmp_path,
+):
+    facts = [
+        fact(
+            key="approval_rules",
+            value=f"Rule {index} requires manager approval",
+            evidence=f"Rule {index} requires manager approval",
+            source_question=("What exact rule should apply here? " * 35) + str(index),
+            source_turn=index + 1,
+        )
+        for index in range(18)
+    ]
+    calls = setup(monkeypatch, tmp_path)
+
+    result = pm.pm_compile_node(state(*facts))
+
+    # The generated draft intentionally omits 17 facts, so structural validation
+    # still fails closed. The important regression is that compilation itself was
+    # allowed to run instead of rejecting the repeated provenance as context bloat.
+    assert calls["compile"]
+    assert not result["pm_is_complete"]
+    assert "context budget" not in result["compilation_errors"][0]
