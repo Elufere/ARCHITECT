@@ -61,17 +61,14 @@ def _persona(source: SourceFact, secondary: bool = False) -> UserPersona:
         else source.value.strip().title()
     )
     persona_name = name or ("Secondary user" if secondary else "User")
-    normalized_value = source.value.strip().lower()
-    normalized_name = persona_name.strip().lower()
-    if normalized_value in {normalized_name, f"a {normalized_name}", f"an {normalized_name}"}:
-        description = (
-            "Secondary product user."
-            if secondary
-            else "Primary product user."
-        )
-    else:
-        prefix = "Secondary user" if secondary else "Primary user"
-        description = f"{prefix}: {source.value.strip()}."
+    # The persona heading already identifies the actor. Do not project raw
+    # extraction prose such as "A user is a functional user..." back into the PRD;
+    # it adds no product meaning and produces awkward duplicated sentences.
+    description = (
+        "Secondary product user."
+        if secondary
+        else "Primary product user."
+    )
     return UserPersona(
         name=persona_name,
         description=description,
