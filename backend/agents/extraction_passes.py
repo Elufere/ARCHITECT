@@ -160,6 +160,10 @@ Kinds:
   ownership_rule / visibility_rule: only the corresponding explicit governing rule.
 - *_constraint: only explicit legal, business, operational, geographic, or time boundaries.
 - mvp_*: only explicit version-one inclusion, deferral/exclusion, or MVP metric.
+  Explicit product exclusions such as "there are no payments, integrations, or
+  admin features" are mvp_out_of_scope even when the founder does not literally
+  say "out of scope". Preserve the excluded capabilities; do not leave an
+  explicit feature exclusion unclassified.
 - user_cancellation / timeout_behavior / invalid_action / recovery: explicit exception handling.
 - duplicate_action / boundary_condition / simultaneous_action / rare_scenario:
   explicit unusual-case handling.
