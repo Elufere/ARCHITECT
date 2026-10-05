@@ -301,10 +301,18 @@ def _prd_sections(
     if success:
         goal_parts.append("Success metrics:\n" + _bullet_block(success))
     if goal_parts:
+        has_goals = bool(goals or motivations)
+        goal_title = (
+            "Goals and Success Metrics"
+            if has_goals and success
+            else "Goals"
+            if has_goals
+            else "Success Metrics"
+        )
         sections.append(
             PrdSection(
                 id="goals",
-                title="Goals and Success Metrics",
+                title=goal_title,
                 body="\n\n".join(goal_parts),
             )
         )
@@ -418,21 +426,48 @@ def _prd_sections(
         and source.subject
     ]
     if product_sources:
-        by_subject: dict[str, list[str]] = {}
+        by_subject: dict[str, dict[str, list[str]]] = {}
         subject_order: list[str] = []
         for source in product_sources:
             subject = source.subject.strip().replace("_", " ").title()
             if subject not in by_subject:
-                by_subject[subject] = []
+                by_subject[subject] = {}
                 subject_order.append(subject)
-            value = source.value.strip()
-            if value and value not in by_subject[subject]:
-                by_subject[subject].append(value)
+
+            # Entity declarations establish the heading and need no duplicate line.
+            if source.key == "entity":
+                continue
+
+            label = {
+                "attribute": "Fields",
+                "state": "States",
+                "ownership": "Ownership",
+                "persistence": "Persistence & access",
+                "boundary": "MVP boundary",
+                "transition": "State transitions",
+                "operation_rule": "Operation rules",
+                "relationship": "Relationships",
+            }.get(source.key, source.key.replace("_", " ").title())
+
+            if source.key in {"attribute", "state"} and source.object:
+                value = source.object.strip()
+            else:
+                value = source.value.strip()
+            if not value:
+                continue
+            values = by_subject[subject].setdefault(label, [])
+            if value not in values:
+                values.append(value)
+
         blocks = []
         for subject in subject_order:
+            lines: list[str] = []
+            for label, values in by_subject[subject].items():
+                if values:
+                    lines.append(f"{label}: " + ", ".join(values))
             block = subject
-            if by_subject[subject]:
-                block += "\n" + _bullet_block(by_subject[subject])
+            if lines:
+                block += "\n" + _bullet_block(lines)
             blocks.append(block)
         sections.append(
             PrdSection(
