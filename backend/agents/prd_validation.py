@@ -61,14 +61,23 @@ def compatible_categories(categories: set[str]) -> set[str]:
     return expanded
 
 
-def check_context_budget(messages, schema, output_tokens):
+def check_context_budget(
+    messages,
+    schema,
+    output_tokens,
+    context_budget=32768,
+):
     # UTF-8 bytes conservatively upper-bound ordinary text tokens. Include the
-    # structured schema and reserve chat overhead/output rather than allowing
-    # a long interview to exceed the existing compilation safety budget.
+    # structured schema and reserve chat overhead/output. The caller supplies
+    # the model/compiler context budget so increasing generation allowance does
+    # not silently shrink a previously valid input window.
     size = sum(len(message.content.encode("utf-8")) for message in messages)
     size += len(json.dumps(schema.model_json_schema()).encode("utf-8"))
-    if size > 32768 - output_tokens - 1024:
-        raise PRDAuditError("The source snapshot exceeds the safe model context budget; compilation was stopped rather than truncating evidence.")
+    if size > context_budget - output_tokens - 1024:
+        raise PRDAuditError(
+            "The source snapshot exceeds the safe model context budget; "
+            "compilation was stopped rather than truncating evidence."
+        )
 
 
 def build_source_snapshot(state):
