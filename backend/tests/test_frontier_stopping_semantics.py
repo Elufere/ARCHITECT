@@ -88,6 +88,19 @@ def test_structured_design_deferral_uses_durable_decision_boundary():
     assert boundary["requirement_key"] == key
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I answered this question already.",
+        "I answered that question already.",
+        "Answered this question already.",
+        "You asked me already.",
+    ],
+)
+def test_repetition_feedback_variants_are_objections(text):
+    assert conversation.classify_turn(text) == "objection"
+
+
 def test_already_answered_feedback_is_objection_not_generic_correction():
     text = "I answered this question already, and I said the admin should decide."
 
