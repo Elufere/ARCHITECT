@@ -32,6 +32,7 @@ class ProductConcept(BaseModel):
     object: Optional[str] = None
     value: str
     evidence: str
+    source_question: Optional[str] = None
     confidence: float = Field(ge=0, le=1)
     source_turn: int = 0
 
