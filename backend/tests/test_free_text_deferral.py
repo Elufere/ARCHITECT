@@ -1,5 +1,6 @@
 from uuid import uuid4
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agents.conversation_manager import (
@@ -341,7 +342,7 @@ def test_open_question_list_after_continue_discovery_is_gap_guidance_not_deferra
     assert "completed tasks can still be edited or deleted" in " ".join(
         guidance["items"]
     ).lower()
-    assert "defer" not in guidance["instruction"].lower()
+    assert "not deferred decisions" in guidance["instruction"].lower()
 
 
 def test_deferral_model_cannot_create_boundary_without_explicit_postponement(
