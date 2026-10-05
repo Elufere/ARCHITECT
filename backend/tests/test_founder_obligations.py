@@ -2,7 +2,10 @@
 
 from types import SimpleNamespace
 
+from langchain_core.messages import HumanMessage
+
 from agents import discovery_threads as threads
+from agents import knowledge_tracker as tracker
 from agents.discovery_obligations import (
     append_founder_obligations,
     open_founder_obligations,
@@ -400,3 +403,116 @@ def test_todo_semantic_projection_keeps_meaning_in_correct_sections():
         "no other task fields" not in claim.text.lower()
         for claim in projection.draft.scope.out_of_scope
     )
+
+
+
+def test_compound_storage_answer_can_capture_atomic_semantic_concepts(monkeypatch):
+    text = (
+        "Tasks should be tied to a user account and stored in the cloud so the "
+        "user can access their tasks across devices."
+    )
+    items = [
+        {
+            "kind": "ownership_relationship",
+            "subject": "task",
+            "relation": "belongs_to",
+            "object": "user account",
+            "value": "Tasks are tied to a user account",
+            "evidence": "Tasks should be tied to a user account",
+            "confidence": 1.0,
+            "knowledge_state": "CONFIRMED",
+        },
+        {
+            "kind": "persistence_requirement",
+            "subject": "task",
+            "relation": "storage",
+            "object": "cloud",
+            "value": "Tasks are stored in the cloud",
+            "evidence": "stored in the cloud",
+            "confidence": 1.0,
+            "knowledge_state": "CONFIRMED",
+        },
+        {
+            "kind": "desired_outcome",
+            "role": "user",
+            "value": "access their tasks across devices",
+            "evidence": "the user can access their tasks across devices",
+            "confidence": 1.0,
+            "knowledge_state": "CONFIRMED",
+        },
+    ]
+    monkeypatch.setattr(
+        tracker,
+        "extraction_models",
+        lambda: {"CLAIMS": SimpleNamespace(
+            invoke=lambda _: {"parsed": {"items": items}}
+        )},
+    )
+
+    state = {
+        "messages": [HumanMessage(content=text)],
+        "discovery_scope": S.USER_APP,
+        "current_topic": T.BUSINESS_RULES,
+        "current_gap": None,
+        "discovered_knowledge": [
+            KnowledgeItem(
+                topic=T.USER_ROLES,
+                scope=S.USER_APP,
+                key="primary_users",
+                value="user",
+                evidence="A user manages tasks.",
+                roles=["user"],
+                confidence=1.0,
+            )
+        ],
+        "turn_count": 4,
+    }
+
+    batch = tracker.extract_passes(text, state, S.USER_APP)
+
+    concept_kinds = {concept.kind for concept in batch.concepts}
+    assert ProductConceptKind.OWNERSHIP in concept_kinds
+    assert ProductConceptKind.PERSISTENCE in concept_kinds
+    goals = [item for item in batch if item.topic == T.USER_GOALS]
+    assert len(goals) == 1
+    assert goals[0].value == "access their tasks across devices"
+    assert "cloud" not in goals[0].value.lower()
+    assert "account" not in goals[0].value.lower()
+
+
+def test_entity_local_no_more_fields_is_a_boundary_not_global_scope(monkeypatch):
+    text = "No other fields are needed for now."
+    items = [
+        {
+            "kind": "entity_boundary",
+            "subject": "task",
+            "relation": "fields",
+            "object": "closed_for_mvp",
+            "value": "No other task fields are needed for now",
+            "evidence": text,
+            "confidence": 1.0,
+            "knowledge_state": "CONFIRMED",
+        }
+    ]
+    monkeypatch.setattr(
+        tracker,
+        "extraction_models",
+        lambda: {"CLAIMS": SimpleNamespace(
+            invoke=lambda _: {"parsed": {"items": items}}
+        )},
+    )
+    state = {
+        "messages": [HumanMessage(content=text)],
+        "discovery_scope": S.USER_APP,
+        "current_topic": T.CORE_WORKFLOW,
+        "current_gap": None,
+        "discovered_knowledge": [],
+        "turn_count": 2,
+    }
+
+    batch = tracker.extract_passes(text, state, S.USER_APP)
+
+    assert not any(item.topic == T.MVP_SCOPE for item in batch)
+    assert [concept.kind for concept in batch.concepts] == [
+        ProductConceptKind.BOUNDARY
+    ]
