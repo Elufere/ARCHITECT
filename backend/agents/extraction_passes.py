@@ -72,6 +72,12 @@ ClaimKind = Literal[
     "product_entity",
     "entity_relationship",
     "entity_attribute",
+    "ownership_relationship",
+    "persistence_requirement",
+    "entity_boundary",
+    "entity_state",
+    "state_transition",
+    "operation_rule",
     "external_system",
     "unclassified",
 ]
@@ -104,17 +110,29 @@ class NeutralClaim(BaseModel):
         Other claim kinds still require an explicit value.
         """
         if isinstance(data, dict) and data.get("kind") in {
-            "product_entity", "entity_relationship", "entity_attribute"
+            "product_entity",
+            "entity_relationship",
+            "entity_attribute",
+            "ownership_relationship",
+            "persistence_requirement",
+            "entity_boundary",
+            "entity_state",
+            "state_transition",
+            "operation_rule",
         } and not data.get("value") and data.get("evidence"):
             return {**data, "value": data["evidence"]}
         return data
 
 
 CLAIM_CAPTURE_INSTRUCTION = """Capture the explicit propositions in the latest user answer ONCE.
-Do not search independently for every product-document field. First understand
-what each quoted clause actually asserts, then assign exactly one semantic kind
-to that proposition. Emit two claims from the same quote only when the quote
-independently states two different meanings.
+Do not search independently for every product-document field. First decompose the
+latest answer into ATOMIC semantic propositions, then assign one semantic kind to
+each proposition. A single founder sentence may and often should emit multiple
+claims when it independently states multiple meanings (for example ownership +
+persistence + user outcome). The claims may share the same exact evidence span,
+but EACH claim.value must describe only its own semantic meaning. Never copy a
+whole multi-meaning sentence into one bucket merely because that sentence also
+contains a phrase supporting that bucket.
 
 Kinds:
 - primary_actor / secondary_actor: identity or membership of a functional user
@@ -159,11 +177,12 @@ Kinds:
 - validation_rule / approval_rule / eligibility_rule / limit_rule /
   ownership_rule / visibility_rule: only the corresponding explicit governing rule.
 - *_constraint: only explicit legal, business, operational, geographic, or time boundaries.
-- mvp_*: only explicit version-one inclusion, deferral/exclusion, or MVP metric.
-  Explicit product exclusions such as "there are no payments, integrations, or
-  admin features" are mvp_out_of_scope even when the founder does not literally
-  say "out of scope". Preserve the excluded capabilities; do not leave an
-  explicit feature exclusion unclassified.
+- mvp_*: only explicit GLOBAL version-one inclusion, deferral/exclusion, or MVP
+  metric. Explicit product exclusions such as "there are no payments,
+  integrations, or admin features" are mvp_out_of_scope even when the founder
+  does not literally say "out of scope". An entity-local statement such as
+  "no other task fields are needed" is NOT global MVP scope; capture it as
+  entity_boundary instead.
 - user_cancellation / timeout_behavior / invalid_action / recovery: explicit exception handling.
 - duplicate_action / boundary_condition / simultaneous_action / rare_scenario:
   explicit unusual-case handling.
@@ -177,6 +196,25 @@ Kinds:
 - entity_attribute: an explicit property or dimension of a product entity, such
   as "a group has a currency" or "a package can have size/colour variants".
   Put the entity in subject, property in relation, and stated value(s) in object.
+- ownership_relationship: an explicit ownership/scoping relationship, such as
+  "each task belongs to a user account". Put the owned entity in subject,
+  relation such as "belongs_to"/"owned_by", and owner in object.
+- persistence_requirement: an explicit persistence/storage/access requirement,
+  such as an entity being stored in the cloud or persisted across devices. Put
+  the entity in subject, the persistence dimension in relation, and the stated
+  location/mode in object.
+- entity_boundary: an explicit closed/open set constraint LOCAL to an entity,
+  such as "no other task fields are needed for the MVP". Put the entity in
+  subject, what set is bounded in relation (for example "fields"), and the
+  boundary in object (for example "closed_for_mvp"). This is not global scope.
+- entity_state: explicitly allowed/current states of an entity. Put the entity in
+  subject, relation="state", and the stated state(s) in object.
+- state_transition: an explicit transition/reversal between entity states. Put
+  the entity in subject, relation="transition", and the stated transition in object.
+- operation_rule: explicit semantics of an entity operation such as whether delete
+  is permanent/recoverable, not merely that a user can perform the action.
+  Put the entity in subject, the operation in relation, and the stated behavior
+  in object.
 - external_system: an explicitly identified software/service/provider outside the
   product boundary that this product integrates with, calls, depends on, routes
   through, or exchanges data/events with. Put the external system/service name in
@@ -189,6 +227,12 @@ Kinds:
   is explicitly established. Unclassified claims are not persisted.
 
 Critical distinctions:
+- A causal sentence like "store tasks in the cloud so users can access them across
+  devices" contains separate meanings: persistence_requirement for cloud storage
+  and desired_outcome for cross-device access. Do not make the whole sentence one
+  USER_GOALS value.
+- "No other fields are needed for now" in an answer about one entity's fields is
+  entity_boundary, not mvp_out_of_scope.
 - 'The escrow should protect the seller from non-payment' is a desired outcome /
   intended product benefit for the seller, NOT a seller responsibility or permission.
 - 'The seller wants assurance they will get paid' is a desired outcome, NOT an
@@ -265,9 +309,10 @@ For every claim:
   explicitly says one actor can act as named capacities (for example customer
   acting as buyer or seller), keep the canonical actor in role and put those
   capacity labels in aliases.
-- product_entity/entity_relationship/entity_attribute/external_system claims do not use role.
-  They MUST use subject; relationship/attribute claims MUST also use relation
-  and object. Use short canonical nouns for subjects/objects (for example
+- product_entity/entity_relationship/entity_attribute/ownership_relationship/
+  persistence_requirement/entity_boundary/entity_state/state_transition/
+  operation_rule/external_system claims do not use role. They MUST use subject;
+  every concept except product_entity MUST also use relation and object. Use short canonical nouns for subjects/objects (for example
   "package", not "selling packages"). value should contain the proposition;
   if omitted defensively, the system will preserve the exact evidence as value.
   Capture only structure explicitly introduced by the founder.
@@ -374,7 +419,18 @@ def claim_to_fact(
         key = "success_criteria" if claim.kind == "success_condition" else "motivations"
         return GoalFact(key=key, role=claim.role, **common), DiscoveryTopic.USER_GOALS
 
-    if claim.kind in ("product_entity", "entity_relationship", "entity_attribute", "external_system"):
+    if claim.kind in (
+        "product_entity",
+        "entity_relationship",
+        "entity_attribute",
+        "ownership_relationship",
+        "persistence_requirement",
+        "entity_boundary",
+        "entity_state",
+        "state_transition",
+        "operation_rule",
+        "external_system",
+    ):
         return None
 
     if claim.kind == "unclassified":
