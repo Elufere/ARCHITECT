@@ -18,6 +18,7 @@ from agents.consistency_validation import (
     ValidationResolution,
 )
 from agents.discovery_coverage import fact_id
+from agents.discovery_obligations import open_founder_obligations
 from agents.requirement_coverage import (
     RequirementCoverageRecord,
     RequirementCoverageStatus,
