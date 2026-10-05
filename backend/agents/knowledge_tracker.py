@@ -982,6 +982,7 @@ def _concept_from_claim(
     claim: NeutralClaim,
     scope: DiscoveryScope,
     turn: int,
+    source_question: str | None = None,
 ) -> ProductConcept:
     kind = {
         "product_entity": ProductConceptKind.ENTITY,
@@ -1000,6 +1001,7 @@ def _concept_from_claim(
         object=None if kind == ProductConceptKind.ENTITY else claim.object,
         value=claim.value,
         evidence=claim.evidence,
+        source_question=source_question,
         confidence=claim.confidence,
         source_turn=turn,
     )
@@ -1212,7 +1214,10 @@ def extract_claims(user_response: str, state: AgentState, scope: DiscoveryScope)
 
             if claim.kind in ("product_entity", "entity_relationship", "entity_attribute"):
                 concept = _concept_from_claim(
-                    claim, scope, state.get("turn_count", 0)
+                    claim,
+                    scope,
+                    state.get("turn_count", 0),
+                    answer_context(state)["question"] or None,
                 )
                 valid_evidence, reason = validate_extraction(
                     KnowledgeItem(
