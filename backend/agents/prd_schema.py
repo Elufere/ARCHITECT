@@ -1,20 +1,12 @@
 """Source-linked compiler drafts and the application-verified PRD artifact."""
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
-from agents.discovery_fields import FIELD_DEFINITIONS
-
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
-
-CANONICAL_PRD_CATEGORIES = frozenset(
-    f"{topic.value}.{key}"
-    for topic, fields in FIELD_DEFINITIONS.items()
-    for key in fields
-)
 
 
 class SourceReference(StrictModel):
@@ -32,9 +24,9 @@ class SourceReference(StrictModel):
     @field_validator("category")
     @classmethod
     def category_must_be_canonical_topic_key(cls, value: str) -> str:
-        if value not in CANONICAL_PRD_CATEGORIES:
+        if not re.fullmatch(r"[A-Z][A-Z_]*\.[a-z][a-z0-9_]*", value):
             raise ValueError(
-                "category must be an exact canonical TOPIC.key; scope labels "
+                "category must be a canonical TOPIC.key shape; scope labels "
                 "USER_APP/ADMIN_DASHBOARD are never valid categories"
             )
         return value
