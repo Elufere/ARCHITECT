@@ -1220,6 +1220,6 @@ def test_feature_specs_make_short_lifecycle_answers_standalone():
         for feature in features
         for detail in feature.details
     }
-    assert "Permission: users should sign in before using the app." in details
+    assert "Access requirement: users should sign in before using the app." in details
     assert "Rule: Task can only start as active." in details
 
