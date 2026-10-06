@@ -320,7 +320,14 @@ def _section_source_refs(draft: PRDDraft) -> dict[str, set[str]]:
     }
 
 
-def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier, category_cache=None):
+def validate_prd(
+    draft: PRDDraft,
+    sources: list[SourceFact],
+    auditor,
+    classifier,
+    category_cache=None,
+    claim_ids: set[str] | None = None,
+):
     source_map = {fact.fact_id: fact for fact in sources}
     claims = list(draft_claims(draft))
     if not claims:
@@ -413,7 +420,21 @@ def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier
     # The per-claim semantic auditor below independently verifies that every
     # cited source's evidence/question supports its stored value and category.
     verdicts = []
-    for claim_id, claim in claims:
+    claims_to_audit = (
+        [(claim_id, claim) for claim_id, claim in claims if claim_id in claim_ids]
+        if claim_ids is not None
+        else claims
+    )
+    if claim_ids is not None:
+        known_claim_ids = {claim_id for claim_id, _ in claims}
+        unknown_claim_ids = claim_ids - known_claim_ids
+        if unknown_claim_ids:
+            raise PRDValidationError(
+                "Semantic audit requested unknown claim IDs: "
+                f"{sorted(unknown_claim_ids)}."
+            )
+
+    for claim_id, claim in claims_to_audit:
         refs = set(claim["source_fact_ids"])
         # Blind to the draft's declared category and citations, preventing a
         # visibility claim disguised as approval_rules from anchoring the judge.
