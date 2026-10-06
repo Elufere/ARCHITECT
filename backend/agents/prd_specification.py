@@ -377,6 +377,7 @@ def _group_text(
     sources: list[SourceFact],
     wording_by_source: dict[str, str] | None = None,
     entity: str | None = None,
+    family: str | None = None,
 ) -> str:
     wording_by_source = wording_by_source or {}
     values = [
@@ -390,6 +391,12 @@ def _group_text(
         prefix = f"{_humanize(actor)} can " if actor else "Users can "
         actions = [_capability_phrase(value, actor) for value in values]
         return prefix + _join_items(actions) + "."
+
+    if family == "persistence":
+        return "Persistence / ownership: " + _join_items(values) + "."
+
+    if family == "authentication":
+        return "Access requirement: " + _join_items(values) + "."
 
     if category == "USER_ROLES.permissions":
         label = "Permission" if len(values) == 1 else "Permissions"
@@ -502,6 +509,7 @@ def build_feature_specifications(
                     grouped[category],
                     wording_by_source,
                     entity,
+                    family,
                 ),
                 category=category,
                 actor_ids=_actor_ids(grouped[category]),
