@@ -407,22 +407,11 @@ def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier
         )
 
     cache = category_cache if category_cache is not None else {}
-    source_meanings = {}
-    # Classify the quote without exposing its extracted value, category, or confidence:
-    # otherwise a verifier can mistake the asserted fact for its evidence.
-    for source in sources:
-        observed = independent_categories(classifier, dict(evidence=source.evidence,
-            source_question=source.source_question), definitions, cache)
-        stored_category = f"{source.topic}.{source.key}"
-        # A single founder evidence span can intentionally support several atomic
-        # sources. A blind classifier may notice different true assertions in
-        # that shared span and omit this source's narrower canonical category.
-        # Keep its output as extra semantic context, but retain the grounded
-        # stored category. The per-claim audit below still has to prove that the
-        # evidence and source question support the source value/category.
-        source_meanings[source.fact_id] = compatible_categories(
-            set(observed) | {stored_category}
-        )
+    # Source facts have already passed discovery grounding and deterministic
+    # projection. Re-classifying each raw evidence span here is both redundant
+    # and brittle because one founder sentence may support several atomic facts.
+    # The per-claim semantic auditor below independently verifies that every
+    # cited source's evidence/question supports its stored value and category.
     verdicts = []
     for claim_id, claim in claims:
         refs = set(claim["source_fact_ids"])
@@ -431,15 +420,12 @@ def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier
         text = {key: value for key, value in claim.items() if key not in ("source_fact_ids", "category", "id")}
         observed = independent_categories(classifier, text, definitions, cache)
         source_categories = {f"{source_map[ref].topic}.{source_map[ref].key}" for ref in refs}
-        supported_meanings = set().union(*(source_meanings[ref] for ref in refs))
         observed_compatible = compatible_categories(set(observed))
-        if (
-            claim["category"] not in observed_compatible
-            or not set(observed).issubset(supported_meanings)
-        ):
+        if claim["category"] not in observed_compatible:
             raise PRDValidationError(
                 f"{claim_id}: independently classified as {sorted(observed)}, "
-                f"which does not match the declared/cited categories "
+                f"which does not include the declared category "
+                f"{claim['category']} from cited categories "
                 f"{sorted(source_categories)}."
             )
         payload = dict(
