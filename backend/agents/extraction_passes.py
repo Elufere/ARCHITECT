@@ -145,9 +145,12 @@ Kinds:
   holding several roles or changing roles. When the quote explicitly says a
   confirmed canonical actor acts in named capacities, put that canonical actor
   in role and the capacity labels in aliases. Do not create separate actors.
-- desired_outcome: a result an actor explicitly wants, needs, seeks, or that the
-  product explicitly aims to provide to that actor. Do not relabel the actor's
-  ordinary action as an outcome.
+- desired_outcome: the actor's intended result / job-to-be-done: what they are
+  ultimately trying to accomplish by using the product. Do not relabel an
+  ordinary action as an outcome, and do not use an enabling system property such
+  as cross-device availability, persistence, sign-in, speed, or platform access
+  as a substitute for the actor's core product outcome. Preserve those properties
+  under the corresponding rule/constraint instead.
 - success_condition: an explicit definition of what makes the user's/product's
   goal successful. Merely saying what happens after success is not a definition.
 - motivation: an explicit reason/problem explaining why the product or outcome is wanted.
@@ -167,6 +170,9 @@ Kinds:
   "records created by a user belong to that user's account." It is distinct from
   a role permission.
 - *_constraint: only explicit legal, business, operational, geographic, or time boundaries.
+  Operational constraints include explicit availability/access requirements that
+  the product must maintain, such as the same account data being available across
+  devices. This is distinct from the user's core desired outcome / job-to-be-done.
 - mvp_*: only explicit version-one inclusion, deferral/exclusion, or MVP metric.
   Explicit product exclusions such as "there are no payments, integrations, or
   admin features" are mvp_out_of_scope even when the founder does not literally
