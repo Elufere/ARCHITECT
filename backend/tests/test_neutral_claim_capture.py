@@ -609,3 +609,29 @@ def test_invitation_before_visibility_is_an_explicit_workflow_dependency(monkeyp
 
     assert len(batch) == 1
     assert batch[0].key == "downstream_dependency"
+
+def test_account_binding_is_owned_product_data_not_role_permission(monkeypatch):
+    text = "tasks created by a user are tied to their account"
+    calls = []
+    production_models(monkeypatch, [
+        claim("ownership_rule", text, text),
+    ], calls)
+
+    batch = tracker.extract_passes(
+        text,
+        dict(
+            messages=[HumanMessage(content=text)],
+            discovery_scope=S.USER_APP,
+            discovered_knowledge=[actor("user")],
+            current_topic=T.BUSINESS_RULES,
+            current_gap=None,
+            turn_count=2,
+        ),
+        S.USER_APP,
+    )
+
+    assert len(batch) == 1
+    assert batch[0].topic == T.BUSINESS_RULES
+    assert batch[0].key == "ownership_rules"
+    assert not any(item.key == "permissions" for item in batch)
+
