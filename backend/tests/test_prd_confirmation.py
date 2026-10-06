@@ -5,6 +5,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agents.conversation_manager import conversation_manager_node
+from agents.discovery_completion import should_review_completion_intent
 from agents.graph import (
     PRD_CONFIRMATION_PROMPT,
     compile_prd_when_approved,
@@ -143,3 +144,55 @@ def test_legacy_auto_compile_checkpoint_is_migrated_back_to_confirmation(tmp_pat
     assert migrated["prd_confirmation_pending"] is True
     assert migrated["ready_to_compile"] is False
     assert migrated["checkpoint_cursor"] == "request_prd_confirmation"
+
+def test_substantive_nothing_answer_is_not_treated_as_discovery_completion(monkeypatch):
+    import agents.conversation_manager as manager
+
+    monkeypatch.setattr(manager, "should_review_free_text_deferral", lambda *_: False)
+    state = _resolved_state()
+    state.update(
+        prd_confirmation_pending=False,
+        current_objective="Determine whether completed tasks remain editable.",
+        current_gap=None,
+        selected_inquiry={
+            "id": "question|USER_APP|thread|task-lifecycle|edit-completed-task"
+        },
+        founder_requested_completion=False,
+    )
+    state["messages"].append(
+        AIMessage(
+            content=(
+                "Should users be able to edit a completed task, or must they "
+                "return it to active first?"
+            )
+        )
+    )
+
+    answer = (
+        "nothing can be done on a completed task other than returning "
+        "the status to active"
+    )
+
+    assert should_review_completion_intent(state, answer) is False
+
+    state["messages"].append(HumanMessage(content=answer))
+    update = conversation_manager_node(state)
+
+    assert update["conversation_intent"] == "product_information"
+    assert not update.get("founder_requested_completion", False)
+
+
+def test_explicit_finish_request_can_close_even_with_active_inquiry():
+    state = _resolved_state()
+    state.update(
+        prd_confirmation_pending=False,
+        current_objective="Clarify one product decision.",
+        selected_inquiry={"id": "question|USER_APP|thread|example|decision"},
+    )
+    state["messages"].append(AIMessage(content="What should happen next?"))
+
+    assert should_review_completion_intent(
+        state,
+        "We've covered everything. Generate the PRD.",
+    ) is True
+

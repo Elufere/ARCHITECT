@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 import hashlib
 import json
+import re
 from typing import Iterable
 from uuid import UUID
 
@@ -263,7 +264,10 @@ def _prd_sections(
     if contract.product_name is not None:
         summary_parts.append(f"Product: {contract.product_name.text}")
     pitch = _claim_texts(contract.elevator_pitch)
-    if pitch:
+    # The founder-authored project description is already the safest executive
+    # summary. Do not repeat goal/pitch facts here when they have dedicated
+    # sections later in the PRD.
+    if pitch and not project_description:
         summary_parts.append(_bullet_block(pitch))
     if not summary_parts and contract.feature_specifications:
         summary_parts.append(
@@ -320,11 +324,10 @@ def _prd_sections(
     if contract.personas:
         personas: list[str] = []
         for persona in contract.personas:
-            block = f"{persona.name} — {persona.description}"
-            behaviors = _claim_texts(persona.key_behaviors)
-            if behaviors:
-                block += "\n" + _bullet_block(behaviors)
-            personas.append(block)
+            # Keep this section about actor identity/role. Capabilities,
+            # permissions, lifecycle rules, and authentication belong in feature
+            # and flow sections rather than being duplicated under the persona.
+            personas.append(f"{persona.name} — {persona.description}")
         sections.append(
             PrdSection(
                 id="users",
@@ -379,6 +382,20 @@ def _prd_sections(
             )
         )
 
+    workflow_parts: list[str] = []
+
+    permissions = _source_values(contract, "USER_ROLES", {"permissions"})
+    if permissions:
+        workflow_parts.append(
+            "Access / permissions:\n" + _bullet_block(permissions)
+        )
+
+    actions = _source_values(contract, "USER_ROLES", {"responsibilities"})
+    if actions:
+        workflow_parts.append(
+            "User actions:\n" + _bullet_block(actions)
+        )
+
     workflow_labels = {
         "trigger": "Trigger",
         "workflow_steps": "Flow",
@@ -386,16 +403,22 @@ def _prd_sections(
         "end_state": "Resulting state",
         "downstream_dependency": "External dependency",
     }
-    workflow_parts: list[str] = []
     for key, label in workflow_labels.items():
         values = _source_values(contract, "CORE_WORKFLOW", {key})
         if values:
             workflow_parts.append(f"{label}:\n" + _bullet_block(values))
+
+    business_rules = _source_values(contract, "BUSINESS_RULES")
+    if business_rules:
+        workflow_parts.append(
+            "Lifecycle / business rules:\n" + _bullet_block(business_rules)
+        )
+
     if workflow_parts:
         sections.append(
             PrdSection(
                 id="user_flow",
-                title="Core User Flow",
+                title="Core User Flow & Lifecycle",
                 body="\n\n".join(workflow_parts),
             )
         )
@@ -434,18 +457,41 @@ def _prd_sections(
                 by_subject[subject] = []
                 subject_order.append(subject)
 
-            # The entity declaration is represented by the heading itself; do not
-            # repeat raw extraction prose such as "Tasks are a product entity".
-            if source.key == "entity":
-                continue
-
             relation = (source.relation or "").strip().replace("_", " ")
             obj = (source.object or "").strip()
-            if relation and obj:
+            raw_value = source.value.strip()
+
+            if source.key == "entity":
+                # Entity claims sometimes also carry a founder-confirmed state
+                # dimension ("can be active or completed"). Preserve that
+                # meaning while suppressing plain declarations such as "Task is
+                # a product entity".
+                state_match = re.search(
+                    r"\bcan\s+be\s+(?:either\s+)?(.+?)\s+or\s+(.+?)(?:[.,]|$)",
+                    raw_value,
+                    flags=re.I,
+                )
+                if state_match:
+                    value = (
+                        "States: "
+                        + state_match.group(1).strip()
+                        + ", "
+                        + state_match.group(2).strip()
+                    )
+                else:
+                    continue
+            elif source.key == "attribute" and obj:
+                value = obj
+                lower = raw_value.lower()
+                if "optional" in lower and "optional" not in value.lower():
+                    value += " (optional)"
+                elif "required" in lower and "required" not in value.lower():
+                    value += " (required)"
+            elif relation and obj:
                 label = relation[:1].upper() + relation[1:]
                 value = f"{label}: {obj}"
             else:
-                value = source.value.strip()
+                value = raw_value
 
             if value and value not in by_subject[subject]:
                 by_subject[subject].append(value)
@@ -475,23 +521,50 @@ def _prd_sections(
         )
 
     deferred = _claim_texts(contract.deferred_items)
+    implementation_decisions: list[str] = []
     for item in contract.deferred_decisions:
         qualifiers = []
         if item.resolution_stage:
             qualifiers.append(f"revisit: {item.resolution_stage}")
         if item.owner:
             qualifiers.append(f"owner: {item.owner}")
-        text = item.decision
+
+        text = item.decision.strip().rstrip(".")
+        if text.lower().startswith("clarify "):
+            text = text[8:].strip()
+        if text:
+            text = text[:1].upper() + text[1:]
         if qualifiers:
             text += " (" + "; ".join(qualifiers) + ")"
-        deferred.append(text)
-    deferred = list(dict.fromkeys(deferred))
+
+        if item.kind == "design_implementation":
+            implementation_decisions.append(text)
+        else:
+            deferred.append(text)
+
+    deferred = list(dict.fromkeys(item for item in deferred if item))
+    implementation_decisions = list(
+        dict.fromkeys(item for item in implementation_decisions if item)
+    )
+
     if deferred:
         sections.append(
             PrdSection(
                 id="deferred",
-                title="Deferred Decisions",
+                title="Deferred Product Decisions",
                 body=_bullet_block(deferred),
+            )
+        )
+
+    if implementation_decisions:
+        sections.append(
+            PrdSection(
+                id="implementation_decisions",
+                title="Implementation Decisions",
+                body=(
+                    "Delegated to design / engineering:\n"
+                    + _bullet_block(implementation_decisions)
+                ),
             )
         )
 

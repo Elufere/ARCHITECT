@@ -233,7 +233,9 @@ HOW TO CHOOSE THE NEXT QUESTION
 2. Scan the confirmed product model for the best unresolved PRODUCT decision.
 3. Prefer a causal consequence of something already established when it changes
    the product contract. Examples of material product-contract areas include:
-   - user outcome / job-to-be-done;
+   - user outcome / job-to-be-done. An enabling quality such as availability,
+     persistence, authentication, speed, or platform access is NOT by itself a
+     substitute for knowing what the user is fundamentally trying to accomplish;
    - core entities and meaningful data shape;
    - ownership, persistence, and access;
    - lifecycle states and allowed transitions;
@@ -294,7 +296,9 @@ Apply this only AFTER scanning the product model. Return frontier=null only when
 the PRD can describe the founder's intended product without the team having to
 choose among materially different user-facing/product-model interpretations, and
 the remaining unknowns are principally design, implementation, or low-impact
-preference.
+preference. Do not treat an access/persistence/platform quality as sufficient
+evidence of the user's core job-to-be-done; if the product's fundamental user
+outcome is still unknown, that remains a material discovery frontier.
 
 OUTPUT
 Choose stable semantic thread_id and decision_key values. The frontier is an

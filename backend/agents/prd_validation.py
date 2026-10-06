@@ -320,7 +320,14 @@ def _section_source_refs(draft: PRDDraft) -> dict[str, set[str]]:
     }
 
 
-def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier, category_cache=None):
+def validate_prd(
+    draft: PRDDraft,
+    sources: list[SourceFact],
+    auditor,
+    classifier,
+    category_cache=None,
+    claim_ids: set[str] | None = None,
+):
     source_map = {fact.fact_id: fact for fact in sources}
     claims = list(draft_claims(draft))
     if not claims:
@@ -407,46 +414,39 @@ def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier
         )
 
     cache = category_cache if category_cache is not None else {}
-    source_meanings = {}
-    # Classify the quote WITHOUT its extracted value, category, or confidence:
-    # otherwise a verifier can mistake the asserted fact for its evidence.
-    for source in sources:
-        observed = independent_categories(classifier, dict(evidence=source.evidence,
-            source_question=source.source_question), definitions, cache)
-        stored_category = f"{source.topic}.{source.key}"
-        # Short exact evidence spans such as "individual users" or "create a
-        # list" may be semantically valid but too fragmentary for the blind
-        # category classifier to assign a taxonomy label. Treat [] as an
-        # abstention, not as proof that grounded discovery was wrong. A non-empty
-        # conflicting classification still fails, and the per-claim semantic
-        # auditor below independently checks evidence/value/category support.
-        if observed and stored_category not in compatible_categories(set(observed)):
-            raise PRDValidationError(
-                f"{source.fact_id}: source evidence conflicts with stored category "
-                f"{stored_category}; observed categories: {sorted(observed)}."
-            )
-        source_meanings[source.fact_id] = (
-            compatible_categories(set(observed))
-            if observed
-            else compatible_categories({stored_category})
-        )
+    # Source facts have already passed discovery grounding and deterministic
+    # projection. Re-classifying each raw evidence span here is both redundant
+    # and brittle because one founder sentence may support several atomic facts.
+    # The per-claim semantic auditor below independently verifies that every
+    # cited source's evidence/question supports its stored value and category.
     verdicts = []
-    for claim_id, claim in claims:
+    claims_to_audit = (
+        [(claim_id, claim) for claim_id, claim in claims if claim_id in claim_ids]
+        if claim_ids is not None
+        else claims
+    )
+    if claim_ids is not None:
+        known_claim_ids = {claim_id for claim_id, _ in claims}
+        unknown_claim_ids = claim_ids - known_claim_ids
+        if unknown_claim_ids:
+            raise PRDValidationError(
+                "Semantic audit requested unknown claim IDs: "
+                f"{sorted(unknown_claim_ids)}."
+            )
+
+    for claim_id, claim in claims_to_audit:
         refs = set(claim["source_fact_ids"])
         # Blind to the draft's declared category and citations, preventing a
         # visibility claim disguised as approval_rules from anchoring the judge.
         text = {key: value for key, value in claim.items() if key not in ("source_fact_ids", "category", "id")}
         observed = independent_categories(classifier, text, definitions, cache)
         source_categories = {f"{source_map[ref].topic}.{source_map[ref].key}" for ref in refs}
-        supported_meanings = set().union(*(source_meanings[ref] for ref in refs))
         observed_compatible = compatible_categories(set(observed))
-        if (
-            claim["category"] not in observed_compatible
-            or not set(observed).issubset(supported_meanings)
-        ):
+        if claim["category"] not in observed_compatible:
             raise PRDValidationError(
                 f"{claim_id}: independently classified as {sorted(observed)}, "
-                f"which does not match the declared/cited categories "
+                f"which does not include the declared category "
+                f"{claim['category']} from cited categories "
                 f"{sorted(source_categories)}."
             )
         payload = dict(

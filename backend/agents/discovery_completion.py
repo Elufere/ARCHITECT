@@ -24,10 +24,12 @@ _completion_intent_model = None
 # This only decides whether a semantic review is worth the extra model call.
 # The model below makes the actual intent decision from conversation context.
 COMPLETION_REVIEW_SHAPE = re.compile(
-    r"\b(?:covered|everything|nothing|finish|finished|done|wrap|enough|"
-    r"anything\s+else|no\s+more|that'?s\s+all|all\s+good|"
+    r"\b(?:covered|everything|finish|finished|wrap|enough|"
+    r"anything\s+else|no\s+more|nothing\s+(?:else|more|left\s+to\s+add)|"
+    r"that'?s\s+all|all\s+good|"
     r"generate\s+(?:the\s+)?prd|create\s+(?:the\s+)?prd|"
-    r"make\s+(?:the\s+)?prd)\b|^\s*no\s*[.!]*\s*$",
+    r"make\s+(?:the\s+)?prd)\b|"
+    r"^\s*(?:done|i(?:'m|\s+am)\s+done|we(?:'re|\s+are)\s+done|no)\s*[.!]*\s*$",
     re.I,
 )
 
@@ -59,13 +61,37 @@ def completion_intent_model():
 
 
 def should_review_completion_intent(state: AgentState, founder_message: str) -> bool:
+    """Gate completion review without stealing an answer to an active inquiry.
+
+    Product answers frequently contain words such as "nothing", "done", or
+    "everything". While Architect is waiting on a substantive product decision,
+    those words belong to that answer unless the founder explicitly asks to end
+    discovery. Only a genuine wrap-up question may interpret a short closure
+    response as interview completion.
+    """
     if state.get("prd_confirmation_pending"):
         return False
+
     normalized = founder_message.replace("’", "'").strip()
     if not normalized:
         return False
+
+    if EXPLICIT_FINISH_REQUEST.search(normalized):
+        return True
+
+    previous_question = _previous_question(state)
+    active_product_inquiry = bool(
+        state.get("current_objective")
+        or state.get("current_gap")
+        or state.get("selected_inquiry")
+        or state.get("selected_requirement_candidate")
+    )
+    if active_product_inquiry and not WRAP_UP_QUESTION.search(previous_question):
+        return False
+
     if re.fullmatch(r"no[.!]*", normalized, re.I):
-        return bool(WRAP_UP_QUESTION.search(_previous_question(state)))
+        return bool(WRAP_UP_QUESTION.search(previous_question))
+
     return bool(COMPLETION_REVIEW_SHAPE.search(normalized))
 
 

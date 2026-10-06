@@ -408,6 +408,10 @@ def test_supported_prose_edit_is_applied_without_changing_structure(
     assert requirement.category == "BUSINESS_RULES.approval_rules"
     assert requirement.source_fact_ids == [source.fact_id]
     assert requirement.id == "FR-01"
+    # Founder-facing feature specifications are built after prose validation, so
+    # they inherit the verified wording instead of exposing the raw source value.
+    detail = result["prd_contract"].feature_specifications[0].details[0]
+    assert detail.text == "Rule: Orders above $100 require manager approval."
 
 
 def test_apply_prose_edits_cannot_change_categories_ids_or_sources():
@@ -1033,7 +1037,7 @@ def test_todo_product_model_groups_atomic_facts_into_feature_specifications():
         "User can create tasks, edit tasks, delete tasks, and mark tasks as completed."
     )
     assert attributes.text == (
-        "Task details: required title, optional description, due date, priority level, "
+        "Task fields — required title, optional description, due date, priority level, "
         "and active or completed status."
     )
 
@@ -1167,3 +1171,55 @@ def test_feature_grouping_uses_atomic_meaning_not_shared_evidence_text():
     )
     assert action_source.fact_id in management_values
     assert persistence_source.fact_id not in management_values
+
+def test_feature_specs_make_short_lifecycle_answers_standalone():
+    permission = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="permissions",
+        value="users should sign in before using the app",
+        evidence="users should sign in before using the app",
+        role="user",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=4,
+    )
+    initial_state = KnowledgeItem(
+        topic=T.BUSINESS_RULES,
+        scope=S.USER_APP,
+        key="validation_rules",
+        value="it can only start as active",
+        evidence="it can only start as active",
+        source_question=(
+            "When a user creates a new task, should it always start as active, "
+            "or can it start completed?"
+        ),
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=7,
+    )
+    entity = ProductConcept(
+        kind=ProductConceptKind.ENTITY,
+        scope=S.USER_APP,
+        subject="task",
+        value="Tasks can be active or completed",
+        evidence="Tasks can be active or completed",
+        confidence=1,
+        source_turn=0,
+    )
+    initial = state(permission, initial_state)
+    initial["product_concepts"] = [entity.model_dump(mode="json")]
+
+    sources = build_source_snapshot(initial)
+    projection = project_prd(sources)
+    model = build_product_model(sources)
+    features = build_feature_specifications(projection.draft, model)
+
+    details = {
+        detail.text
+        for feature in features
+        for detail in feature.details
+    }
+    assert "Access requirement: users should sign in before using the app." in details
+    assert "Rule: Task can only start as active." in details
+

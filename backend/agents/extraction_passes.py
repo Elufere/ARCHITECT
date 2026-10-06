@@ -137,15 +137,20 @@ Kinds:
   named in the preceding question.
 - authorization_boundary: an explicit permission, prohibition, exclusivity,
   access restriction, or conditional authority. Ordinary capability is not one.
+  Data ownership or persistence such as "tasks are tied to the user's account"
+  is NOT an authorization boundary; capture that as ownership_rule instead.
   A process/state condition such as "funds stay locked until X reviews it" is
   NOT a permission for X; capture the workflow/state rule instead.
 - multiple_roles / role_transition: explicit policy about one person/account
   holding several roles or changing roles. When the quote explicitly says a
   confirmed canonical actor acts in named capacities, put that canonical actor
   in role and the capacity labels in aliases. Do not create separate actors.
-- desired_outcome: a result an actor explicitly wants, needs, seeks, or that the
-  product explicitly aims to provide to that actor. Do not relabel the actor's
-  ordinary action as an outcome.
+- desired_outcome: the actor's intended result / job-to-be-done: what they are
+  ultimately trying to accomplish by using the product. Do not relabel an
+  ordinary action as an outcome, and do not use an enabling system property such
+  as cross-device availability, persistence, sign-in, speed, or platform access
+  as a substitute for the actor's core product outcome. Preserve those properties
+  under the corresponding rule/constraint instead.
 - success_condition: an explicit definition of what makes the user's/product's
   goal successful. Merely saying what happens after success is not a definition.
 - motivation: an explicit reason/problem explaining why the product or outcome is wanted.
@@ -161,7 +166,13 @@ Kinds:
   A desired future outcome ('wants assurance that...') is not an established end state.
 - validation_rule / approval_rule / eligibility_rule / limit_rule /
   ownership_rule / visibility_rule: only the corresponding explicit governing rule.
+  ownership_rule includes explicit ownership/account-binding statements such as
+  "records created by a user belong to that user's account." It is distinct from
+  a role permission.
 - *_constraint: only explicit legal, business, operational, geographic, or time boundaries.
+  Operational constraints include explicit availability/access requirements that
+  the product must maintain, such as the same account data being available across
+  devices. This is distinct from the user's core desired outcome / job-to-be-done.
 - mvp_*: only explicit version-one inclusion, deferral/exclusion, or MVP metric.
   Explicit product exclusions such as "there are no payments, integrations, or
   admin features" are mvp_out_of_scope even when the founder does not literally
@@ -178,8 +189,12 @@ Kinds:
   entities, such as "packages are inside groups" or "groups belong to an event".
   Put canonical short labels in subject/relation/object.
 - entity_attribute: an explicit property or dimension of a product entity, such
-  as "a group has a currency" or "a package can have size/colour variants".
-  Put the entity in subject, property in relation, and stated value(s) in object.
+  as "a group has a currency", "a package can have size/colour variants", or
+  "a task can be active or completed". Put the entity in subject, the property
+  (for example status/state) in relation, and stated value(s) in object. When one
+  sentence both introduces an entity and explicitly defines one of its
+  dimensions, it may support both a product_entity claim and a distinct
+  entity_attribute claim because those are separate meanings.
 - external_system: an explicitly identified software/service/provider outside the
   product boundary that this product integrates with, calls, depends on, routes
   through, or exchanges data/events with. Put the external system/service name in

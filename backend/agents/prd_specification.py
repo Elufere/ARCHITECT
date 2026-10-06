@@ -26,7 +26,9 @@ CAPABILITY_FAMILIES: tuple[tuple[str, re.Pattern[str]], ...] = (
         "persistence",
         re.compile(
             r"\b(?:persist|persistent|stored?|cloud|across\s+devices?|sync|"
-            r"remain\s+(?:available|saved)|account[- ]based|save(?:d)?)\b",
+            r"remain\s+(?:available|saved)|account[- ]based|save(?:d)?|"
+            r"(?:tied|linked)\s+to\s+(?:a|the|their)\s+account|"
+            r"belongs?\s+to\s+(?:a|the|their)\s+account)\b",
             re.I,
         ),
     ),
@@ -160,6 +162,7 @@ def _entity_for_source(source: SourceFact, entities: tuple[str, ...]) -> str | N
             source.subject or "",
             source.relation or "",
             source.object or "",
+            source.source_question or "",
         )
         if value
     )
@@ -341,13 +344,13 @@ def _attribute_label(source: SourceFact) -> str:
 
 
 def _capability_phrase(value: str, actor: str | None) -> str:
-    """Remove duplicated actor/can prefixes before grouped feature synthesis."""
+    """Remove duplicated actor/modal prefixes before grouped feature synthesis."""
     text = value.strip().rstrip(".")
     actor_label = re.escape(_humanize(actor)) if actor else r"(?:user|users)"
     patterns = [
-        rf"^(?:the\s+)?{actor_label}\s+can\s+",
-        r"^(?:a|the)\s+user\s+can\s+",
-        r"^users\s+can\s+",
+        rf"^(?:the\s+)?{actor_label}\s+(?:can|should\s+be\s+able\s+to|must)\s+",
+        r"^(?:a|the)\s+user\s+(?:can|should\s+be\s+able\s+to|must)\s+",
+        r"^users\s+(?:can|should\s+be\s+able\s+to|must)\s+",
     ]
     for pattern in patterns:
         updated = re.sub(pattern, "", text, flags=re.I).strip()
@@ -356,8 +359,31 @@ def _capability_phrase(value: str, actor: str | None) -> str:
     return text
 
 
-def _group_text(category: str, sources: list[SourceFact]) -> str:
-    values = [source.value.strip() for source in sources]
+def _attribute_phrase(source: SourceFact) -> str:
+    """Render structural fields without leaking extraction relations like 'Has:'."""
+    obj = (source.object or "").strip()
+    value = source.value.strip()
+    label = obj or _attribute_label(source)
+    lower = value.lower()
+    if "optional" in lower and "optional" not in label.lower():
+        return f"{label} (optional)"
+    if "required" in lower and "required" not in label.lower():
+        return f"{label} (required)"
+    return label
+
+
+def _group_text(
+    category: str,
+    sources: list[SourceFact],
+    wording_by_source: dict[str, str] | None = None,
+    entity: str | None = None,
+    family: str | None = None,
+) -> str:
+    wording_by_source = wording_by_source or {}
+    values = [
+        wording_by_source.get(source.fact_id, source.value).strip()
+        for source in sources
+    ]
     actors = [source.role for source in sources if source.role]
     actor = actors[0] if actors and all(item == actors[0] for item in actors) else None
 
@@ -366,22 +392,21 @@ def _group_text(category: str, sources: list[SourceFact]) -> str:
         actions = [_capability_phrase(value, actor) for value in values]
         return prefix + _join_items(actions) + "."
 
+    if family == "persistence":
+        return "Persistence / ownership: " + _join_items(values) + "."
+
+    if family == "authentication":
+        return "Access requirement: " + _join_items(values) + "."
+
     if category == "USER_ROLES.permissions":
-        prefix = f"{_humanize(actor)} permissions: " if actor else "Permissions: "
-        return prefix + _join_items(values) + "."
+        label = "Permission" if len(values) == 1 else "Permissions"
+        return label + ": " + _join_items(values) + "."
 
     if category == "PRODUCT_MODEL.attribute":
         subjects = {_singular(source.subject or "") for source in sources if source.subject}
         subject = next(iter(subjects)) if len(subjects) == 1 else None
-        structured: list[str] = []
-        for source in sources:
-            relation = (source.relation or "").strip().replace("_", " ")
-            obj = (source.object or "").strip()
-            if relation and obj:
-                structured.append(f"{_humanize(relation)}: {obj}")
-            else:
-                structured.append(_attribute_label(source))
-        prefix = f"{_humanize(subject)} details — " if subject else "Data details — "
+        structured = [_attribute_phrase(source) for source in sources]
+        prefix = f"{_humanize(subject)} fields — " if subject else "Data fields — "
         return prefix + _join_items(structured) + "."
 
     if category == "PRODUCT_MODEL.entity":
@@ -401,6 +426,20 @@ def _group_text(category: str, sources: list[SourceFact]) -> str:
         return "Workflow: " + _join_items(values) + "."
 
     if category.startswith("BUSINESS_RULES."):
+        # Short founder answers can retain a pronoun whose referent lives in the
+        # original question. When the bundle has already resolved that entity,
+        # make only that referent explicit for standalone PRD readability.
+        if entity:
+            values = [
+                re.sub(
+                    r"^it\b",
+                    _humanize(entity),
+                    value,
+                    count=1,
+                    flags=re.I,
+                )
+                for value in values
+            ]
         return "Rule: " + _join_items(values) + "."
 
     if category.startswith("EXCEPTIONS.") or category.startswith("EDGE_CASES."):
@@ -427,6 +466,11 @@ def build_feature_specifications(
 ) -> list[FeatureSpecification]:
     requirement_by_source = {
         ref: requirement.id
+        for requirement in draft.functional_requirements
+        for ref in requirement.source_fact_ids
+    }
+    wording_by_source = {
+        ref: requirement.description
         for requirement in draft.functional_requirements
         for ref in requirement.source_fact_ids
     }
@@ -460,7 +504,13 @@ def build_feature_specifications(
 
         details = [
             SourcedClaim(
-                text=_group_text(category, grouped[category]),
+                text=_group_text(
+                    category,
+                    grouped[category],
+                    wording_by_source,
+                    entity,
+                    kind,
+                ),
                 category=category,
                 actor_ids=_actor_ids(grouped[category]),
                 conditions=[],
