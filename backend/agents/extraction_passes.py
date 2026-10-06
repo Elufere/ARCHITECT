@@ -137,6 +137,8 @@ Kinds:
   named in the preceding question.
 - authorization_boundary: an explicit permission, prohibition, exclusivity,
   access restriction, or conditional authority. Ordinary capability is not one.
+  Data ownership or persistence such as "tasks are tied to the user's account"
+  is NOT an authorization boundary; capture that as ownership_rule instead.
   A process/state condition such as "funds stay locked until X reviews it" is
   NOT a permission for X; capture the workflow/state rule instead.
 - multiple_roles / role_transition: explicit policy about one person/account
@@ -161,6 +163,9 @@ Kinds:
   A desired future outcome ('wants assurance that...') is not an established end state.
 - validation_rule / approval_rule / eligibility_rule / limit_rule /
   ownership_rule / visibility_rule: only the corresponding explicit governing rule.
+  ownership_rule includes explicit ownership/account-binding statements such as
+  "records created by a user belong to that user's account." It is distinct from
+  a role permission.
 - *_constraint: only explicit legal, business, operational, geographic, or time boundaries.
 - mvp_*: only explicit version-one inclusion, deferral/exclusion, or MVP metric.
   Explicit product exclusions such as "there are no payments, integrations, or
@@ -178,8 +183,12 @@ Kinds:
   entities, such as "packages are inside groups" or "groups belong to an event".
   Put canonical short labels in subject/relation/object.
 - entity_attribute: an explicit property or dimension of a product entity, such
-  as "a group has a currency" or "a package can have size/colour variants".
-  Put the entity in subject, property in relation, and stated value(s) in object.
+  as "a group has a currency", "a package can have size/colour variants", or
+  "a task can be active or completed". Put the entity in subject, the property
+  (for example status/state) in relation, and stated value(s) in object. When one
+  sentence both introduces an entity and explicitly defines one of its
+  dimensions, it may support both a product_entity claim and a distinct
+  entity_attribute claim because those are separate meanings.
 - external_system: an explicitly identified software/service/provider outside the
   product boundary that this product integrates with, calls, depends on, routes
   through, or exchanges data/events with. Put the external system/service name in
