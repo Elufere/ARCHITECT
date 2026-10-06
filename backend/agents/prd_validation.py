@@ -408,7 +408,7 @@ def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier
 
     cache = category_cache if category_cache is not None else {}
     source_meanings = {}
-    # Classify the quote WITHOUT its extracted value, category, or confidence:
+    # Classify the quote without exposing its extracted value, category, or confidence:
     # otherwise a verifier can mistake the asserted fact for its evidence.
     for source in sources:
         observed = independent_categories(classifier, dict(evidence=source.evidence,
