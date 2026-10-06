@@ -2,6 +2,8 @@
 
 **Architect is an AI Product Manager that turns an early product idea into a grounded, implementation-ready product definition and PRD through a structured discovery conversation.**
 
+**Live demo:** https://architect-y6hr.onrender.com
+
 Instead of generating a PRD from a one-paragraph prompt, Architect interviews the founder, captures only supported product facts, follows meaningful product consequences, tracks unresolved decisions, and synthesizes the confirmed product model into a PRD.
 
 ## What Architect does
