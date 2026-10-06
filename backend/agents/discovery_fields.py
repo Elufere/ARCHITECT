@@ -10,7 +10,7 @@ FIELD_DEFINITIONS = {
         "primary_users": "Functional actors directly participating in the core product value exchange, including both service recipients and providers. Do not invent roles or split professions into separate actors.",
         "secondary_users": "Additional actors who interact with the scoped product outside its primary value exchange, such as explicitly named support or oversight roles. Explicit absence of ALL additional actors is valid; denying one actor is not total absence.",
         "responsibilities": "The significant actions, activities, duties, capabilities, or processes that a role performs or manages within the product. Explicit ordinary product actions and 'can'/'should be able to' capabilities qualify. Preserve the exact actor owner. Actor names alone establish no actions.",
-        "permissions": "Explicit authorization, prohibition, access restriction, exclusivity, or conditional authority for one role. A capability alone is not authorization. Preserve what is allowed/forbidden and its conditions; no special permissions is a valid explicit absence.",
+        "permissions": "Explicit authorization, prohibition, access restriction, exclusivity, or conditional authority for one role. A capability alone is not authorization. Data ownership, account binding, and persistence (for example, records being tied to a user's account) are not role permissions. Preserve what is allowed/forbidden and its conditions; no special permissions is a valid explicit absence.",
         "multiple_roles": "Whether ONE person/account can hold multiple roles, simultaneously or in different interactions. 'A provider can also be a patient' and 'users can have both roles' establish this. 'Each account has only one role' establishes the negative. Merely listing several actors does not.",
         "role_transitions": "Whether and under what conditions a user changes or switches roles over time. 'Patients become providers after verification' establishes a conditional transition; 'roles never change' or 'users cannot switch roles' establishes no transitions. Holding two roles does not by itself imply switching.",
     },
@@ -32,7 +32,7 @@ FIELD_DEFINITIONS = {
         "approval_rules": "Required review/approval, who grants it, when it is required, and conditions for approval. May also establish a permission or external workflow dependency.",
         "eligibility_rules": "Qualifications or prerequisites determining who may participate or use a function. Can overlap a role permission when actor authorization is explicit.",
         "limits": "Explicit numerical or categorical limits on transactions or operations. A limit can also support a constraint; boundary_conditions additionally needs behavior at/beyond the boundary.",
-        "ownership_rules": "Rules assigning control/ownership of data, resources, or actions. Managing a profile alone does not establish an ownership policy.",
+        "ownership_rules": "Rules assigning control/ownership of data, resources, or actions, including explicit account binding such as records belonging to the user account that created them. Managing a profile alone does not establish an ownership policy.",
         "visibility_rules": "Rules specifying who can view which information and under what conditions. May also establish an actor-specific access permission.",
     },
     T.CONSTRAINTS: {
