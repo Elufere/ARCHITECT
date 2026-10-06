@@ -145,7 +145,10 @@ def test_legacy_auto_compile_checkpoint_is_migrated_back_to_confirmation(tmp_pat
     assert migrated["ready_to_compile"] is False
     assert migrated["checkpoint_cursor"] == "request_prd_confirmation"
 
-def test_substantive_nothing_answer_is_not_treated_as_discovery_completion():
+def test_substantive_nothing_answer_is_not_treated_as_discovery_completion(monkeypatch):
+    import agents.conversation_manager as manager
+
+    monkeypatch.setattr(manager, "should_review_free_text_deferral", lambda *_: False)
     state = _resolved_state()
     state.update(
         prd_confirmation_pending=False,
