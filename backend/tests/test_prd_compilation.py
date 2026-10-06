@@ -1171,3 +1171,55 @@ def test_feature_grouping_uses_atomic_meaning_not_shared_evidence_text():
     )
     assert action_source.fact_id in management_values
     assert persistence_source.fact_id not in management_values
+
+def test_feature_specs_make_short_lifecycle_answers_standalone():
+    permission = KnowledgeItem(
+        topic=T.USER_ROLES,
+        scope=S.USER_APP,
+        key="permissions",
+        value="users should sign in before using the app",
+        evidence="users should sign in before using the app",
+        role="user",
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=4,
+    )
+    initial_state = KnowledgeItem(
+        topic=T.BUSINESS_RULES,
+        scope=S.USER_APP,
+        key="validation_rules",
+        value="it can only start as active",
+        evidence="it can only start as active",
+        source_question=(
+            "When a user creates a new task, should it always start as active, "
+            "or can it start completed?"
+        ),
+        confidence=1,
+        knowledge_state=K.CONFIRMED,
+        source_turn=7,
+    )
+    entity = ProductConcept(
+        kind=ProductConceptKind.ENTITY,
+        scope=S.USER_APP,
+        subject="task",
+        value="Tasks can be active or completed",
+        evidence="Tasks can be active or completed",
+        confidence=1,
+        source_turn=0,
+    )
+    initial = state(permission, initial_state)
+    initial["product_concepts"] = [entity.model_dump(mode="json")]
+
+    sources = build_source_snapshot(initial)
+    projection = project_prd(sources)
+    model = build_product_model(sources)
+    features = build_feature_specifications(projection.draft, model)
+
+    details = {
+        detail.text
+        for feature in features
+        for detail in feature.details
+    }
+    assert "Permission: users should sign in before using the app." in details
+    assert "Rule: Task can only start as active." in details
+
