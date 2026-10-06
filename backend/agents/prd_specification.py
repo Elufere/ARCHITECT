@@ -509,7 +509,7 @@ def build_feature_specifications(
                     grouped[category],
                     wording_by_source,
                     entity,
-                    family,
+                    kind,
                 ),
                 category=category,
                 actor_ids=_actor_ids(grouped[category]),
