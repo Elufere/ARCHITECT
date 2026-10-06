@@ -15,7 +15,7 @@ FIELD_DEFINITIONS = {
         "role_transitions": "Whether and under what conditions a user changes or switches roles over time. 'Patients become providers after verification' establishes a conditional transition; 'roles never change' or 'users cannot switch roles' establishes no transitions. Holding two roles does not by itself imply switching.",
     },
     T.USER_GOALS: {
-        "primary_user_goals": "A desired result a primary actor wants or the product explicitly helps them achieve, owned by that actor. An action list alone is not a goal. A purpose clause can state an outcome even when it uses action verbs.",
+        "primary_user_goals": "The core result/job-to-be-done a primary actor wants or the product explicitly helps them achieve, owned by that actor. An action list alone is not a goal. Enabling system qualities such as cross-device availability, persistence, authentication, speed, or platform access do not by themselves establish the actor's core product outcome. A purpose clause can state an outcome even when it uses action verbs.",
         "secondary_user_goals": "A desired result explicitly sought by an existing secondary actor, owned by that actor. Do not assign a primary actor's goal here. No secondary actors means no secondary-role goals are required.",
         "success_criteria": "An explicit observable condition indicating a user goal was achieved. May be product-wide (role=null) or actor-specific. A completed action list alone does not establish success. Can overlap a workflow completion condition if both meanings are explicit.",
         "motivations": "The explicit reason, need, or problem explaining why users seek the outcome or use the product. May be product-wide (role=null) or actor-specific. Do not infer convenience, safety, or efficiency from features.",
@@ -38,7 +38,7 @@ FIELD_DEFINITIONS = {
     T.CONSTRAINTS: {
         "legal_constraints": "Explicit legal, regulatory, compliance, or mandatory legal requirements/boundaries affecting the product. Never assume regulations from the domain.",
         "business_constraints": "Explicit business policy, budget, commercial, or organizational limitations/requirements. Ordinary product behavior is not a constraint unless stated as a boundary.",
-        "operational_constraints": "Explicit operational capacity, resource, availability, integration, or dependency requirements/restrictions. Normal provider management capabilities are not constraints.",
+        "operational_constraints": "Explicit operational capacity, resource, availability, access/persistence, integration, or dependency requirements/restrictions. This includes requirements such as a user's data being available across their devices. Normal provider management capabilities are not constraints.",
         "geographic_constraints": "Explicit geographic service coverage, jurisdiction, or location restrictions/requirements.",
         "time_constraints": "Explicit deadlines, expiry periods, availability windows, or timing requirements. A time limit is not timeout handling unless the response says what happens on expiry.",
     },
