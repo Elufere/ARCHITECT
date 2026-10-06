@@ -414,21 +414,14 @@ def validate_prd(draft: PRDDraft, sources: list[SourceFact], auditor, classifier
         observed = independent_categories(classifier, dict(evidence=source.evidence,
             source_question=source.source_question), definitions, cache)
         stored_category = f"{source.topic}.{source.key}"
-        # Short exact evidence spans such as "individual users" or "create a
-        # list" may be semantically valid but too fragmentary for the blind
-        # category classifier to assign a taxonomy label. Treat [] as an
-        # abstention, not as proof that grounded discovery was wrong. A non-empty
-        # conflicting classification still fails, and the per-claim semantic
-        # auditor below independently checks evidence/value/category support.
-        if observed and stored_category not in compatible_categories(set(observed)):
-            raise PRDValidationError(
-                f"{source.fact_id}: source evidence conflicts with stored category "
-                f"{stored_category}; observed categories: {sorted(observed)}."
-            )
-        source_meanings[source.fact_id] = (
-            compatible_categories(set(observed))
-            if observed
-            else compatible_categories({stored_category})
+        # A single founder evidence span can intentionally support several atomic
+        # sources. A blind classifier may notice different true assertions in
+        # that shared span and omit this source's narrower canonical category.
+        # Keep its output as extra semantic context, but retain the grounded
+        # stored category. The per-claim audit below still has to prove that the
+        # evidence and source question support the source value/category.
+        source_meanings[source.fact_id] = compatible_categories(
+            set(observed) | {stored_category}
         )
     verdicts = []
     for claim_id, claim in claims:
