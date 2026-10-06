@@ -232,15 +232,6 @@ def pm_compile_node(state: AgentState) -> dict:
         projection = project_prd(sources)
         validate_projection(projection, sources)
         product_model = build_product_model(sources)
-        feature_specifications = build_feature_specifications(
-            projection.draft,
-            product_model,
-        )
-        validate_feature_specifications(
-            feature_specifications,
-            projection.draft,
-            product_model,
-        )
         base_draft = projection.draft
         final_draft = base_draft
         verdicts = []
@@ -300,6 +291,19 @@ def pm_compile_node(state: AgentState) -> dict:
             final_draft = base_draft
             verdicts = []
             prose_polished = False
+
+        # Build the founder-facing feature view from the final wording, not the
+        # raw projection. This keeps presentation aligned with a successful prose
+        # pass while preserving immutable source IDs/categories underneath.
+        feature_specifications = build_feature_specifications(
+            final_draft,
+            product_model,
+        )
+        validate_feature_specifications(
+            feature_specifications,
+            final_draft,
+            product_model,
+        )
 
         contract = PRDContract(
             **final_draft.model_dump(),
