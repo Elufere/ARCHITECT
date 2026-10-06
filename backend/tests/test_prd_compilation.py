@@ -411,7 +411,7 @@ def test_supported_prose_edit_is_applied_without_changing_structure(
     # Founder-facing feature specifications are built after prose validation, so
     # they inherit the verified wording instead of exposing the raw source value.
     detail = result["prd_contract"].feature_specifications[0].details[0]
-    assert detail.text == "Manager can Orders above $100 require manager approval."
+    assert detail.text == "Rule: Orders above $100 require manager approval."
 
 
 def test_apply_prose_edits_cannot_change_categories_ids_or_sources():
