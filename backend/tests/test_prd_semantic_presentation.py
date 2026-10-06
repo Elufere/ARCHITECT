@@ -125,6 +125,78 @@ def test_shared_evidence_does_not_discard_safe_prd_wording():
     assert len(verdicts) == 1
 
 
+
+def test_semantic_audit_can_be_scoped_to_only_prose_edits():
+    edited = _source(
+        "fact_payments",
+        "MVP_SCOPE",
+        "out_of_scope",
+        "payments",
+        evidence="There are no payments.",
+    )
+    unchanged = _source(
+        "fact_action",
+        "USER_ROLES",
+        "responsibilities",
+        "create tasks",
+        evidence="A user can create tasks.",
+        role="user",
+    )
+    draft = PRDDraft(
+        product_name=None,
+        elevator_pitch=[],
+        scope=ScopeBoundary(
+            in_scope=[],
+            out_of_scope=[
+                SourcedClaim(
+                    text="Payments are out of scope.",
+                    category="MVP_SCOPE.out_of_scope",
+                    actor_ids=[],
+                    conditions=[],
+                    source_fact_ids=[edited.fact_id],
+                )
+            ],
+        ),
+        personas=[],
+        functional_requirements=[
+            {
+                "id": "FR-01",
+                "description": "create tasks",
+                "validation": "TBD",
+                "category": "USER_ROLES.responsibilities",
+                "actor_ids": ["user"],
+                "conditions": [],
+                "source_fact_ids": [unchanged.fact_id],
+            }
+        ],
+        non_functional_constraints=[],
+        deferred_items=[],
+        open_questions=[],
+    )
+
+    class EditedOnlyClassifier:
+        def invoke(self, messages):
+            payload = json.loads(messages[-1].content)
+            text = json.dumps(payload).lower()
+            if "payments are out of scope" in text:
+                return {
+                    "categories": ["MVP_SCOPE.out_of_scope"],
+                    "explanation": "Explicit scope exclusion.",
+                }
+            raise AssertionError("Unedited deterministic claim should not be classified")
+
+    verdicts = validate_prd(
+        draft,
+        [edited, unchanged],
+        _Auditor(),
+        EditedOnlyClassifier(),
+        {},
+        claim_ids={"scope/out_of_scope/0"},
+    )
+
+    assert len(verdicts) == 1
+    assert verdicts[0].claim_id == "scope/out_of_scope/0"
+
 def test_todo_prd_rendering_is_semantic_not_storage_shaped():
     sources = [
         _source(
