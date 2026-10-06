@@ -408,6 +408,10 @@ def test_supported_prose_edit_is_applied_without_changing_structure(
     assert requirement.category == "BUSINESS_RULES.approval_rules"
     assert requirement.source_fact_ids == [source.fact_id]
     assert requirement.id == "FR-01"
+    # Founder-facing feature specifications are built after prose validation, so
+    # they inherit the verified wording instead of exposing the raw source value.
+    detail = result["prd_contract"].feature_specifications[0].details[0]
+    assert detail.text == "Manager can Orders above $100 require manager approval."
 
 
 def test_apply_prose_edits_cannot_change_categories_ids_or_sources():
@@ -1033,7 +1037,7 @@ def test_todo_product_model_groups_atomic_facts_into_feature_specifications():
         "User can create tasks, edit tasks, delete tasks, and mark tasks as completed."
     )
     assert attributes.text == (
-        "Task details: required title, optional description, due date, priority level, "
+        "Task fields — required title, optional description, due date, priority level, "
         "and active or completed status."
     )
 
