@@ -271,12 +271,14 @@ def pm_compile_node(state: AgentState) -> dict:
                     )
                 candidate = apply_prose_edits(base_draft, bundle.edits)
                 if bundle.edits:
+                    edited_claim_ids = {edit.claim_id for edit in bundle.edits}
                     verdicts = validate_prd(
                         candidate,
                         sources,
                         audit_llm,
                         category_llm,
                         {},
+                        claim_ids=edited_claim_ids,
                     )
                     final_draft = candidate
                     prose_polished = True
