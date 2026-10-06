@@ -376,6 +376,7 @@ def _group_text(
     category: str,
     sources: list[SourceFact],
     wording_by_source: dict[str, str] | None = None,
+    entity: str | None = None,
 ) -> str:
     wording_by_source = wording_by_source or {}
     values = [
@@ -391,8 +392,8 @@ def _group_text(
         return prefix + _join_items(actions) + "."
 
     if category == "USER_ROLES.permissions":
-        prefix = f"{_humanize(actor)} permissions: " if actor else "Permissions: "
-        return prefix + _join_items(values) + "."
+        label = "Permission" if len(values) == 1 else "Permissions"
+        return label + ": " + _join_items(values) + "."
 
     if category == "PRODUCT_MODEL.attribute":
         subjects = {_singular(source.subject or "") for source in sources if source.subject}
@@ -418,6 +419,20 @@ def _group_text(
         return "Workflow: " + _join_items(values) + "."
 
     if category.startswith("BUSINESS_RULES."):
+        # Short founder answers can retain a pronoun whose referent lives in the
+        # original question. When the bundle has already resolved that entity,
+        # make only that referent explicit for standalone PRD readability.
+        if entity:
+            values = [
+                re.sub(
+                    r"^it\b",
+                    _humanize(entity),
+                    value,
+                    count=1,
+                    flags=re.I,
+                )
+                for value in values
+            ]
         return "Rule: " + _join_items(values) + "."
 
     if category.startswith("EXCEPTIONS.") or category.startswith("EDGE_CASES."):
@@ -486,6 +501,7 @@ def build_feature_specifications(
                     category,
                     grouped[category],
                     wording_by_source,
+                    entity,
                 ),
                 category=category,
                 actor_ids=_actor_ids(grouped[category]),
