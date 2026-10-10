@@ -292,6 +292,22 @@ def test_system_behavior_is_not_rendered_as_a_user_responsibility():
     assert any("When a completed task is returned to active" in text for text in rendered)
 
 
+def test_open_questions_are_always_rendered_as_questions():
+    questions = pm.build_open_questions(
+        {
+            "open_inquiries": [{
+                "scope": S.USER_APP.value,
+                "objective": "Determine whether active tasks become overdue",
+                "question_hint": "Ask a focused question about overdue tasks",
+            }],
+            "deferred_discovery_frontiers": [],
+            "discovery_boundaries": [],
+        },
+        S.USER_APP,
+    )
+    assert questions == ["Is it expected that active tasks become overdue?"]
+
+
 def test_exact_todo_session_compiles_coherently_even_when_prose_polish_is_rejected(
     monkeypatch, tmp_path
 ):

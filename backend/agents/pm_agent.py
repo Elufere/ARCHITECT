@@ -265,11 +265,11 @@ def build_open_questions(state: AgentState, scope: DiscoveryScope) -> list[str]:
             elif lowered.startswith("understand what "):
                 question = "What " + objective[len("Understand what "):].rstrip(".?") + "?"
             elif lowered.startswith("determine whether "):
-                question = "Should " + objective[len("Determine whether "):].rstrip(".?") + "?"
+                question = "Is it expected that " + objective[len("Determine whether "):].rstrip(".?") + "?"
             elif lowered.startswith("understand whether "):
-                question = "Should " + objective[len("Understand whether "):].rstrip(".?") + "?"
+                question = "Is it expected that " + objective[len("Understand whether "):].rstrip(".?") + "?"
             else:
-                question = "Unresolved product decision: " + objective + "."
+                question = "What remains undecided about " + objective.rstrip(".?") + "?"
 
         identity = re.sub(r"s+", " ", question.lower()).strip()
         if identity not in seen:
