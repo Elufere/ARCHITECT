@@ -59,6 +59,10 @@ from agents.extraction_passes import (
     absence_label,
     claim_to_fact,
 )
+from agents.prd_semantics import (
+    is_feature_local_rationale,
+    is_system_behavior_claim,
+)
 
 # ──────────────────────────────────────────────
 # Evidence Validation
@@ -1033,6 +1037,16 @@ def _admit_claim_item(
     primary_roles: set[str],
     secondary_roles: set[str],
 ) -> KnowledgeItem | None:
+    question = answer_context(state).get("question") or ""
+    if claim.kind == "actor_action" and is_system_behavior_claim(question, claim.value):
+        claim = claim.model_copy(update={"kind": "system_behavior", "role": None})
+    if claim.kind == "desired_outcome" and is_feature_local_rationale(
+        claim.kind, claim.evidence, question
+    ):
+        raise ValueError(
+            "Feature-specific decision rationale is not a product-level desired outcome"
+        )
+
     aliases = list(claim.aliases)
 
     if claim.kind in ("primary_actor", "secondary_actor"):
@@ -1391,7 +1405,11 @@ action/resource access or authority boundary, not merely a choice of role.
 Do NOT turn system behaviour into a user's responsibility. Preserving progress
 after interruption is system recovery behaviour, not a duty to resume.
 Do NOT turn a feature into a goal unless an explicit user-owned desired outcome
-is stated. Regulatory compliance requirements are constraints/rules, not role
+is stated. A "so users..." clause that only explains why a specific app behavior
+was selected is feature rationale, not the user's overall job-to-be-done. When the
+question asks what the app/system should do, do not classify its action as a user
+responsibility or its local benefit as a global product goal. Regulatory compliance
+requirements are constraints/rules, not role
 responsibilities or goals, unless a concrete compliance action is explicitly
 assigned to that role. Exception/recovery handling is not a normal workflow
 step unless the response separately describes its place in the actual process.
@@ -1570,6 +1588,76 @@ of rules or exclusions. Preserve it in value with its original meaning.
 # ──────────────────────────────────────────────
 # Node
 # ──────────────────────────────────────────────
+
+def _normalize_validation_rule_value(value: str) -> str:
+    normalized = re.sub(r"\b(compulsory|mandatory)\b", "required", (value or "").lower())
+    normalized = re.sub(r"\b(?:is|are|must be|should be|needs? to be)\b", "should be", normalized)
+    return re.sub(r"\s+", " ", normalized).strip().rstrip(".!? ")
+
+
+def _explicit_field_validation_items(
+    answer: str,
+    source_question: str | None,
+    scope: DiscoveryScope,
+    source_turn: int,
+    existing_items: list[KnowledgeItem],
+) -> list[KnowledgeItem]:
+    """Recover explicit field requiredness when the LLM only captures the field itself."""
+    rules: list[KnowledgeItem] = []
+    existing = {
+        _normalize_validation_rule_value(item.value)
+        for item in existing_items
+        if item.topic == DiscoveryTopic.BUSINESS_RULES and item.key == "validation_rules"
+    }
+    qualifier_pattern = re.compile(
+        r"(?P<fields>[^.;!?]{1,120}?)\s+"
+        r"(?:should\s+be|is|are|must\s+be|needs?\s+to\s+be)\s+"
+        r"(?P<qualifier>compulsory|required|mandatory|optional)\b",
+        re.IGNORECASE,
+    )
+    for match in qualifier_pattern.finditer(answer or ""):
+        fields_text = match.group("fields")
+        qualifier = (
+            "required"
+            if match.group("qualifier").lower() in {"compulsory", "required", "mandatory"}
+            else "optional"
+        )
+        field_names: list[str] = []
+        combined_due_date = re.search(
+            r"\bdue date\s*(?:and|&|/)\s*time\b|\bdue date/time\b",
+            fields_text,
+            re.IGNORECASE,
+        )
+        if combined_due_date:
+            field_names.append("due date and time")
+        else:
+            if re.search(r"\bdue date\b", fields_text, re.IGNORECASE):
+                field_names.append("due date")
+            if re.search(r"\bdue time\b", fields_text, re.IGNORECASE):
+                field_names.append("due time")
+        for field in ("title", "description", "priority"):
+            if re.search(rf"\b{field}\b", fields_text, re.IGNORECASE):
+                field_names.append(field)
+
+        evidence = match.group(0).strip()
+        for field in dict.fromkeys(field_names):
+            value = f"{field} should be {qualifier}"
+            if value in existing:
+                continue
+            rules.append(KnowledgeItem(
+                scope=scope,
+                topic=DiscoveryTopic.BUSINESS_RULES,
+                key="validation_rules",
+                value=value,
+                evidence=evidence,
+                source_question=source_question,
+                source_turn=source_turn,
+                confidence=1.0,
+                knowledge_state=KnowledgeState.CONFIRMED,
+            ))
+            existing.add(value)
+    return rules
+
 
 def knowledge_tracker_node(state: AgentState) -> dict:
     """
@@ -1786,6 +1874,22 @@ def knowledge_tracker_node(state: AgentState) -> dict:
                         )
                 else:
                     extracted_items.append(absence)
+    if not recovering_prior_answer and not confirmed_prior_answer:
+        answer_details = answer_context(state)
+        explicit_field_rules = _explicit_field_validation_items(
+            answer=answer_details.get("answer") or user_response or "",
+            source_question=answer_details.get("question") or None,
+            scope=current_scope,
+            source_turn=state.get("turn_count", 0),
+            existing_items=extracted_items,
+        )
+        if explicit_field_rules:
+            extracted_items.extend(explicit_field_rules)
+            print(
+                "EXPLICIT FIELD VALIDATION RECOVERY:",
+                [item.value for item in explicit_field_rules],
+            )
+
     product_concepts = merge_product_concepts(
         state.get("product_concepts", []),
         captured_concepts,

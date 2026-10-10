@@ -151,6 +151,7 @@ class AgentState(TypedDict):
     model_implications: List[dict]
     thread_planning_enabled: bool
     discovery_threads: Dict[str, dict]
+    deferred_discovery_frontiers: List[dict]
     active_discovery_thread: Optional[str]
     thread_frontier: Optional[dict]
     thread_relevant_requirement_ids: List[str]

@@ -17,6 +17,12 @@ from agents.prd_schema import (
     SourceFact,
     SourcedClaim,
 )
+from agents.prd_semantics import (
+    is_feature_local_goal_source,
+    is_system_behavior_source,
+    normalize_action_phrase,
+    render_system_behavior,
+)
 
 
 WORD_RE = re.compile(r"[a-z0-9]+")
@@ -355,8 +361,9 @@ def _capability_phrase(value: str, actor: str | None) -> str:
     for pattern in patterns:
         updated = re.sub(pattern, "", text, flags=re.I).strip()
         if updated != text:
-            return updated
-    return text
+            text = updated
+            break
+    return normalize_action_phrase(text)
 
 
 def _attribute_phrase(source: SourceFact) -> str:
@@ -386,6 +393,28 @@ def _group_text(
     ]
     actors = [source.role for source in sources if source.role]
     actor = actors[0] if actors and all(item == actors[0] for item in actors) else None
+
+    if (
+        category == "USER_ROLES.responsibilities"
+        and sources
+        and all(is_system_behavior_source(source) for source in sources)
+    ):
+        system_values = [
+            wording_by_source.get(source.fact_id, render_system_behavior(source)).strip()
+            for source in sources
+        ]
+        return "System behavior: " + _join_items(system_values) + "."
+
+    if (
+        category.startswith("USER_GOALS.")
+        and sources
+        and all(is_feature_local_goal_source(source) for source in sources)
+    ):
+        outcomes = [
+            value[:1].upper() + value[1:] if value else value
+            for value in values
+        ]
+        return "Outcome: " + _join_items(outcomes) + "."
 
     if category == "USER_ROLES.responsibilities":
         prefix = f"{_humanize(actor)} can " if actor else "Users can "

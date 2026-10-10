@@ -17,6 +17,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from agents.interview_checkpoint import checkpoint_path, load_checkpoint
 from agents.prd_schema import PRDContract
+from agents.prd_semantics import render_lifecycle_result
 from agents.understanding_projection import build_understanding_projection
 from api.schemas import (
     DiscoverySnapshot,
@@ -285,18 +286,26 @@ def _prd_sections(
             )
         )
 
-    goals = _source_values(
-        contract,
-        "USER_GOALS",
-        {"primary_user_goals", "secondary_user_goals"},
-    )
-    motivations = _source_values(contract, "USER_GOALS", {"motivations"})
-    success = _source_values(contract, "USER_GOALS", {"success_criteria"})
-    success.extend(
-        value
-        for value in _source_values(contract, "MVP_SCOPE", {"success_metrics"})
-        if value not in success
-    )
+    # Only claims still classified as product goals belong in this section.
+    # Feature-specific benefit clauses are rendered alongside their feature.
+    goals = list(dict.fromkeys(
+        claim.text for claim in contract.elevator_pitch
+        if claim.category in {
+            "USER_GOALS.primary_user_goals",
+            "USER_GOALS.secondary_user_goals",
+        }
+    ))
+    motivations = list(dict.fromkeys(
+        claim.text for claim in contract.elevator_pitch
+        if claim.category == "USER_GOALS.motivations"
+    ))
+    success = list(dict.fromkeys(
+        claim.text for claim in contract.elevator_pitch
+        if claim.category in {
+            "USER_GOALS.success_criteria",
+            "MVP_SCOPE.success_metrics",
+        }
+    ))
     goal_parts: list[str] = []
     if motivations:
         goal_parts.append("Problem / motivation:\n" + _bullet_block(motivations))
@@ -384,18 +393,8 @@ def _prd_sections(
 
     workflow_parts: list[str] = []
 
-    permissions = _source_values(contract, "USER_ROLES", {"permissions"})
-    if permissions:
-        workflow_parts.append(
-            "Access / permissions:\n" + _bullet_block(permissions)
-        )
-
-    actions = _source_values(contract, "USER_ROLES", {"responsibilities"})
-    if actions:
-        workflow_parts.append(
-            "User actions:\n" + _bullet_block(actions)
-        )
-
+    # User capabilities and permissions already live in feature requirements.
+    # Keep this section focused on workflow events, resulting states, and rules.
     workflow_labels = {
         "trigger": "Trigger",
         "workflow_steps": "Flow",
@@ -404,7 +403,18 @@ def _prd_sections(
         "downstream_dependency": "External dependency",
     }
     for key, label in workflow_labels.items():
-        values = _source_values(contract, "CORE_WORKFLOW", {key})
+        if key in {"workflow_steps", "end_state"}:
+            values = list(dict.fromkeys(
+                render_lifecycle_result(source)
+                for source in contract.source_facts
+                if (
+                    source.topic == "CORE_WORKFLOW"
+                    and source.key == key
+                    and source.absence is None
+                )
+            ))
+        else:
+            values = _source_values(contract, "CORE_WORKFLOW", {key})
         if values:
             workflow_parts.append(f"{label}:\n" + _bullet_block(values))
 
@@ -495,6 +505,74 @@ def _prd_sections(
 
             if value and value not in by_subject[subject]:
                 by_subject[subject].append(value)
+
+        # Some fields are captured as confirmed validation rules instead of
+        # PRODUCT_MODEL.attribute concepts. Add them to the model only when the
+        # recorded question explicitly ties the rule to a known entity.
+        attribute_subjects = list(dict.fromkeys(
+            source.subject.strip().replace("_", " ").title()
+            for source in product_sources
+            if (
+                source.key == "attribute"
+                and source.subject
+                and source.subject.strip()
+                and (source.relation or "").strip().lower() in {
+                    "has attribute", "has field", "has property", "includes field"
+                }
+            )
+        ))
+        for source in contract.source_facts:
+            if (
+                source.topic != "BUSINESS_RULES"
+                or source.key != "validation_rules"
+                or source.absence is not None
+            ):
+                continue
+            match = re.match(
+                r"^\s*(?P<field>[\w\s/-]+?)\s+should\s+be\s+(?P<qualifier>optional|required|compulsory|mandatory)\s*[.!]?$",
+                source.value,
+                flags=re.I,
+            )
+            if not match:
+                continue
+            question = source.source_question or ""
+            subject = next(
+                (
+                    candidate for candidate in attribute_subjects
+                    if re.search(
+                        rf"\b{re.escape(candidate.rstrip('s'))}s?\b",
+                        question,
+                        flags=re.I,
+                    )
+                ),
+                None,
+            )
+            if subject is None:
+                continue
+            field = re.sub(r"\s+", " ", match.group("field").strip().lower())
+            qualifier = match.group("qualifier").lower()
+            qualifier = "required" if qualifier in {"compulsory", "mandatory"} else qualifier
+            value = f"{field} ({qualifier})"
+            if subject not in by_subject:
+                by_subject[subject] = []
+                subject_order.append(subject)
+
+            def base_field(label: str) -> str:
+                normalized = label.strip().lower()
+                normalized = re.sub(r"^(optional|required|compulsory|mandatory)\s+", "", normalized)
+                return re.sub(r"\s*\((optional|required|compulsory|mandatory)\)$", "", normalized).strip()
+
+            field_index = next(
+                (
+                    index for index, existing in enumerate(by_subject[subject])
+                    if base_field(existing) == base_field(field)
+                ),
+                None,
+            )
+            if field_index is None:
+                by_subject[subject].append(value)
+            else:
+                by_subject[subject][field_index] = value
 
         blocks = []
         for subject in subject_order:

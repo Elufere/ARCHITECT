@@ -17,6 +17,13 @@ from agents.prd_schema import (
     SourceFact,
     UserPersona,
 )
+from agents.prd_semantics import (
+    is_feature_local_goal_source,
+    is_system_behavior_source,
+    render_acceptance_criterion,
+    render_lifecycle_result,
+    render_system_behavior,
+)
 
 
 @dataclass(frozen=True)
@@ -44,8 +51,15 @@ def is_constraint_source(source: SourceFact) -> bool:
 
 
 def _claim(source: SourceFact, text: str | None = None) -> SourcedClaim:
+    claim_text = text
+    if claim_text is None:
+        claim_text = (
+            render_system_behavior(source)
+            if is_system_behavior_source(source)
+            else source.value
+        )
     return SourcedClaim(
-        text=(text or source.value).strip(),
+        text=claim_text.strip(),
         category=source_category(source),
         actor_ids=source_actor_ids(source),
         conditions=[],
@@ -82,6 +96,8 @@ def _persona(source: SourceFact, secondary: bool = False) -> UserPersona:
 
 def _requires_functional_requirement(source: SourceFact) -> bool:
     category = source_category(source)
+    if is_feature_local_goal_source(source):
+        return True
     if source.topic in {
         "CORE_WORKFLOW",
         "BUSINESS_RULES",
@@ -114,6 +130,8 @@ def _section_for(source: SourceFact) -> str:
         return "scope.in_scope"
     if source.topic == "CONSTRAINTS":
         return "non_functional_constraints"
+    if is_feature_local_goal_source(source):
+        return "functional_requirements"
     if source.topic == "USER_GOALS" or (
         source.topic == "MVP_SCOPE" and source.key == "success_metrics"
     ):
@@ -174,6 +192,7 @@ def project_prd(sources: list[SourceFact]) -> ProjectionResult:
         if (
             source.topic == "USER_ROLES"
             and source.key in {"responsibilities", "permissions"}
+            and not is_system_behavior_source(source)
         ):
             behavior = _claim(source)
             for actor_id in source_actor_ids(source):
@@ -187,10 +206,28 @@ def project_prd(sources: list[SourceFact]) -> ProjectionResult:
         functional.append(
             FunctionalRequirement(
                 id=f"FR-{requirement_index:02d}",
-                description=source.value.strip(),
-                validation="TBD",
-                category=source_category(source),
-                actor_ids=source_actor_ids(source),
+                description=(
+                    render_system_behavior(source)
+                    if is_system_behavior_source(source)
+                    else render_lifecycle_result(source)
+                    if source.topic == "CORE_WORKFLOW"
+                    and source.key in {"workflow_steps", "end_state"}
+                    else source.value.strip()
+                ),
+                validation=render_acceptance_criterion(source, (
+                    render_system_behavior(source)
+                    if is_system_behavior_source(source)
+                    else render_lifecycle_result(source)
+                    if source.topic == "CORE_WORKFLOW"
+                    and source.key in {"workflow_steps", "end_state"}
+                    else source.value.strip()
+                )),
+                category=(
+                    "CORE_WORKFLOW.workflow_steps"
+                    if is_system_behavior_source(source)
+                    else source_category(source)
+                ),
+                actor_ids=[] if is_system_behavior_source(source) else source_actor_ids(source),
                 conditions=[],
                 source_fact_ids=[source.fact_id],
             )

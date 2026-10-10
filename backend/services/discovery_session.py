@@ -49,6 +49,7 @@ def create_initial_discovery_state(description: str, *, session_id: str | None =
         model_implications=[],
         thread_planning_enabled=True,
         discovery_threads={},
+        deferred_discovery_frontiers=[],
         active_discovery_thread=None,
         thread_frontier=None,
         thread_relevant_requirement_ids=[],
