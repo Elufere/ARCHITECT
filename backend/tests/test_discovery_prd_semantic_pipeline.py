@@ -421,7 +421,19 @@ def test_exact_todo_session_compiles_coherently_even_when_prose_polish_is_reject
     assert audit_calls["count"] >= 2
     contract = result["prd_contract"]
     assert contract.prose_polished is False
+    assert contract.functional_requirements
+    assert all(
+        requirement.validation.strip() and requirement.validation != "TBD"
+        for requirement in contract.functional_requirements
+    )
     sections = {section.id: section for section in _prd_sections(contract, RAW_IDEA)}
+    assert "functional_requirements" in sections
+    assert "Acceptance:" in sections["functional_requirements"].body
+    assert any(
+        "remaining scheduled reminders" in requirement.validation.lower()
+        and "canceled" in requirement.validation.lower()
+        for requirement in contract.functional_requirements
+    )
     data_model = sections["data_model"].body.lower()
     assert "title" in data_model
     assert "description (optional)" in data_model

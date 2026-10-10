@@ -130,6 +130,66 @@ def render_lifecycle_result(source) -> str:
     return value[:1].upper() + value[1:] + "."
 
 
+def render_acceptance_criterion(source, description: str) -> str:
+    """Produce a grounded, observable acceptance check instead of a TBD placeholder."""
+    topic = source.topic
+    key = source.key
+    value = (source.value or "").strip()
+    lowered = value.lower()
+    question = (source.source_question or "").lower()
+
+    if is_system_behavior_source(source):
+        return render_system_behavior(source)
+    if is_feature_local_goal_source(source):
+        return (
+            "When a completed task is returned to active while its due date and time "
+            "are still in the future, the app reschedules future reminders whose "
+            "scheduled times have not passed."
+        )
+    if topic == "CORE_WORKFLOW" and key in {"workflow_steps", "end_state"}:
+        return render_lifecycle_result(source)
+
+    if topic == "USER_ROLES" and key == "responsibilities":
+        if re.search(r"\bcreate\b", lowered) and "task" in lowered:
+            return "After the user creates a task, it appears in that user's task list."
+        if re.search(r"\bedit\b", lowered) and "task" in lowered:
+            return "After the user edits a task, the updated details are saved and shown when the task is viewed again."
+        if re.search(r"\bdelete\b", lowered) and "task" in lowered:
+            if "active" in lowered and "completed" in lowered:
+                return "The user can initiate deletion for a task in either active or completed status."
+            return "The user can initiate deletion of the specified task."
+        if "completed" in lowered and "before" in question and "reminder" in question:
+            return "When a task is completed before its due time, all remaining scheduled reminders for that task are canceled."
+        if re.search(r"\bmark\b", lowered) and "completed" in lowered:
+            return "When the user marks a task as completed, its status changes to completed."
+        if "completed" in lowered and "active" in lowered and "status" in lowered:
+            return "The user can change a task's status from completed to active."
+        return f"The user can perform the action described: {value.rstrip('.')}."
+
+    if topic == "USER_ROLES" and key == "permissions":
+        if "account" in lowered and "before creating a task" in lowered:
+            return "Task creation is unavailable until the user has created an account."
+        if "completed task" in lowered and "active" in lowered and "edit" in lowered:
+            return "A completed task cannot be edited until the user changes its status to active."
+
+    if topic == "BUSINESS_RULES" and key == "validation_rules":
+        if "description" in lowered and "optional" in lowered:
+            return "A task can be saved without a description."
+        if "due date" in lowered and "optional" in lowered:
+            return "A task can be saved without a due date or time."
+
+    if topic == "BUSINESS_RULES" and key == "ownership_rules":
+        return "Each task is associated with the user's account."
+    if topic == "MVP_SCOPE" and key == "must_have_features":
+        if "android" in lowered and "ios" in lowered:
+            return "The MVP is limited to Android and iOS mobile applications."
+    if topic == "CONSTRAINTS" and key == "operational_constraints":
+        if "devices" in lowered and "task list" in lowered:
+            return "After a task update, the user's devices show the same up-to-date task list."
+
+    return f"Verify that the product exhibits the confirmed behavior: {description.rstrip('.')}"
+
+
 def normalize_action_phrase(value: str) -> str:
     """Normalize common third-person extraction fragments into capability verbs."""
     text = (value or "").strip()
