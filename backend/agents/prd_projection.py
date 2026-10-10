@@ -203,7 +203,11 @@ def project_prd(sources: list[SourceFact]) -> ProjectionResult:
         functional.append(
             FunctionalRequirement(
                 id=f"FR-{requirement_index:02d}",
-                description=source.value.strip(),
+                description=(
+                    render_system_behavior(source)
+                    if is_system_behavior_source(source)
+                    else source.value.strip()
+                ),
                 validation="TBD",
                 category=source_category(source),
                 actor_ids=source_actor_ids(source),

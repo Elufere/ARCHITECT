@@ -1,8 +1,12 @@
 """Offline regression for the exact To-do discovery session and PRD fallback."""
 from types import SimpleNamespace
 
-from langchain_core.messages import HumanMessage
+import pytest
 
+from langchain_core.messages import AIMessage, HumanMessage
+
+from agents import knowledge_tracker
+from agents.extraction_passes import NeutralClaim
 from agents import pm_agent as pm
 from agents.prd_semantics import (
     is_feature_local_rationale,
@@ -202,6 +206,59 @@ def test_feature_decision_rationale_is_not_promoted_to_global_product_goal():
     )
 
 
+def test_app_behavior_answer_is_not_admitted_as_a_user_responsibility():
+    state = _todo_session_state()
+    answer = (
+        "Automatically reschedule all future reminders that haven’t passed yet, "
+        "so users get notified again as if the task was never completed."
+    )
+    state["messages"] = [
+        AIMessage(content=REOPEN_REMINDER_QUESTION),
+        HumanMessage(content=answer),
+    ]
+    claim = NeutralClaim(
+        kind="actor_action",
+        role="user",
+        value="Automatically reschedule all future reminders that haven’t passed yet",
+        evidence=answer,
+        confidence=1,
+        source_turn=6,
+    )
+
+    admitted = knowledge_tracker._admit_claim_item(
+        claim, state, S.USER_APP, {"user"}, set()
+    )
+
+    assert admitted is not None
+    assert admitted.topic == T.CORE_WORKFLOW
+    assert admitted.key == "workflow_steps"
+    assert admitted.role is None
+
+
+def test_feature_rationale_is_not_admitted_as_a_global_goal():
+    state = _todo_session_state()
+    state["messages"] = [
+        AIMessage(content=REOPEN_REMINDER_QUESTION),
+        HumanMessage(content=(
+            "Automatically reschedule all future reminders that haven’t passed yet, "
+            "so users get notified again as if the task was never completed."
+        )),
+    ]
+    claim = NeutralClaim(
+        kind="desired_outcome",
+        role="user",
+        value="users get notified again as if the task was never completed",
+        evidence="so users get notified again as if the task was never completed",
+        confidence=1,
+        source_turn=6,
+    )
+
+    with pytest.raises(ValueError, match="Feature-specific decision rationale"):
+        knowledge_tracker._admit_claim_item(
+            claim, state, S.USER_APP, {"user"}, set()
+        )
+
+
 def test_system_behavior_is_not_rendered_as_a_user_responsibility():
     assert is_system_behavior_claim(
         REMINDER_QUESTION,
@@ -248,6 +305,7 @@ def test_exact_todo_session_compiles_coherently_even_when_prose_polish_is_reject
     )
     assert "The app sends reminders 1 hour, 30 minutes, and 5 minutes" in feature_text
     assert "When a completed task is returned to active" in feature_text
+    assert "Outcome: Users get notified again as if the task was never completed" in feature_text
     assert "Users can automatically reschedule" not in feature_text
 
     goals = sections.get("goals")

@@ -510,7 +510,14 @@ def _prd_sections(
         attribute_subjects = list(dict.fromkeys(
             source.subject.strip().replace("_", " ").title()
             for source in product_sources
-            if source.key == "attribute" and source.subject and source.subject.strip()
+            if (
+                source.key == "attribute"
+                and source.subject
+                and source.subject.strip()
+                and (source.relation or "").strip().lower() in {
+                    "has attribute", "has field", "has property", "includes field"
+                }
+            )
         ))
         for source in contract.source_facts:
             if (
