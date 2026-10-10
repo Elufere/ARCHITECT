@@ -688,7 +688,6 @@ def _refresh_inquiry_frontier(state: AgentState) -> tuple[AgentState, dict]:
 
 
 _TERMINAL_INQUIRY_BLOCK_REASONS = frozenset({
-    "RECENTLY_ASKED_SAME_TARGET",
     "REPEATED_THREAD_DECISION",
     "EXPLICITLY_DEFERRED_DECISION",
     "EXPLICITLY_REJECTED_DECISION",
