@@ -241,7 +241,7 @@ def test_app_behavior_answer_is_not_admitted_as_a_user_responsibility():
     projection = pm.project_prd(sources)
     assert any(
         requirement.category == "CORE_WORKFLOW.workflow_steps"
-        and "The app automatically reschedules" in requirement.description
+        and "When a completed task is returned to active" in requirement.description
         for requirement in projection.draft.functional_requirements
     )
     assert all(
