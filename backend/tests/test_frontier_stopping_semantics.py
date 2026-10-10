@@ -522,3 +522,49 @@ def test_generated_question_allows_selected_founder_gap():
         state,
         "Should tasks remain saved after the user closes and reopens the app?",
     ) is None
+
+
+def test_terminally_blocked_inquiries_allow_prd_confirmation():
+    state = base_state()
+    inquiry_id = "USER_APP|thread|task-organization|deferred-design"
+    candidate_id = f"question|{inquiry_id}"
+    state["open_inquiries"] = [{
+        "id": inquiry_id,
+        "source": InquirySource.MODEL.value,
+        "scope": SCOPE.value,
+        "topic": DiscoveryTopic.CORE_WORKFLOW.value,
+        "objective": "Clarify an implementation detail the founder deferred.",
+        "question_hint": "Ask about the deferred implementation detail.",
+        "reason": "Regression fixture.",
+        "thread_id": "task-organization",
+        "decision_key": "deferred-design",
+    }]
+    state["question_candidate_eligibility"] = {
+        candidate_id: {
+            "candidate_id": candidate_id,
+            "eligible": False,
+            "reasons": [CandidateBlockReason.EXPLICITLY_DEFERRED_DECISION.value],
+        }
+    }
+    state["prd_confirmation_pending"] = True
+
+    assert planner.all_discovery_resolved(state) is True
+    assert route_after_plan(state) == "request_prd_confirmation"
+
+
+def test_unexpectedly_blocked_inquiries_do_not_allow_prd_confirmation():
+    state = base_state()
+    inquiry_id = "USER_APP|thread|task-organization|unexpected-blocker"
+    candidate_id = f"question|{inquiry_id}"
+    state["open_inquiries"] = [{"id": inquiry_id}]
+    state["question_candidate_eligibility"] = {
+        candidate_id: {
+            "candidate_id": candidate_id,
+            "eligible": False,
+            "reasons": ["WRONG_SCOPE"],
+        }
+    }
+    state["prd_confirmation_pending"] = True
+
+    assert planner.all_discovery_resolved(state) is False
+    assert route_after_plan(state) == "generate"
