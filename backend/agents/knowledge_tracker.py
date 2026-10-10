@@ -872,6 +872,44 @@ def _explicit_product_scope_exclusion_claim(
     )
 
 
+def _shared_field_qualifier_evidence(
+    claim: NeutralClaim,
+    user_response: str,
+) -> str | None:
+    """Recover an exact clause when a field shares its requiredness qualifier.
+
+    Example: "note should be optional" is a semantic subclaim of the literal
+    clause "note and due date & time should be optional", not a literal quote.
+    """
+    if claim.kind != "entity_attribute":
+        return None
+
+    qualifier_match = re.search(
+        r"\b(compulsory|required|mandatory|optional)\b",
+        claim.value or "",
+        re.IGNORECASE,
+    )
+    field_name = (claim.object or "").strip()
+    if not qualifier_match or not field_name:
+        return None
+
+    normalized_field = re.sub(r"\s+", " ", field_name.lower())
+    if normalized_field in {"due date and time", "due date/time"}:
+        field_pattern = r"\bdue\s+date\s*(?:and|&|/)\s*time\b"
+    else:
+        field_pattern = rf"\b{re.escape(field_name)}\b"
+    qualifier_pattern = rf"\b{re.escape(qualifier_match.group(1))}\b"
+
+    for clause in re.split(r"(?<=[.!?;])\s+", user_response or ""):
+        if re.search(field_pattern, clause, re.IGNORECASE) and re.search(
+            qualifier_pattern, clause, re.IGNORECASE
+        ):
+            exact_clause = clause.strip()
+            if exact_clause and exact_clause in user_response:
+                return exact_clause
+    return None
+
+
 def _literalize_semantic_claim_evidence(
     claim: NeutralClaim,
     user_response: str,
@@ -888,6 +926,10 @@ def _literalize_semantic_claim_evidence(
     recovered = recover_evidence_span(claim.evidence, user_response)
     if recovered is not None:
         return claim.model_copy(update={"evidence": recovered})
+
+    shared_field_evidence = _shared_field_qualifier_evidence(claim, user_response)
+    if shared_field_evidence is not None:
+        return claim.model_copy(update={"evidence": shared_field_evidence})
 
     if claim.kind in {
         "product_entity",
@@ -1641,7 +1683,7 @@ def _explicit_field_validation_items(
                 field_names.append("due date")
             if re.search(r"\bdue time\b", fields_text, re.IGNORECASE):
                 field_names.append("due time")
-        for field in ("title", "description", "priority"):
+        for field in ("title", "description", "note", "notes", "priority"):
             if re.search(rf"\b{field}\b", fields_text, re.IGNORECASE):
                 field_names.append(field)
 
