@@ -32,7 +32,7 @@ jobs:
           docker run --rm \
             -e OPENAI_API_KEY=test-placeholder \
             architect-smoke \
-            sh -c "pip install --no-cache-dir pytest >/dev/null && PYTHONPATH=/app/backend pytest -q tests/test_prd_compilation.py tests/test_workspace_api.py tests/test_prd_semantic_presentation.py tests/test_prd_confirmation.py tests/test_neutral_claim_capture.py tests/test_schema_alignment.py"
+            sh -c "pip install --no-cache-dir pytest >/dev/null && PYTHONPATH=/app/backend pytest -q tests/test_prd_compilation.py tests/test_workspace_api.py tests/test_prd_semantic_presentation.py tests/test_prd_confirmation.py tests/test_neutral_claim_capture.py::test_account_binding_is_owned_product_data_not_role_permission tests/test_neutral_claim_capture.py::test_cross_device_availability_is_not_the_primary_user_job tests/test_neutral_claim_capture.py::test_claim_prompt_preserves_the_current_question_trigger_for_short_answers tests/test_schema_alignment.py::test_grounding_protocol_retry_includes_schema_error_and_recovers"
 
       - name: Start Architect
         run: |
