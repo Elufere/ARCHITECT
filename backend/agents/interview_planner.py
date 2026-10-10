@@ -687,6 +687,47 @@ def _refresh_inquiry_frontier(state: AgentState) -> tuple[AgentState, dict]:
     return {**with_eligible, **updates}, updates
 
 
+_TERMINAL_INQUIRY_BLOCK_REASONS = frozenset({
+    "REPEATED_THREAD_DECISION",
+    "EXPLICITLY_DEFERRED_DECISION",
+    "EXPLICITLY_REJECTED_DECISION",
+})
+
+
+def _all_remaining_inquiries_terminally_blocked(state: AgentState) -> bool:
+    """Distinguish closed/stale inquiries from candidates lost to a planner bug.
+
+    A deferred/rejected decision or a thread decision already delivered with a
+    usable answer is no longer askable. If every remaining inquiry is blocked
+    only for one of those reasons, the planner may continue to the normal
+    requirements/consistency checks instead of treating stale backlog as open.
+    Unexpected blockers and eligible-but-unranked candidates remain fail-fast.
+    """
+    decisions = state.get("question_candidate_eligibility") or {}
+    if not decisions:
+        return False
+
+    for decision in decisions.values():
+        if isinstance(decision, dict):
+            eligible = decision.get("eligible", False)
+            reasons = decision.get("reasons") or []
+        else:
+            eligible = getattr(decision, "eligible", False)
+            reasons = getattr(decision, "reasons", []) or []
+
+        if eligible:
+            return False
+
+        reason_values = {
+            getattr(reason, "value", reason)
+            for reason in reasons
+        }
+        if not reason_values or not reason_values.issubset(_TERMINAL_INQUIRY_BLOCK_REASONS):
+            return False
+
+    return True
+
+
 def interview_planner_node(state: AgentState) -> dict:
     # Deliberate answer receipts are retained as diagnostics for model-level
     # inquiries, but schema coverage no longer drives routing or completion.
@@ -782,7 +823,11 @@ def interview_planner_node(state: AgentState) -> dict:
     )
 
     open_inquiries = state.get("open_inquiries", [])
-    if open_inquiries and not completion_ready:
+    if (
+        open_inquiries
+        and not completion_ready
+        and not _all_remaining_inquiries_terminally_blocked(state)
+    ):
         raise RuntimeError(
             "Open product inquiries exist but none survived candidate eligibility/prioritization"
         )

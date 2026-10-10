@@ -139,6 +139,94 @@ def test_thread_frontier_replaces_legacy_actor_goal_sequence():
     assert "actor_goal" not in inquiries[0].id
 
 
+def test_bounded_planner_fallback_releases_active_thread_to_foundational_inquiries(monkeypatch):
+    state = {
+        "messages": [
+            AIMessage(content="Should reminders be rescheduled?"),
+            HumanMessage(content="That decision has already been answered."),
+        ],
+        "raw_idea": "A personal to-do app.",
+        "discovery_scope": S.USER_APP,
+        "thread_planning_enabled": True,
+        "discovered_knowledge": [],
+        "product_concepts": [],
+        "external_systems": [],
+        "captured_observations": [],
+        "founder_gap_guidance": [],
+        "discovery_boundaries": [],
+        "active_requirements": {},
+        "requirement_coverage": {},
+        "eligible_requirement_keys": [],
+        "requirement_question_history": [],
+        "discovery_threads": {
+            "task-due-dates": {
+                "id": "task-due-dates",
+                "label": "Due dates and reminders",
+                "objective": "Define task due-date behavior.",
+                "scope": S.USER_APP.value,
+                "status": "ACTIVE",
+                "trigger_fact_ids": [],
+                "last_active_turn": 17,
+            }
+        },
+        "active_discovery_thread": "task-due-dates",
+        "thread_frontier": None,
+        "thread_relevant_requirement_ids": [],
+        "deferred_discovery_frontiers": [],
+        "validation_issues": [],
+        "validation_candidate_blocking": False,
+        "answer_followup": None,
+        "founder_requested_completion": False,
+        "turn_count": 18,
+        "extraction_status": "SUCCESS",
+    }
+
+    def proposal(decision_key):
+        return threads.DiscoveryThreadPlan(
+            thread_id="task-due-dates",
+            thread_label="Due dates and reminders",
+            thread_objective="Define task due-date behavior.",
+            frontier=threads.ThreadFrontierInquiry(
+                decision_key=decision_key,
+                topic=T.BUSINESS_RULES,
+                objective="Determine a decision that has already been answered.",
+                question_hint="Should the Architect repeat an already confirmed decision?",
+                reason="This fixture simulates a stale frontier.",
+            ),
+        )
+
+    proposals = iter([
+        proposal("completed-task-reminders"),
+        proposal("due-date-edit-reminder-rescheduling"),
+        proposal("overdue-task-visibility"),
+    ])
+    monkeypatch.setattr(
+        threads,
+        "_invoke_thread_plan",
+        lambda *_args, **_kwargs: next(proposals),
+    )
+    monkeypatch.setattr(
+        threads,
+        "_plan_problem",
+        lambda *_args, **_kwargs: "Decision already received a usable answer.",
+    )
+
+    fallback = threads.plan_discovery_thread(state)
+
+    assert fallback.frontier is None
+    assert fallback._used_safe_fallback is True
+
+    monkeypatch.setattr(threads, "plan_discovery_thread", lambda _: fallback)
+    update = threads.discovery_thread_node(state)
+
+    assert update["active_discovery_thread"] is None
+    assert update["thread_frontier"] is None
+    assert update["discovery_threads"]["task-due-dates"]["status"] == "PAUSED"
+
+    inquiries = identify_open_inquiries({**state, **update})
+    assert [item.id for item in inquiries] == ["USER_APP|model.core_actors"]
+
+
 def test_pre_thread_state_can_still_use_minimal_foundational_actor_inquiry():
     state = {
         "discovery_scope": S.USER_APP,
