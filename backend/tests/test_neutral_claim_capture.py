@@ -74,6 +74,72 @@ def test_claim_prompt_preserves_the_current_question_trigger_for_short_answers()
     assert "Preserve the trigger/state transition that question asks about" in prompt
 
 
+def test_todo_shared_optional_qualifier_preserves_note_and_due_date_fields(monkeypatch):
+    answer = (
+        "Each task should have title, note, and due date and time. "
+        "However, note and due date & time should be optional, while title is compulsory"
+    )
+    question = (
+        "What information should each task contain in the MVP—for example, only a title, "
+        "or also details such as notes or a due date?"
+    )
+    calls = []
+    production_models(monkeypatch, [
+        claim(
+            "entity_attribute",
+            "title is compulsory",
+            "title is compulsory",
+            subject="task",
+            relation="has attribute",
+            object="title",
+        ),
+        claim(
+            "entity_attribute",
+            "note should be optional",
+            "note should be optional",
+            subject="task",
+            relation="has attribute",
+            object="note",
+        ),
+        claim(
+            "entity_attribute",
+            "due date and time should be optional",
+            "due date and time should be optional",
+            subject="task",
+            relation="has attribute",
+            object="due date and time",
+        ),
+    ], calls)
+
+    state = {
+        "messages": [
+            AIMessage(content=question),
+            HumanMessage(content=answer),
+        ],
+        "discovery_scope": S.USER_APP,
+        "discovered_knowledge": [],
+        "current_topic": T.CORE_WORKFLOW,
+        "current_gap": None,
+        "turn_count": 1,
+    }
+    batch = tracker.extract_passes(answer, state, S.USER_APP)
+    concepts = {concept.object: concept for concept in batch.concepts}
+
+    assert set(concepts) == {"title", "note", "due date and time"}
+    assert "note and due date & time should be optional" in concepts["note"].evidence
+    assert concepts["note"].evidence in answer
+    assert concepts["due date and time"].evidence in answer
+
+    rules = tracker._explicit_field_validation_items(
+        answer, question, S.USER_APP, 1, []
+    )
+    assert {rule.value for rule in rules} == {
+        "title should be required",
+        "note should be optional",
+        "due date and time should be optional",
+    }
+
+
 def test_seller_goal_answer_does_not_become_action_permission_or_end_state(monkeypatch):
     text = (
         "The seller wants assurance that they’ll get paid once they fulfill what was agreed. "
