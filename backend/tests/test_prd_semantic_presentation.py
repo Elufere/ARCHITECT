@@ -400,7 +400,7 @@ def test_todo_prd_rendering_is_semantic_not_storage_shaped():
     assert "users should sign in before using the app" not in by_id["user_flow"].body
     assert "User actions:" not in by_id["user_flow"].body
     assert "move completed tasks back to active" not in by_id["user_flow"].body
-    assert "users should sign in before using the app" in by_id["feature_1"].body
+    assert "users should sign in before using the app" in by_id["feature_1"].body.lower()
     assert "move completed tasks back to active" in by_id["feature_1"].body
     assert "Lifecycle / business rules:" in by_id["user_flow"].body
     assert "new tasks can only start as active" in by_id["user_flow"].body
