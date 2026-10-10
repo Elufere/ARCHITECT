@@ -42,7 +42,9 @@ jobs:
           tests/test_frontier_stopping_semantics.py
           -k "bounded_planner_fallback_releases_active_thread_to_foundational_inquiries
           or planner_can_recover_when_only_terminally_blocked_inquiries_remain
-          or planner_still_fails_for_unexpected_candidate_blockers"
+          or planner_still_fails_for_unexpected_candidate_blockers
+          or terminally_blocked_inquiries_allow_prd_confirmation
+          or unexpectedly_blocked_inquiries_do_not_allow_prd_confirmation"
 
       - name: Run backend suite
         env:
