@@ -687,7 +687,11 @@ INQUIRY_ASSESSMENT_INSTRUCTION = """Assess the proposed next discovery
 frontier before a question is generated.
 
 Do NOT decide coverage from topical similarity. Separate what is KNOWN from what
-the proposed frontier still asks the founder to supply.
+the proposed frontier still asks the founder to supply. A confirmed answer resolves
+a frontier only when it matches the same triggering event and preconditions.
+Specifically distinguish setting a due date, editing a due date, completing a task,
+reopening a completed task, and a deadline passing. A rule for reminders after
+reopening a task does NOT answer what happens when its due date is edited or passes.
 
 founder_gap_guidance, when supplied, is meta-level founder guidance about
 questions/areas that remain open. It is not evidence that any answer is true.
@@ -1145,6 +1149,80 @@ def _low_signal_crud_depth_frontier(
 
 
 
+def _decision_trigger_family(text: str | None) -> str | None:
+    """Classify explicit lifecycle triggers, not shared nouns like 'task' or 'reminder'."""
+    normalized = re.sub(r"\s+", " ", (text or "").lower())
+    if (
+        re.search(r"\b(?:reopen(?:ed|ing)?|returned to active|changed back to active|from completed to active)\b", normalized)
+        and re.search(r"\bcompleted\b", normalized)
+    ):
+        return "reopen_completed_task"
+    if (
+        re.search(r"\b(?:due date|due time|deadline)\b", normalized)
+        and re.search(r"\b(?:passes?|passed|reaches?|reached|after|elapsed|overdue|without being completed)\b", normalized)
+    ):
+        return "deadline_passed"
+    if (
+        re.search(r"\b(?:delete|deletion|remove|removed)\b", normalized)
+        and re.search(r"\btask\b", normalized)
+    ):
+        return "delete_task"
+    if (
+        re.search(r"\b(?:edit|edited|editing|modify|modified|update|updated|change|changed)\b", normalized)
+        and re.search(r"\b(?:due date|due time|deadline)\b", normalized)
+    ):
+        return "edit_due_date"
+    if (
+        re.search(r"\b(?:set|sets|setting|assign|assigned)\b", normalized)
+        and re.search(r"\b(?:due date|due time|deadline)\b", normalized)
+    ):
+        return "set_due_date"
+    if (
+        re.search(r"\b(?:complete|completed|completion|mark(?:ed|ing)?)\b", normalized)
+        and re.search(r"\btask\b", normalized)
+    ):
+        return "complete_task"
+    return None
+
+
+def _frontier_trigger_mismatch(
+    plan: DiscoveryThreadPlan,
+    state: AgentState,
+    scope: DiscoveryScope,
+) -> str | None:
+    """Prevent one event's confirmed rule from closing a different event's question."""
+    frontier = plan.frontier
+    if frontier is None:
+        return None
+    target_family = _decision_trigger_family(
+        " ".join([frontier.decision_key, frontier.objective, frontier.question_hint])
+    )
+    if target_family is None:
+        return None
+
+    confirmed_families: set[str] = set()
+    for item in state.get("discovered_knowledge", []) or []:
+        if (
+            item.scope != scope
+            or item.knowledge_state != KnowledgeState.CONFIRMED
+            or item.absence
+        ):
+            continue
+        family = _decision_trigger_family(
+            " ".join([item.source_question or "", item.value or "", item.evidence or ""])
+        )
+        if family:
+            confirmed_families.add(family)
+
+    if target_family in confirmed_families:
+        return None
+    other = ", ".join(sorted(confirmed_families)) or "no explicitly captured lifecycle trigger"
+    return (
+        f"The proposed decision concerns '{target_family}', but confirmed facts only "
+        f"identify '{other}'. Related task/reminder wording is not evidence for the same trigger."
+    )
+
+
 def _semantic_frontier_problem(
     plan: DiscoveryThreadPlan,
     state: AgentState,
@@ -1179,7 +1257,9 @@ def _semantic_frontier_problem(
                 "unless the founder reopens this deferral."
             )
 
+    trigger_alignment = _frontier_trigger_mismatch(plan, state, scope)
     payload = {
+        "trigger_alignment": trigger_alignment,
         "proposed_frontier": {
             "thread_id": plan.thread_id,
             "decision_key": frontier.decision_key,
@@ -1256,6 +1336,20 @@ Do not change the proposed frontier."""),
                 "coverage verdict. Do not ask this frontier; choose a different "
                 "grounded product decision."
             )
+
+    if trigger_alignment and (
+        assessment.information_need_resolved
+        or assessment.recent_answer_supports
+        or assessment.supporting_observation_ids
+    ):
+        print(f"TRIGGER ALIGNMENT OVERRIDE: {trigger_alignment}")
+        assessment = assessment.model_copy(update={
+            "information_need_resolved": False,
+            "missing_information": [trigger_alignment],
+            "recent_answer_supports": False,
+            "supporting_observation_ids": [],
+            "recap_of_known_information": False,
+        })
 
     valid_observation_ids = {
         item.get("id")

@@ -5,6 +5,7 @@ import pytest
 
 from langchain_core.messages import AIMessage, HumanMessage
 
+from agents import discovery_threads as threads
 from agents import knowledge_tracker
 from agents.extraction_passes import NeutralClaim
 from agents import pm_agent as pm
@@ -291,6 +292,62 @@ def test_system_behavior_is_not_rendered_as_a_user_responsibility():
     rendered = [render_system_behavior(source) for source in reminder_sources]
     assert any("The app sends reminders 1 hour, 30 minutes, and 5 minutes" in text for text in rendered)
     assert any("When a completed task is returned to active" in text for text in rendered)
+
+
+def test_reopening_reminder_answer_does_not_resolve_due_date_edit_question(monkeypatch):
+    state = _todo_session_state()
+    frontier = threads.ThreadFrontierInquiry(
+        decision_key="edited-due-date-reminders",
+        topic=T.BUSINESS_RULES,
+        objective="Determine how reminders behave when an existing task's due date and time are edited.",
+        question_hint=(
+            "When a user edits an existing task's due date and time, should future reminders "
+            "whose scheduled times have not passed be rescheduled?"
+        ),
+        reason="Editing a due date is a distinct event from reopening a completed task.",
+        related_fact_ids=[],
+        information_gain=0.8,
+        causal_relevance=0.9,
+        conversation_continuity=0.8,
+        architecture_impact=0.7,
+        business_risk=0.5,
+        question_cost=0.0,
+    )
+    plan = threads.DiscoveryThreadPlan(
+        thread_id="task-deadlines",
+        thread_label="Due dates and reminders",
+        thread_objective="Define reminder lifecycle behavior.",
+        frontier=frontier,
+        relevant_requirement_ids=[],
+    )
+    false_positive_assessment = threads.InquiryAssessment(
+        supporting_observation_ids=[],
+        recent_answer_supports=True,
+        information_need_resolved=True,
+        missing_information=[],
+        too_broad=False,
+        recap_of_known_information=False,
+        should_move_on=False,
+        repeats_rejected_frontier=False,
+        repeats_prior_decision=False,
+        matching_prior_question="",
+        abstraction_level="PRODUCT_BEHAVIOR",
+        material_product_consequence=True,
+        current_frontier_value=0.8,
+        best_alternative_value=0.0,
+        higher_value_elsewhere=False,
+        best_alternative_focus="",
+        depth_reason="",
+        reason="Incorrectly assumes the reopening answer also covers editing a due date.",
+    )
+    monkeypatch.setattr(
+        threads,
+        "inquiry_assessment_model",
+        lambda: SimpleNamespace(invoke=lambda _: false_positive_assessment),
+    )
+
+    assert threads._frontier_trigger_mismatch(plan, state, S.USER_APP)
+    assert threads._semantic_frontier_problem(plan, state, S.USER_APP) is None
 
 
 def test_open_questions_are_always_rendered_as_questions():
