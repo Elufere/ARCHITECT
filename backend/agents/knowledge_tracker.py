@@ -242,10 +242,14 @@ def semantic_decision(
                 name,
                 schema,
                 original_instruction
-                + "\nThe previous grounding audit response could not be parsed. "
-                  "Return exactly one complete structured audit matching the required schema. "
-                  "Do not omit evidence_categories, supported_ids, confirmed_absence_ids, "
-                  "or rejection_reasons. Use only the supplied candidate and evidence IDs.",
+                + f"\nThe previous grounding audit response failed schema validation: {exc}. "
+                + "Correct the specific validation error in this retry instead of repeating it. "
+                  "Every evidence category must exactly match one of the allowed TOPIC.key enum "
+                  "values in the schema; never pair a key with a topic that does not own it. "
+                  "For example, invalid_actions belongs to EXCEPTIONS, not BUSINESS_RULES. "
+                  "If no category is supported, use an empty categories list. "
+                  "Return one complete audit with evidence_categories, supported_ids, "
+                  "confirmed_absence_ids, and rejection_reasons, using only supplied IDs.",
                 original_payload,
                 allow_repair=allow_repair,
                 allow_protocol_repair=False,
@@ -692,6 +696,8 @@ def _claim_prompt(state: AgentState, scope: DiscoveryScope) -> str:
 
 Current scope: {scope.value}
 Current interview focus: {state.get('current_gap') or 'none'}
+Current discovery objective: {state.get('current_objective') or 'none'}
+Current decision being clarified: {state.get('decision_key') or 'none'}
 Last question (reference context only): {answer_context(state)['question']}
 Confirmed actor identity context: {json.dumps(known, default=str)}
 Confirmed external systems context: {json.dumps(known_external_systems, default=str)}

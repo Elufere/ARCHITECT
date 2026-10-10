@@ -139,7 +139,12 @@ Kinds:
 - system_behavior: an action explicitly performed by the app/system, such as
   sending reminders, canceling notifications, or rescheduling reminders. Use this
   for short answers to questions about what the app should do, even if the answer
-  omits the subject. Never assign this action to the user.
+  omits the subject. Never assign this action to the user. For short or elliptical
+  answers, use ONLY the immediately preceding question to resolve omitted referents
+  and conditions. Preserve the trigger/state transition that question asks about;
+  never substitute a related condition from another rule. An answer about reminders
+  after a completed task is reactivated is not the same rule as cancelling reminders
+  when completion first occurs.
 - authorization_boundary: an explicit permission, prohibition, exclusivity,
   access restriction, or conditional authority. Ordinary capability is not one.
   Data ownership or persistence such as "tasks are tied to the user's account"
