@@ -14,6 +14,7 @@ from agents.prd_semantics import (
     render_system_behavior,
 )
 from agents.product_concepts import ProductConcept, ProductConceptKind
+from agents.prd_validation import PRDValidationError, claim_slots
 from agents.state import DiscoveryScope as S, DiscoveryTopic as T, KnowledgeItem, KnowledgeState as K
 from services.workspace import _prd_sections
 
@@ -312,17 +313,29 @@ def test_exact_todo_session_compiles_coherently_even_when_prose_polish_is_reject
     monkeypatch, tmp_path
 ):
     monkeypatch.setattr(pm, "OUTPUT_DIR", tmp_path)
+    state = _todo_session_state()
+    base_draft = pm.project_prd(pm.build_source_snapshot(state)).draft
+    claim_id = next(iter(claim_slots(base_draft)))
     monkeypatch.setattr(
         pm,
         "prose_llm",
         SimpleNamespace(invoke=lambda _: {
-            "parsed": {"edits": [{"claim_id": "not-a-real-claim", "text": "invented prose"}]}
+            "parsed": {"edits": [{"claim_id": claim_id, "text": "A polished claim rejected by semantic audit."}]}
         }),
     )
+    audit_calls = {"count": 0}
 
-    result = pm.pm_compile_node(_todo_session_state())
+    def reject_polish_then_accept_fallback(*_args, **_kwargs):
+        audit_calls["count"] += 1
+        if audit_calls["count"] == 1:
+            raise PRDValidationError("simulated source-category mismatch")
+
+    monkeypatch.setattr(pm, "validate_prd", reject_polish_then_accept_fallback)
+
+    result = pm.pm_compile_node(state)
 
     assert result["pm_is_complete"] is True
+    assert audit_calls["count"] >= 2
     contract = result["prd_contract"]
     assert contract.prose_polished is False
     sections = {section.id: section for section in _prd_sections(contract, RAW_IDEA)}
