@@ -350,6 +350,30 @@ def test_reopening_reminder_answer_does_not_resolve_due_date_edit_question(monke
     assert threads._semantic_frontier_problem(plan, state, S.USER_APP) is None
 
 
+def test_explicitly_deferred_decision_remains_in_prd_open_questions():
+    boundary = {
+        "type": "decision_deferral",
+        "scope": S.USER_APP.value,
+        "thread_id": "task-deadlines",
+        "decision_key": "unfinished-task-after-due-time",
+        "objective": (
+            "Determine what happens to an active task when its due date and time pass "
+            "without the task being completed."
+        ),
+    }
+    questions = pm.build_open_questions(
+        {
+            "open_inquiries": [],
+            "deferred_discovery_frontiers": [],
+            "discovery_boundaries": [boundary],
+        },
+        S.USER_APP,
+    )
+    assert len(questions) == 1
+    assert questions[0].startswith("Deferred product decision: ")
+    assert questions[0].endswith("?")
+
+
 def test_open_questions_are_always_rendered_as_questions():
     questions = pm.build_open_questions(
         {
