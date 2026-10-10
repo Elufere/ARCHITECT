@@ -2051,16 +2051,9 @@ def discovery_thread_node(state: AgentState) -> dict:
         ):
             deferred.append(item)
 
-    if plan.frontier is not None:
-        deferred = [
-            item for item in deferred
-            if not (
-                item.get("scope", scope.value) == scope.value
-                and item.get("thread_id") == plan.thread_id
-                and item.get("decision_key") == plan.frontier.decision_key
-            )
-        ]
-
+    # Keep a selected backlog item pending until its answer is actually captured.
+    # If another thread takes priority before it is answered, the decision must
+    # remain available for a later turn.
     for boundary in boundaries:
         if boundary.get("type") not in {
             "decision_deferral",

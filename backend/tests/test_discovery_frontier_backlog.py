@@ -103,6 +103,68 @@ def test_valid_frontier_deferred_for_breadth_is_carried_into_next_plan(monkeypat
     assert selected._deferred_frontiers[0]["decision_key"] == "unfinished-task-after-due-time"
 
 
+def test_selected_deferred_frontier_stays_pending_until_answered(monkeypatch):
+    state = _state()
+    overdue = _frontier(
+        "unfinished-task-after-due-time",
+        "Determine what happens to an active task after its due time passes.",
+        "If an active task reaches its due date without completion, should it remain active and be shown as overdue, or change state?",
+    )
+    record = {
+        **overdue.model_dump(mode="json"),
+        "scope": S.USER_APP.value,
+        "thread_id": "task-deadlines",
+        "thread_label": "Due dates and reminders",
+        "thread_objective": "Define due-date behavior.",
+    }
+    state["deferred_discovery_frontiers"] = [record]
+    selected_plan = threads.DiscoveryThreadPlan(
+        thread_id="task-deadlines",
+        thread_label="Due dates and reminders",
+        thread_objective="Define due-date behavior.",
+        frontier=overdue,
+        relevant_requirement_ids=[],
+    )
+    monkeypatch.setattr(threads, "plan_discovery_thread", lambda _: selected_plan)
+
+    selected_update = threads.discovery_thread_node(state)
+    assert any(
+        item["decision_key"] == "unfinished-task-after-due-time"
+        for item in selected_update["deferred_discovery_frontiers"]
+    )
+
+    next_state = {
+        **state,
+        **selected_update,
+        "selected_inquiry": {
+            "thread_id": "task-deadlines",
+            "decision_key": "unfinished-task-after-due-time",
+        },
+        "active_answer_result": {
+            "source_turn": state["turn_count"],
+            "directly_resolves": True,
+        },
+    }
+    next_plan = threads.DiscoveryThreadPlan(
+        thread_id="platform-scope",
+        thread_label="Supported platforms",
+        thread_objective="Define the supported MVP platforms.",
+        frontier=_frontier(
+            "mvp-supported-platforms",
+            "Determine which platforms the MVP supports.",
+            "Which platforms should the MVP support?",
+            topic=T.MVP_SCOPE,
+        ),
+        relevant_requirement_ids=[],
+    )
+    monkeypatch.setattr(threads, "plan_discovery_thread", lambda _: next_plan)
+    answered_update = threads.discovery_thread_node(next_state)
+    assert not any(
+        item["decision_key"] == "unfinished-task-after-due-time"
+        for item in answered_update["deferred_discovery_frontiers"]
+    )
+
+
 def test_deferred_frontier_is_persisted_and_reappears_as_an_open_inquiry(monkeypatch):
     state = _state()
     overdue = _frontier(
