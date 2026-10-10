@@ -234,6 +234,22 @@ def test_app_behavior_answer_is_not_admitted_as_a_user_responsibility():
     assert admitted.key == "workflow_steps"
     assert admitted.role is None
 
+    sources = pm.build_source_snapshot({
+        **state,
+        "discovered_knowledge": [*state["discovered_knowledge"], admitted],
+    })
+    projection = pm.project_prd(sources)
+    assert any(
+        requirement.category == "CORE_WORKFLOW.workflow_steps"
+        and "The app automatically reschedules" in requirement.description
+        for requirement in projection.draft.functional_requirements
+    )
+    assert all(
+        "The app sends reminders" not in behavior.text
+        for persona in projection.draft.personas
+        for behavior in persona.key_behaviors
+    )
+
 
 def test_feature_rationale_is_not_admitted_as_a_global_goal():
     state = _todo_session_state()

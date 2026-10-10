@@ -10,6 +10,7 @@ from agents.prd_schema import ClaimVerdict, PRDDraft, SourceFact, SemanticCatego
 from agents.state import DiscoveryScope, KnowledgeItem, KnowledgeState
 from agents.product_concepts import ProductConcept, ProductConceptKind, concept_id
 from agents.prd_projection import is_constraint_source
+from agents.prd_semantics import is_system_behavior_source
 
 
 class PRDValidationError(ValueError):
@@ -208,6 +209,12 @@ those two compatible labels is stored on the source while the other is declared
 on the claim; still reject any behavior or meaning not supported by the quote.
 Approval authority does NOT imply exclusive visibility or ownership. Permissions
 do NOT follow from ordinary capabilities. Preserve > versus >= and the amount.
+NARROW LEGACY CLASSIFICATION RULE: If a source is stored as
+USER_ROLES.responsibilities but its source_question explicitly asks what the
+app/system should do and its value/evidence describes a system action (such as
+sending or rescheduling reminders), treat that source as system behavior for
+this claim only. The action must not be attributed to the user; CORE_WORKFLOW.workflow_steps
+is the correct claim category for that grounded behavior.
 The declared category must match the actual claim, not just its source ID.
 For scope/in_scope and scope/out_of_scope require explicit inclusion/exclusion;
 for deferred_items require an explicit deferral, never merely an unanswered detail.
@@ -343,11 +350,20 @@ def validate_prd(
         refs = claim["source_fact_ids"]
         if len(refs) != len(set(refs)) or any(ref not in source_map for ref in refs):
             raise PRDValidationError(f"{claim_id}: duplicate or unknown source fact ID.")
-        categories = {f"{source_map[ref].topic}.{source_map[ref].key}" for ref in refs}
+        cited_sources = [source_map[ref] for ref in refs]
+        categories = {f"{source.topic}.{source.key}" for source in cited_sources}
         compatible_source_categories = compatible_categories(categories)
+        contextual_system_reclassification = (
+            claim["category"] == "CORE_WORKFLOW.workflow_steps"
+            and categories == {"USER_ROLES.responsibilities"}
+            and all(is_system_behavior_source(source) for source in cited_sources)
+        )
         if (
             claim["category"] not in definitions
-            or claim["category"] not in compatible_source_categories
+            or (
+                claim["category"] not in compatible_source_categories
+                and not contextual_system_reclassification
+            )
         ):
             raise PRDValidationError(
                 f"{claim_id}: category {claim['category']} is not supported by "

@@ -190,6 +190,7 @@ def project_prd(sources: list[SourceFact]) -> ProjectionResult:
         if (
             source.topic == "USER_ROLES"
             and source.key in {"responsibilities", "permissions"}
+            and not is_system_behavior_source(source)
         ):
             behavior = _claim(source)
             for actor_id in source_actor_ids(source):
@@ -209,8 +210,12 @@ def project_prd(sources: list[SourceFact]) -> ProjectionResult:
                     else source.value.strip()
                 ),
                 validation="TBD",
-                category=source_category(source),
-                actor_ids=source_actor_ids(source),
+                category=(
+                    "CORE_WORKFLOW.workflow_steps"
+                    if is_system_behavior_source(source)
+                    else source_category(source)
+                ),
+                actor_ids=[] if is_system_behavior_source(source) else source_actor_ids(source),
                 conditions=[],
                 source_fact_ids=[source.fact_id],
             )
