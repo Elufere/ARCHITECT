@@ -474,6 +474,70 @@ def _pending_answer_followup_inquiry(state: AgentState) -> Optional[ProductInqui
     )
 
 
+def _deferred_frontier_inquiries(state: AgentState) -> list[ProductInquiry]:
+    """Reintroduce validated breadth-deferred frontiers as ordinary askable inquiries."""
+    scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
+    scope_value = getattr(scope, "value", scope)
+    boundaries = state.get("discovery_boundaries", []) or []
+    blocked_types = {
+        "decision_deferral",
+        "implementation_deferred",
+        "rejected_inquiry",
+        "product_scope_closed",
+    }
+    result: list[ProductInquiry] = []
+    for frontier in state.get("deferred_discovery_frontiers", []) or []:
+        if not isinstance(frontier, dict):
+            continue
+        if frontier.get("scope") and frontier.get("scope") != scope_value:
+            continue
+        thread_id = frontier.get("thread_id")
+        decision_key = frontier.get("decision_key")
+        if not thread_id or not decision_key or not frontier.get("question_hint"):
+            continue
+        is_blocked = False
+        for boundary in boundaries:
+            if not isinstance(boundary, dict) or boundary.get("type") not in blocked_types:
+                continue
+            if boundary.get("scope") and boundary.get("scope") != scope_value:
+                continue
+            if (
+                (boundary.get("decision_key") and boundary.get("decision_key") == decision_key
+                 and (not boundary.get("thread_id") or boundary.get("thread_id") == thread_id))
+                or (boundary.get("objective") and boundary.get("objective") == frontier.get("objective"))
+            ):
+                is_blocked = True
+                break
+        if is_blocked:
+            continue
+        try:
+            topic = DiscoveryTopic(frontier["topic"])
+        except (KeyError, ValueError):
+            continue
+        result.append(
+            ProductInquiry(
+                id=f"{scope_value}|thread|{thread_id}|{decision_key}",
+                source=InquirySource.MODEL,
+                scope=scope,
+                topic=topic,
+                anchor_gap=frontier.get("anchor_gap"),
+                objective=frontier.get("objective") or frontier["question_hint"],
+                question_hint=frontier["question_hint"],
+                reason=frontier.get("reason") or "Previously deferred material product decision.",
+                known_fact_ids=list(frontier.get("related_fact_ids") or []),
+                thread_id=thread_id,
+                decision_key=decision_key,
+                information_gain=frontier.get("information_gain", 0.8),
+                causal_relevance=frontier.get("causal_relevance", 1.0),
+                conversation_continuity=frontier.get("conversation_continuity", 1.0),
+                architecture_impact=frontier.get("architecture_impact", 0.6),
+                business_risk=frontier.get("business_risk", 0.5),
+                question_cost=frontier.get("question_cost", 0.0),
+            )
+        )
+    return result
+
+
 def identify_open_inquiries(state: AgentState) -> list[ProductInquiry]:
     validation = _validation_inquiry(state)
     if validation is not None:
@@ -497,8 +561,14 @@ def identify_open_inquiries(state: AgentState) -> list[ProductInquiry]:
         # Pre-thread / imported compatibility state may still need the minimal
         # grounded foundational frontier.
         model_inquiries = _model_inquiries(state)
+    deferred_frontiers = (
+        []
+        if state.get("founder_requested_completion")
+        else _deferred_frontier_inquiries(state)
+    )
     inquiries = [
         *model_inquiries,
+        *deferred_frontiers,
         *_requirement_inquiries(state),
     ]
     seen = set()

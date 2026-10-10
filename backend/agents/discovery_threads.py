@@ -101,6 +101,8 @@ class DiscoveryThreadPlan(BaseModel):
     parent_thread_id: Optional[str] = None
     frontier: Optional[ThreadFrontierInquiry] = None
     relevant_requirement_ids: List[str] = Field(default_factory=list)
+    # Internal Python-owned carryover; the model-provided value is discarded.
+    deferred_frontiers: List[dict] = Field(default_factory=list)
     feedback: Optional[ThreadFeedback] = None
     rationale: str = ""
 
@@ -230,7 +232,10 @@ still have important product decisions.
 
 HOW TO CHOOSE THE NEXT QUESTION
 1. Read what changed in the founder's latest answer.
-2. Scan the confirmed product model for the best unresolved PRODUCT decision.
+2. Scan pending_frontiers as well as the confirmed product model. A pending
+   frontier is a previously validated material decision deferred only because
+   another decision ranked higher. Do not silently forget it; choose it when it
+   becomes competitive, and keep it pending until answered or explicitly deferred.
 3. Prefer a causal consequence of something already established when it changes
    the product contract. Examples of material product-contract areas include:
    - user outcome / job-to-be-done. An enabling quality such as availability,
@@ -674,6 +679,7 @@ def _normalize_plan(
         "parent_thread_id": parent,
         "frontier": frontier,
         "relevant_requirement_ids": relevant,
+        "deferred_frontiers": [],
     })
 
 
@@ -1554,8 +1560,10 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "delivered_question_history": _history_payload(state),
         "thread_activity": _thread_activity_payload(state),
         "eligible_requirement_backlog": backlog[:12],
+        "pending_frontiers": (state.get("deferred_discovery_frontiers", []) or [])[-8:],
     }
     rejected_frontiers: list[dict] = []
+    deferred_frontiers: list[dict] = []
     last_problem = None
     captured_feedback = None
     soft_breadth_fallback = None
@@ -1646,15 +1654,33 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
             if problem is None:
                 if proposed.feedback is None and captured_feedback is not None:
                     proposed = proposed.model_copy(update={"feedback": captured_feedback})
-                return proposed
+                return proposed.model_copy(
+                    update={"deferred_frontiers": deferred_frontiers}
+                )
 
             if problem.startswith("BREADTH_PREFERENCE:"):
                 if soft_breadth_fallback is None:
                     soft_breadth_fallback = proposed
+                    if proposed.frontier is not None:
+                        deferred = {
+                            **proposed.frontier.model_dump(mode="json"),
+                            "scope": scope.value,
+                            "thread_id": proposed.thread_id,
+                            "thread_label": proposed.thread_label,
+                            "thread_objective": proposed.thread_objective,
+                        }
+                        if not any(
+                            item.get("thread_id") == deferred["thread_id"]
+                            and item.get("decision_key") == deferred["decision_key"]
+                            for item in deferred_frontiers
+                        ):
+                            deferred_frontiers.append(deferred)
                 if soft_breadth_replan_used:
                     if proposed.feedback is None and captured_feedback is not None:
                         proposed = proposed.model_copy(update={"feedback": captured_feedback})
-                    return proposed
+                    return proposed.model_copy(
+                        update={"deferred_frontiers": deferred_frontiers}
+                    )
                 soft_breadth_replan_used = True
                 last_problem = problem
                 print(
@@ -1693,7 +1719,18 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
             "DISCOVERY THREAD BREADTH FALLBACK: no better hard-valid frontier "
             "survived; using the previously valid deferred frontier"
         )
-        return soft_breadth_fallback
+        selected_key = (
+            soft_breadth_fallback.thread_id,
+            soft_breadth_fallback.frontier.decision_key
+            if soft_breadth_fallback.frontier is not None else None,
+        )
+        remaining_deferred = [
+            item for item in deferred_frontiers
+            if (item.get("thread_id"), item.get("decision_key")) != selected_key
+        ]
+        return soft_breadth_fallback.model_copy(
+            update={"deferred_frontiers": remaining_deferred}
+        )
 
     # Safe degradation: thread planning is a trajectory optimizer, not the
     # sole source of askable product inquiries. If every proposed thread frontier
@@ -1727,6 +1764,7 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
             for item in backlog
             if item.get("requirement_id")
         ],
+        deferred_frontiers=deferred_frontiers,
         feedback=captured_feedback,
         rationale=(
             "No model-generated thread frontier survived semantic validation. "
@@ -1886,8 +1924,84 @@ def discovery_thread_node(state: AgentState) -> dict:
             if signature not in existing_signatures:
                 boundaries.append(boundary)
 
+    deferred = list(state.get("deferred_discovery_frontiers", []) or [])
+    selected = state.get("selected_inquiry") or {}
+    receipt = state.get("active_answer_result") or {}
+    answered_selected_frontier = bool(
+        receipt
+        and receipt.get("source_turn") == state.get("turn_count", 0)
+        and receipt.get("directly_resolves", True)
+        and selected.get("thread_id")
+        and selected.get("decision_key")
+    )
+    feedback_closes_selected = (
+        plan.feedback is not None
+        and plan.feedback.kind in {
+            ThreadFeedbackKind.DECISION_DEFERRED,
+            ThreadFeedbackKind.IMPLEMENTATION_DEFERRED,
+            ThreadFeedbackKind.PRODUCT_SCOPE_CLOSED,
+        }
+    )
+    if answered_selected_frontier or feedback_closes_selected:
+        deferred = [
+            item for item in deferred
+            if not (
+                item.get("thread_id") == selected.get("thread_id")
+                and item.get("decision_key") == selected.get("decision_key")
+            )
+        ]
+
+    for item in plan.deferred_frontiers:
+        if not any(
+            existing.get("scope", scope.value) == item.get("scope", scope.value)
+            and existing.get("thread_id") == item.get("thread_id")
+            and existing.get("decision_key") == item.get("decision_key")
+            for existing in deferred
+        ):
+            deferred.append(item)
+
+    if plan.frontier is not None:
+        deferred = [
+            item for item in deferred
+            if not (
+                item.get("scope", scope.value) == scope.value
+                and item.get("thread_id") == plan.thread_id
+                and item.get("decision_key") == plan.frontier.decision_key
+            )
+        ]
+
+    for boundary in boundaries:
+        if boundary.get("type") not in {
+            "decision_deferral",
+            "implementation_deferred",
+            "rejected_inquiry",
+            "product_scope_closed",
+        }:
+            continue
+        deferred = [
+            item for item in deferred
+            if not (
+                (not boundary.get("scope") or boundary.get("scope") == item.get("scope", scope.value))
+                and (
+                    (
+                        boundary.get("decision_key")
+                        and boundary.get("decision_key") == item.get("decision_key")
+                        and (
+                            not boundary.get("thread_id")
+                            or boundary.get("thread_id") == item.get("thread_id")
+                        )
+                    )
+                    or (
+                        boundary.get("objective")
+                        and boundary.get("objective") == item.get("objective")
+                    )
+                )
+            )
+        ]
+
     return {
         **control_updates,
+        "deferred_discovery_frontiers": deferred[-24:],
         "discovery_threads": threads,
         "active_discovery_thread": plan.thread_id,
         "thread_frontier": frontier,
