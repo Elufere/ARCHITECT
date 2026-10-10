@@ -35,6 +35,7 @@ ClaimKind = Literal[
     "primary_actor",
     "secondary_actor",
     "actor_action",
+    "system_behavior",
     "authorization_boundary",
     "multiple_roles",
     "role_transition",
@@ -135,6 +136,10 @@ Kinds:
   is NOT an actor action. System/application/service behavior is NOT an actor
   action and must never be reassigned to an actor merely because that actor was
   named in the preceding question.
+- system_behavior: an action explicitly performed by the app/system, such as
+  sending reminders, canceling notifications, or rescheduling reminders. Use this
+  for short answers to questions about what the app should do, even if the answer
+  omits the subject. Never assign this action to the user.
 - authorization_boundary: an explicit permission, prohibition, exclusivity,
   access restriction, or conditional authority. Ordinary capability is not one.
   Data ownership or persistence such as "tasks are tied to the user's account"
@@ -150,7 +155,9 @@ Kinds:
   ordinary action as an outcome, and do not use an enabling system property such
   as cross-device availability, persistence, sign-in, speed, or platform access
   as a substitute for the actor's core product outcome. Preserve those properties
-  under the corresponding rule/constraint instead.
+  under the corresponding rule/constraint instead. A clause beginning "so that"
+  or "because" which only explains why a specific app behavior was selected is
+  feature rationale, not automatically the actor's overall product goal.
 - success_condition: an explicit definition of what makes the user's/product's
   goal successful. Merely saying what happens after success is not a definition.
 - motivation: an explicit reason/problem explaining why the product or outcome is wanted.
@@ -377,6 +384,9 @@ def claim_to_fact(
         if not claim.role:
             raise ValueError("actor_action requires role")
         return ResponsibilityFact(key="responsibilities", role=claim.role, **common), DiscoveryTopic.USER_ROLES
+
+    if claim.kind == "system_behavior":
+        return WorkflowFact(key="workflow_steps", **common), DiscoveryTopic.CORE_WORKFLOW
 
     if claim.kind == "authorization_boundary":
         if not claim.role:

@@ -285,18 +285,26 @@ def _prd_sections(
             )
         )
 
-    goals = _source_values(
-        contract,
-        "USER_GOALS",
-        {"primary_user_goals", "secondary_user_goals"},
-    )
-    motivations = _source_values(contract, "USER_GOALS", {"motivations"})
-    success = _source_values(contract, "USER_GOALS", {"success_criteria"})
-    success.extend(
-        value
-        for value in _source_values(contract, "MVP_SCOPE", {"success_metrics"})
-        if value not in success
-    )
+    # Only claims still classified as product goals belong in this section.
+    # Feature-specific benefit clauses are rendered alongside their feature.
+    goals = list(dict.fromkeys(
+        claim.text for claim in contract.elevator_pitch
+        if claim.category in {
+            "USER_GOALS.primary_user_goals",
+            "USER_GOALS.secondary_user_goals",
+        }
+    ))
+    motivations = list(dict.fromkeys(
+        claim.text for claim in contract.elevator_pitch
+        if claim.category == "USER_GOALS.motivations"
+    ))
+    success = list(dict.fromkeys(
+        claim.text for claim in contract.elevator_pitch
+        if claim.category in {
+            "USER_GOALS.success_criteria",
+            "MVP_SCOPE.success_metrics",
+        }
+    ))
     goal_parts: list[str] = []
     if motivations:
         goal_parts.append("Problem / motivation:\n" + _bullet_block(motivations))
@@ -494,6 +502,50 @@ def _prd_sections(
                 value = raw_value
 
             if value and value not in by_subject[subject]:
+                by_subject[subject].append(value)
+
+        # Some fields are captured as confirmed validation rules instead of
+        # PRODUCT_MODEL.attribute concepts. Add them to the model only when the
+        # recorded question explicitly ties the rule to a known entity.
+        attribute_subjects = list(dict.fromkeys(
+            source.subject.strip().replace("_", " ").title()
+            for source in product_sources
+            if source.key == "attribute" and source.subject and source.subject.strip()
+        ))
+        for source in contract.source_facts:
+            if (
+                source.topic != "BUSINESS_RULES"
+                or source.key != "validation_rules"
+                or source.absence is not None
+            ):
+                continue
+            match = re.match(
+                r"^\s*(?P<field>[\w\s/-]+?)\s+should\s+be\s+(?P<qualifier>optional|required)\s*[.!]?$",
+                source.value,
+                flags=re.I,
+            )
+            if not match:
+                continue
+            question = source.source_question or ""
+            subject = next(
+                (
+                    candidate for candidate in attribute_subjects
+                    if re.search(
+                        rf"\b{re.escape(candidate.rstrip('s'))}s?\b",
+                        question,
+                        flags=re.I,
+                    )
+                ),
+                None,
+            )
+            if subject is None:
+                continue
+            field = re.sub(r"\s+", " ", match.group("field").strip().lower())
+            value = f"{field} ({match.group('qualifier').lower()})"
+            if subject not in by_subject:
+                by_subject[subject] = []
+                subject_order.append(subject)
+            if value.lower() not in {item.lower() for item in by_subject[subject]}:
                 by_subject[subject].append(value)
 
         blocks = []

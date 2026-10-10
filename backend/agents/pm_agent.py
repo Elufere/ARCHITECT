@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import tempfile
 from pathlib import Path
 from agents.llm import get_structured_model
@@ -220,6 +221,69 @@ def save_verified_prd(contract, path):
             temporary.unlink()
 
 
+def build_open_questions(state: AgentState, scope: DiscoveryScope) -> list[str]:
+    """Keep material unanswered decisions visible when the founder chooses to compile."""
+    scope_value = scope.value
+    boundaries = state.get("discovery_boundaries", []) or []
+    blocked_types = {
+        "decision_deferral",
+        "implementation_deferred",
+        "rejected_inquiry",
+        "product_scope_closed",
+    }
+    questions: list[str] = []
+    seen: set[str] = set()
+
+    def add(item: dict) -> None:
+        if not isinstance(item, dict):
+            return
+        item_scope = item.get("scope")
+        if item_scope and getattr(item_scope, "value", item_scope) != scope_value:
+            return
+        for boundary in boundaries:
+            if not isinstance(boundary, dict) or boundary.get("type") not in blocked_types:
+                continue
+            if boundary.get("scope") and boundary.get("scope") != scope_value:
+                continue
+            if (
+                (boundary.get("decision_key") and boundary.get("decision_key") == item.get("decision_key")
+                 and (not boundary.get("thread_id") or boundary.get("thread_id") == item.get("thread_id")))
+                or (boundary.get("objective") and boundary.get("objective") == item.get("objective"))
+            ):
+                return
+
+        hint = str(item.get("question_hint") or "").strip()
+        if hint and "?" in hint and not hint.lower().startswith("ask "):
+            question = hint
+        else:
+            objective = str(item.get("objective") or "").strip().rstrip(".?")
+            if not objective:
+                return
+            lowered = objective.lower()
+            if lowered.startswith("determine what "):
+                question = "What " + objective[len("Determine what "):].rstrip(".?") + "?"
+            elif lowered.startswith("understand what "):
+                question = "What " + objective[len("Understand what "):].rstrip(".?") + "?"
+            elif lowered.startswith("determine whether "):
+                question = "Should " + objective[len("Determine whether "):].rstrip(".?") + "?"
+            elif lowered.startswith("understand whether "):
+                question = "Should " + objective[len("Understand whether "):].rstrip(".?") + "?"
+            else:
+                question = "Unresolved product decision: " + objective + "."
+
+        identity = re.sub(r"s+", " ", question.lower()).strip()
+        if identity not in seen:
+            seen.add(identity)
+            questions.append(question)
+
+    for inquiry in state.get("open_inquiries", []) or []:
+        add(inquiry)
+    for frontier in state.get("deferred_discovery_frontiers", []) or []:
+        add(frontier)
+
+    return questions
+
+
 def pm_compile_node(state: AgentState) -> dict:
     """Project grounded state deterministically, optionally polish prose, then save.
 
@@ -232,6 +296,7 @@ def pm_compile_node(state: AgentState) -> dict:
         sources = build_source_snapshot(state)
 
         projection = project_prd(sources)
+        projection.draft.open_questions = build_open_questions(state, scope)
         validate_projection(projection, sources)
         product_model = build_product_model(sources)
         base_draft = projection.draft

@@ -59,6 +59,10 @@ from agents.extraction_passes import (
     absence_label,
     claim_to_fact,
 )
+from agents.prd_semantics import (
+    is_feature_local_rationale,
+    is_system_behavior_claim,
+)
 
 # ──────────────────────────────────────────────
 # Evidence Validation
@@ -1033,6 +1037,16 @@ def _admit_claim_item(
     primary_roles: set[str],
     secondary_roles: set[str],
 ) -> KnowledgeItem | None:
+    question = answer_context(state).get("question") or ""
+    if claim.kind == "actor_action" and is_system_behavior_claim(question, claim.value):
+        claim = claim.model_copy(update={"kind": "system_behavior", "role": None})
+    if claim.kind == "desired_outcome" and is_feature_local_rationale(
+        claim.kind, claim.evidence, question
+    ):
+        raise ValueError(
+            "Feature-specific decision rationale is not a product-level desired outcome"
+        )
+
     aliases = list(claim.aliases)
 
     if claim.kind in ("primary_actor", "secondary_actor"):
@@ -1391,7 +1405,11 @@ action/resource access or authority boundary, not merely a choice of role.
 Do NOT turn system behaviour into a user's responsibility. Preserving progress
 after interruption is system recovery behaviour, not a duty to resume.
 Do NOT turn a feature into a goal unless an explicit user-owned desired outcome
-is stated. Regulatory compliance requirements are constraints/rules, not role
+is stated. A "so users..." clause that only explains why a specific app behavior
+was selected is feature rationale, not the user's overall job-to-be-done. When the
+question asks what the app/system should do, do not classify its action as a user
+responsibility or its local benefit as a global product goal. Regulatory compliance
+requirements are constraints/rules, not role
 responsibilities or goals, unless a concrete compliance action is explicitly
 assigned to that role. Exception/recovery handling is not a normal workflow
 step unless the response separately describes its place in the actual process.
