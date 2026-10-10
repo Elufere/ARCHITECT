@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/model-driven-discovery
+      - fix/discovery-planner-fallback
   workflow_dispatch:
 
 concurrency:

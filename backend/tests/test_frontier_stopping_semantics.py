@@ -333,6 +333,78 @@ def test_foundational_candidate_still_blocks_founder_closure(monkeypatch):
     assert complete is False
 
 
+def _stub_empty_frontier_with_block_reasons(monkeypatch, state, reasons):
+    inquiry_id = "USER_APP|thread|task-due-dates|stale-decision"
+    candidate_id = f"question|{inquiry_id}"
+    state["open_inquiries"] = [{
+        "id": inquiry_id,
+        "source": InquirySource.MODEL.value,
+        "scope": SCOPE.value,
+        "topic": DiscoveryTopic.BUSINESS_RULES.value,
+        "objective": "A stale decision",
+        "question_hint": "Ask about a decision already closed.",
+        "reason": "Regression fixture.",
+        "thread_id": "task-due-dates",
+        "decision_key": "stale-decision",
+    }]
+    decisions = {
+        candidate_id: {
+            "candidate_id": candidate_id,
+            "eligible": False,
+            "reasons": reasons,
+        }
+    }
+
+    def refresh(current):
+        refreshed = {
+            **current,
+            "ranked_question_candidates": [],
+            "eligible_question_candidates": [],
+            "question_candidate_eligibility": decisions,
+        }
+        updates = {
+            "open_inquiries": current["open_inquiries"],
+            "question_candidates": [{"id": candidate_id}],
+            "eligible_question_candidates": [],
+            "question_candidate_eligibility": decisions,
+            "ranked_question_candidates": [],
+            "question_candidate_priority": {},
+            "completion_arbitration_complete": False,
+        }
+        return refreshed, updates
+
+    monkeypatch.setattr(planner, "_refresh_inquiry_frontier", refresh)
+
+
+def test_planner_can_recover_when_only_terminally_blocked_inquiries_remain(monkeypatch):
+    state = base_state()
+    _stub_empty_frontier_with_block_reasons(
+        monkeypatch,
+        state,
+        ["REPEATED_THREAD_DECISION", "EXPLICITLY_DEFERRED_DECISION"],
+    )
+
+    update = planner.interview_planner_node(state)
+
+    assert update["prd_confirmation_pending"] is True
+    assert update["ready_to_compile"] is False
+
+
+def test_planner_still_fails_for_unexpected_candidate_blockers(monkeypatch):
+    state = base_state()
+    _stub_empty_frontier_with_block_reasons(
+        monkeypatch,
+        state,
+        ["WRONG_SCOPE"],
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Open product inquiries exist but none survived candidate eligibility/prioritization",
+    ):
+        planner.interview_planner_node(state)
+
+
 def test_completion_ready_can_reach_prd_confirmation_with_nonblocking_backlog(
     monkeypatch,
 ):
