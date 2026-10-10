@@ -98,9 +98,9 @@ def test_valid_frontier_deferred_for_breadth_is_carried_into_next_plan(monkeypat
     selected = threads.plan_discovery_thread(_state())
 
     assert selected.thread_id == "platform-scope"
-    assert len(selected.deferred_frontiers) == 1
-    assert selected.deferred_frontiers[0]["thread_id"] == "task-deadlines"
-    assert selected.deferred_frontiers[0]["decision_key"] == "unfinished-task-after-due-time"
+    assert len(selected._deferred_frontiers) == 1
+    assert selected._deferred_frontiers[0]["thread_id"] == "task-deadlines"
+    assert selected._deferred_frontiers[0]["decision_key"] == "unfinished-task-after-due-time"
 
 
 def test_deferred_frontier_is_persisted_and_reappears_as_an_open_inquiry(monkeypatch):
@@ -127,8 +127,8 @@ def test_deferred_frontier_is_persisted_and_reappears_as_an_open_inquiry(monkeyp
             "Which platforms should the MVP support?",
             topic=T.MVP_SCOPE,
         ),
-        deferred_frontiers=[overdue_record],
     )
+    plan._deferred_frontiers = [overdue_record]
     monkeypatch.setattr(threads, "plan_discovery_thread", lambda _: plan)
 
     update = threads.discovery_thread_node(state)

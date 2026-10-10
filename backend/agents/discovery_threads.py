@@ -13,7 +13,7 @@ from enum import Enum
 from typing import Dict, List, Optional, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 
 from agents.discovery_coverage import fact_id
 from agents.discovery_deferrals import (
@@ -101,8 +101,8 @@ class DiscoveryThreadPlan(BaseModel):
     parent_thread_id: Optional[str] = None
     frontier: Optional[ThreadFrontierInquiry] = None
     relevant_requirement_ids: List[str] = Field(default_factory=list)
-    # Internal Python-owned carryover; the model-provided value is discarded.
-    deferred_frontiers: List[dict] = Field(default_factory=list)
+    # Python-owned carryover; excluded from the structured-output JSON schema.
+    _deferred_frontiers: List[dict] = PrivateAttr(default_factory=list)
     feedback: Optional[ThreadFeedback] = None
     rationale: str = ""
 
@@ -679,7 +679,6 @@ def _normalize_plan(
         "parent_thread_id": parent,
         "frontier": frontier,
         "relevant_requirement_ids": relevant,
-        "deferred_frontiers": [],
     })
 
 
@@ -1748,9 +1747,8 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
             if problem is None:
                 if proposed.feedback is None and captured_feedback is not None:
                     proposed = proposed.model_copy(update={"feedback": captured_feedback})
-                return proposed.model_copy(
-                    update={"deferred_frontiers": deferred_frontiers}
-                )
+                proposed._deferred_frontiers = deferred_frontiers
+                return proposed
 
             if problem.startswith("BREADTH_PREFERENCE:"):
                 if soft_breadth_fallback is None:
@@ -1772,9 +1770,8 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
                 if soft_breadth_replan_used:
                     if proposed.feedback is None and captured_feedback is not None:
                         proposed = proposed.model_copy(update={"feedback": captured_feedback})
-                    return proposed.model_copy(
-                        update={"deferred_frontiers": deferred_frontiers}
-                    )
+                    proposed._deferred_frontiers = deferred_frontiers
+                    return proposed
                 soft_breadth_replan_used = True
                 last_problem = problem
                 print(
@@ -1822,9 +1819,8 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
             item for item in deferred_frontiers
             if (item.get("thread_id"), item.get("decision_key")) != selected_key
         ]
-        return soft_breadth_fallback.model_copy(
-            update={"deferred_frontiers": remaining_deferred}
-        )
+        soft_breadth_fallback._deferred_frontiers = remaining_deferred
+        return soft_breadth_fallback
 
     # Safe degradation: thread planning is a trajectory optimizer, not the
     # sole source of askable product inquiries. If every proposed thread frontier
@@ -1845,7 +1841,7 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         "DISCOVERY THREAD FALLBACK: no valid model frontier survived bounded "
         "repair; delegating to foundational/requirement inquiries"
     )
-    return DiscoveryThreadPlan(
+    fallback_plan = DiscoveryThreadPlan(
         thread_id=fallback_thread_id,
         thread_label=existing_thread.get("label") or "Product discovery",
         thread_objective=(
@@ -1858,13 +1854,14 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
             for item in backlog
             if item.get("requirement_id")
         ],
-        deferred_frontiers=deferred_frontiers,
         feedback=captured_feedback,
         rationale=(
             "No model-generated thread frontier survived semantic validation. "
             "Fallback to existing grounded inquiry and requirement candidates."
         ),
     )
+    fallback_plan._deferred_frontiers = deferred_frontiers
+    return fallback_plan
 
 
 def discovery_thread_node(state: AgentState) -> dict:
@@ -2045,7 +2042,7 @@ def discovery_thread_node(state: AgentState) -> dict:
             )
         ]
 
-    for item in plan.deferred_frontiers:
+    for item in getattr(plan, "_deferred_frontiers", []):
         if not any(
             existing.get("scope", scope.value) == item.get("scope", scope.value)
             and existing.get("thread_id") == item.get("thread_id")
