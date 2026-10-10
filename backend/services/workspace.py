@@ -17,6 +17,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from agents.interview_checkpoint import checkpoint_path, load_checkpoint
 from agents.prd_schema import PRDContract
+from agents.prd_semantics import render_lifecycle_result
 from agents.understanding_projection import build_understanding_projection
 from api.schemas import (
     DiscoverySnapshot,
@@ -392,18 +393,8 @@ def _prd_sections(
 
     workflow_parts: list[str] = []
 
-    permissions = _source_values(contract, "USER_ROLES", {"permissions"})
-    if permissions:
-        workflow_parts.append(
-            "Access / permissions:\n" + _bullet_block(permissions)
-        )
-
-    actions = _source_values(contract, "USER_ROLES", {"responsibilities"})
-    if actions:
-        workflow_parts.append(
-            "User actions:\n" + _bullet_block(actions)
-        )
-
+    # User capabilities and permissions already live in feature requirements.
+    # Keep this section focused on workflow events, resulting states, and rules.
     workflow_labels = {
         "trigger": "Trigger",
         "workflow_steps": "Flow",
@@ -412,7 +403,18 @@ def _prd_sections(
         "downstream_dependency": "External dependency",
     }
     for key, label in workflow_labels.items():
-        values = _source_values(contract, "CORE_WORKFLOW", {key})
+        if key in {"workflow_steps", "end_state"}:
+            values = list(dict.fromkeys(
+                render_lifecycle_result(source)
+                for source in contract.source_facts
+                if (
+                    source.topic == "CORE_WORKFLOW"
+                    and source.key == key
+                    and source.absence is None
+                )
+            ))
+        else:
+            values = _source_values(contract, "CORE_WORKFLOW", {key})
         if values:
             workflow_parts.append(f"{label}:\n" + _bullet_block(values))
 

@@ -98,6 +98,38 @@ def is_feature_local_goal_source(source) -> bool:
     )
 
 
+def render_lifecycle_result(source) -> str:
+    """Render confirmed workflow steps and resulting states with their trigger context."""
+    value = (source.value or "").strip().rstrip(".")
+    question = (source.source_question or "").lower()
+
+    if (
+        source.topic == "CORE_WORKFLOW"
+        and source.key == "workflow_steps"
+        and re.search(r"deletion.*confirmation|confirmation.*deletion", value, re.I)
+    ):
+        return "Deletion requires confirmation before the task is removed."
+
+    if source.topic == "CORE_WORKFLOW" and source.key == "end_state":
+        if (
+            "reminder" in value.lower()
+            and re.search(r"\bcancel", value, re.I)
+            and "completed" in question
+            and "before" in question
+        ):
+            return (
+                "When a task is marked completed before its due time, the app cancels "
+                "all remaining scheduled reminders."
+            )
+        if (
+            re.search(r"\bdeleted tasks?\b", value, re.I)
+            and re.search(r"\bremoved from the app\b", value, re.I)
+        ):
+            return "After deletion, the task is removed from the app."
+
+    return value[:1].upper() + value[1:] + "."
+
+
 def normalize_action_phrase(value: str) -> str:
     """Normalize common third-person extraction fragments into capability verbs."""
     text = (value or "").strip()

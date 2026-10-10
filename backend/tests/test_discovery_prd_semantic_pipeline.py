@@ -433,10 +433,14 @@ def test_exact_todo_session_compiles_coherently_even_when_prose_polish_is_reject
     )
     assert "The app sends reminders 1 hour, 30 minutes, and 5 minutes" in feature_text
     assert "When a completed task is returned to active" in feature_text
+    assert (
+        "When a task is marked completed before its due time, the app cancels all remaining scheduled reminders."
+        in feature_text
+    )
     assert "Outcome: Users get notified again as if the task was never completed" in feature_text
     assert "Users can automatically reschedule" not in feature_text
 
     goals = sections.get("goals")
     assert goals is None or "users get notified again as if the task was never completed" not in goals.body.lower()
     assert OVERDUE_QUESTION in contract.open_questions
-    assert "deleted task should be removed from the app" in sections["user_flow"].body.lower()
+    assert "after deletion, the task is removed from the app" in sections["user_flow"].body.lower()

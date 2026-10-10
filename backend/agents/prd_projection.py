@@ -20,6 +20,7 @@ from agents.prd_schema import (
 from agents.prd_semantics import (
     is_feature_local_goal_source,
     is_system_behavior_source,
+    render_lifecycle_result,
     render_system_behavior,
 )
 
@@ -207,6 +208,9 @@ def project_prd(sources: list[SourceFact]) -> ProjectionResult:
                 description=(
                     render_system_behavior(source)
                     if is_system_behavior_source(source)
+                    else render_lifecycle_result(source)
+                    if source.topic == "CORE_WORKFLOW"
+                    and source.key in {"workflow_steps", "end_state"}
                     else source.value.strip()
                 ),
                 validation="TBD",

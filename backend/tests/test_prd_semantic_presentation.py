@@ -337,7 +337,44 @@ def test_todo_prd_rendering_is_semantic_not_storage_shaped():
                     "requirement_id": None,
                 }
             ],
-            "feature_specifications": [],
+            "feature_specifications": [
+                {
+                    "id": "task-management",
+                    "title": "Task Management",
+                    "overview": "Users manage task records and their lifecycle.",
+                    "details": [
+                        {
+                            "text": "Users can create tasks and edit tasks.",
+                            "category": "USER_ROLES.responsibilities",
+                            "actor_ids": ["user"],
+                            "conditions": [],
+                            "source_fact_ids": ["fact_create", "fact_edit"],
+                        },
+                        {
+                            "text": (
+                                "Users can delete tasks whether active or completed "
+                                "and move completed tasks back to active."
+                            ),
+                            "category": "USER_ROLES.responsibilities",
+                            "actor_ids": ["user"],
+                            "conditions": [],
+                            "source_fact_ids": ["fact_delete", "fact_reopen"],
+                        },
+                        {
+                            "text": "Users should sign in before using the app.",
+                            "category": "USER_ROLES.permissions",
+                            "actor_ids": ["user"],
+                            "conditions": [],
+                            "source_fact_ids": ["fact_permission"],
+                        },
+                    ],
+                    "requirement_ids": [],
+                    "source_fact_ids": [
+                        "fact_create", "fact_edit", "fact_delete",
+                        "fact_reopen", "fact_permission",
+                    ],
+                }
+            ],
             "constraint_source_ids": [],
             "prose_polished": False,
         }
@@ -359,10 +396,12 @@ def test_todo_prd_rendering_is_semantic_not_storage_shaped():
     assert "delete tasks" not in by_id["users"].body
 
     assert by_id["user_flow"].title == "Core User Flow & Lifecycle"
-    assert "Access / permissions:" in by_id["user_flow"].body
-    assert "users should sign in before using the app" in by_id["user_flow"].body
-    assert "User actions:" in by_id["user_flow"].body
-    assert "move completed tasks back to active" in by_id["user_flow"].body
+    assert "Access / permissions:" not in by_id["user_flow"].body
+    assert "users should sign in before using the app" not in by_id["user_flow"].body
+    assert "User actions:" not in by_id["user_flow"].body
+    assert "move completed tasks back to active" not in by_id["user_flow"].body
+    assert "users should sign in before using the app" in by_id["feature_1"].body
+    assert "move completed tasks back to active" in by_id["feature_1"].body
     assert "Lifecycle / business rules:" in by_id["user_flow"].body
     assert "new tasks can only start as active" in by_id["user_flow"].body
     assert "Resulting state:" in by_id["user_flow"].body
