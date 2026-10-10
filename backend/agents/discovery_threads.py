@@ -103,7 +103,6 @@ class DiscoveryThreadPlan(BaseModel):
     relevant_requirement_ids: List[str] = Field(default_factory=list)
     # Python-owned carryover; excluded from the structured-output JSON schema.
     _deferred_frontiers: List[dict] = PrivateAttr(default_factory=list)
-    _used_safe_fallback: bool = PrivateAttr(default=False)
     feedback: Optional[ThreadFeedback] = None
     rationale: str = ""
 
@@ -1862,7 +1861,6 @@ def plan_discovery_thread(state: AgentState) -> DiscoveryThreadPlan:
         ),
     )
     fallback_plan._deferred_frontiers = deferred_frontiers
-    fallback_plan._used_safe_fallback = True
     return fallback_plan
 
 
@@ -1908,14 +1906,13 @@ def discovery_thread_node(state: AgentState) -> dict:
 
     scope = state.get("discovery_scope", DiscoveryScope.USER_APP)
     plan = plan_discovery_thread(state)
-    safe_fallback = bool(getattr(plan, "_used_safe_fallback", False))
     threads: Dict[str, dict] = dict(state.get("discovery_threads", {}))
     previous = state.get("active_discovery_thread")
     closes_previous = (
         plan.feedback is not None
         and plan.feedback.kind == ThreadFeedbackKind.PRODUCT_SCOPE_CLOSED
     )
-    if previous and (previous != plan.thread_id or closes_previous or safe_fallback) and previous in threads:
+    if previous and (previous != plan.thread_id or closes_previous) and previous in threads:
         threads[previous] = {
             **threads[previous],
             "status": ThreadStatus.PAUSED.value,
@@ -1932,7 +1929,7 @@ def discovery_thread_node(state: AgentState) -> dict:
         objective=plan.thread_objective,
         scope=scope,
         parent_thread_id=plan.parent_thread_id,
-        status=ThreadStatus.PAUSED if safe_fallback else ThreadStatus.ACTIVE,
+        status=ThreadStatus.ACTIVE,
         trigger_fact_ids=trigger_ids,
         last_active_turn=state.get("turn_count", 0),
     )
@@ -2090,7 +2087,7 @@ def discovery_thread_node(state: AgentState) -> dict:
         **control_updates,
         "deferred_discovery_frontiers": deferred[-24:],
         "discovery_threads": threads,
-        "active_discovery_thread": None if safe_fallback else plan.thread_id,
+        "active_discovery_thread": plan.thread_id,
         "thread_frontier": frontier,
         "thread_relevant_requirement_ids": list(plan.relevant_requirement_ids),
         "discovery_boundaries": boundaries[-50:],

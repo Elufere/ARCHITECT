@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - feature/model-driven-discovery
-      - 'fix/**'
   workflow_dispatch:
 
 concurrency:
@@ -35,14 +34,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install pytest
-      - name: Run planner fallback regressions
-        run: >
-          python -m pytest -q
-          tests/test_discovery_threads.py
-          tests/test_frontier_stopping_semantics.py
-          -k "bounded_planner_fallback_releases_active_thread_to_foundational_inquiries
-          or planner_can_recover_when_only_terminally_blocked_inquiries_remain
-          or planner_still_fails_for_unexpected_candidate_blockers"
 
       - name: Run backend suite
         env:
