@@ -45,6 +45,35 @@ def production_models(monkeypatch, items, calls):
     )
 
 
+def test_claim_prompt_preserves_the_current_question_trigger_for_short_answers():
+    question = (
+        "If a user changes a completed task back to active before its due date and time, "
+        "should the app reschedule and send any upcoming reminders?"
+    )
+    objective = (
+        "Clarify whether due-date notifications are restored when a completed task "
+        "is returned to active status before its due time."
+    )
+    state = {
+        "messages": [
+            AIMessage(content=question),
+            HumanMessage(content="the notifications should be cancelled"),
+        ],
+        "current_topic": T.BUSINESS_RULES,
+        "current_gap": None,
+        "current_objective": objective,
+        "decision_key": "reactivated-task-reminders",
+        "discovered_knowledge": [],
+    }
+
+    prompt = tracker._claim_prompt(state, S.USER_APP)
+
+    assert objective in prompt
+    assert "reactivated-task-reminders" in prompt
+    assert question in prompt
+    assert "Preserve the trigger/state transition that question asks about" in prompt
+
+
 def test_seller_goal_answer_does_not_become_action_permission_or_end_state(monkeypatch):
     text = (
         "The seller wants assurance that they’ll get paid once they fulfill what was agreed. "
