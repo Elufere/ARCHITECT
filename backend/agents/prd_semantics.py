@@ -173,6 +173,8 @@ def render_acceptance_criterion(source, description: str) -> str:
             return "A completed task cannot be edited until the user changes its status to active."
 
     if topic == "BUSINESS_RULES" and key == "validation_rules":
+        if "title" in lowered and ("required" in lowered or "compulsory" in lowered or "mandatory" in lowered):
+            return "A task cannot be saved without a title."
         if "description" in lowered and "optional" in lowered:
             return "A task can be saved without a description."
         if "due date" in lowered and "optional" in lowered:

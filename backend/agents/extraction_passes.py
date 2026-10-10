@@ -173,6 +173,11 @@ Kinds:
   A desired future outcome ('wants assurance that...') is not an established end state.
 - validation_rule / approval_rule / eligibility_rule / limit_rule /
   ownership_rule / visibility_rule: only the corresponding explicit governing rule.
+  For field requiredness, "compulsory", "required", or "mandatory" means required,
+  and "optional" means optional. If one clause gives a shared qualifier to multiple
+  fields (for example "description and due date & time should be optional"), emit
+  one validation_rule per field with a normalized value such as "description should
+  be optional". Preserve the exact source quote as evidence.
   ownership_rule includes explicit ownership/account-binding statements such as
   "records created by a user belong to that user's account." It is distinct from
   a role permission.

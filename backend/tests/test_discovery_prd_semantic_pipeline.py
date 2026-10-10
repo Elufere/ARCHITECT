@@ -80,6 +80,9 @@ def _todo_session_state():
         _fact(T.MVP_SCOPE, "out_of_scope", "administrative functionality"),
         _fact(T.USER_ROLES, "secondary_users", "none", evidence="no additional user roles",
               roles=[], absence="none"),
+        _fact(T.BUSINESS_RULES, "validation_rules", "title should be required",
+              evidence="title should be compulsory",
+              source_question=TASK_FIELDS_QUESTION, turn=1),
         _fact(T.BUSINESS_RULES, "validation_rules", "description should be optional",
               source_question=TASK_FIELDS_QUESTION, turn=1),
         _fact(T.BUSINESS_RULES, "validation_rules", "due date and time should be optional",
@@ -206,6 +209,24 @@ def test_feature_decision_rationale_is_not_promoted_to_global_product_goal():
         and "notified again" in requirement.description.lower()
         for requirement in projection.draft.functional_requirements
     )
+
+
+def test_explicit_compulsory_and_optional_fields_are_recovered_as_validation_rules():
+    answer = (
+        "Each task should include title, description, due date and time. However, "
+        "title should be compulsory while description and due date & time should be optional."
+    )
+    recovered = knowledge_tracker._explicit_field_validation_items(
+        answer,
+        TASK_FIELDS_QUESTION,
+        S.USER_APP,
+        1,
+        [],
+    )
+    values = {item.value for item in recovered}
+    assert "title should be required" in values
+    assert "description should be optional" in values
+    assert "due date and time should be optional" in values
 
 
 def test_app_behavior_answer_is_not_admitted_as_a_user_responsibility():
@@ -436,6 +457,7 @@ def test_exact_todo_session_compiles_coherently_even_when_prose_polish_is_reject
     )
     data_model = sections["data_model"].body.lower()
     assert "title" in data_model
+    assert "title (required)" in data_model
     assert "description (optional)" in data_model
     assert "due date and time (optional)" in data_model
 

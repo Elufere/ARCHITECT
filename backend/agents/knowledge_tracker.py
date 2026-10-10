@@ -1589,6 +1589,76 @@ of rules or exclusions. Preserve it in value with its original meaning.
 # Node
 # ──────────────────────────────────────────────
 
+def _normalize_validation_rule_value(value: str) -> str:
+    normalized = re.sub(r"\b(compulsory|mandatory)\b", "required", (value or "").lower())
+    normalized = re.sub(r"\b(?:is|are|must be|should be|needs? to be)\b", "should be", normalized)
+    return re.sub(r"\s+", " ", normalized).strip().rstrip(".!? ")
+
+
+def _explicit_field_validation_items(
+    answer: str,
+    source_question: str | None,
+    scope: DiscoveryScope,
+    source_turn: int,
+    existing_items: list[KnowledgeItem],
+) -> list[KnowledgeItem]:
+    """Recover explicit field requiredness when the LLM only captures the field itself."""
+    rules: list[KnowledgeItem] = []
+    existing = {
+        _normalize_validation_rule_value(item.value)
+        for item in existing_items
+        if item.topic == DiscoveryTopic.BUSINESS_RULES and item.key == "validation_rules"
+    }
+    qualifier_pattern = re.compile(
+        r"(?P<fields>[^.;!?]{1,120}?)\s+"
+        r"(?:should\s+be|is|are|must\s+be|needs?\s+to\s+be)\s+"
+        r"(?P<qualifier>compulsory|required|mandatory|optional)\b",
+        re.IGNORECASE,
+    )
+    for match in qualifier_pattern.finditer(answer or ""):
+        fields_text = match.group("fields")
+        qualifier = (
+            "required"
+            if match.group("qualifier").lower() in {"compulsory", "required", "mandatory"}
+            else "optional"
+        )
+        field_names: list[str] = []
+        combined_due_date = re.search(
+            r"\bdue date\s*(?:and|&|/)\s*time\b|\bdue date/time\b",
+            fields_text,
+            re.IGNORECASE,
+        )
+        if combined_due_date:
+            field_names.append("due date and time")
+        else:
+            if re.search(r"\bdue date\b", fields_text, re.IGNORECASE):
+                field_names.append("due date")
+            if re.search(r"\bdue time\b", fields_text, re.IGNORECASE):
+                field_names.append("due time")
+        for field in ("title", "description", "priority"):
+            if re.search(rf"\b{field}\b", fields_text, re.IGNORECASE):
+                field_names.append(field)
+
+        evidence = match.group(0).strip()
+        for field in dict.fromkeys(field_names):
+            value = f"{field} should be {qualifier}"
+            if value in existing:
+                continue
+            rules.append(KnowledgeItem(
+                scope=scope,
+                topic=DiscoveryTopic.BUSINESS_RULES,
+                key="validation_rules",
+                value=value,
+                evidence=evidence,
+                source_question=source_question,
+                source_turn=source_turn,
+                confidence=1.0,
+                knowledge_state=KnowledgeState.CONFIRMED,
+            ))
+            existing.add(value)
+    return rules
+
+
 def knowledge_tracker_node(state: AgentState) -> dict:
     """
     Extracts structured product knowledge from the latest user response.
@@ -1804,6 +1874,22 @@ def knowledge_tracker_node(state: AgentState) -> dict:
                         )
                 else:
                     extracted_items.append(absence)
+    if not recovering_prior_answer and not confirmed_prior_answer:
+        answer_details = answer_context(state)
+        explicit_field_rules = _explicit_field_validation_items(
+            answer=answer_details.get("answer") or user_response or "",
+            source_question=answer_details.get("question") or None,
+            scope=current_scope,
+            source_turn=state.get("turn_count", 0),
+            existing_items=extracted_items,
+        )
+        if explicit_field_rules:
+            extracted_items.extend(explicit_field_rules)
+            print(
+                "EXPLICIT FIELD VALIDATION RECOVERY:",
+                [item.value for item in explicit_field_rules],
+            )
+
     product_concepts = merge_product_concepts(
         state.get("product_concepts", []),
         captured_concepts,

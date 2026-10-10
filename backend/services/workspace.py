@@ -529,7 +529,7 @@ def _prd_sections(
             ):
                 continue
             match = re.match(
-                r"^\s*(?P<field>[\w\s/-]+?)\s+should\s+be\s+(?P<qualifier>optional|required)\s*[.!]?$",
+                r"^\s*(?P<field>[\w\s/-]+?)\s+should\s+be\s+(?P<qualifier>optional|required|compulsory|mandatory)\s*[.!]?$",
                 source.value,
                 flags=re.I,
             )
@@ -550,12 +550,29 @@ def _prd_sections(
             if subject is None:
                 continue
             field = re.sub(r"\s+", " ", match.group("field").strip().lower())
-            value = f"{field} ({match.group('qualifier').lower()})"
+            qualifier = match.group("qualifier").lower()
+            qualifier = "required" if qualifier in {"compulsory", "mandatory"} else qualifier
+            value = f"{field} ({qualifier})"
             if subject not in by_subject:
                 by_subject[subject] = []
                 subject_order.append(subject)
-            if value.lower() not in {item.lower() for item in by_subject[subject]}:
+
+            def base_field(label: str) -> str:
+                normalized = label.strip().lower()
+                normalized = re.sub(r"^(optional|required|compulsory|mandatory)\s+", "", normalized)
+                return re.sub(r"\s*\((optional|required|compulsory|mandatory)\)$", "", normalized).strip()
+
+            field_index = next(
+                (
+                    index for index, existing in enumerate(by_subject[subject])
+                    if base_field(existing) == base_field(field)
+                ),
+                None,
+            )
+            if field_index is None:
                 by_subject[subject].append(value)
+            else:
+                by_subject[subject][field_index] = value
 
         blocks = []
         for subject in subject_order:
