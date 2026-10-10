@@ -225,8 +225,12 @@ def build_open_questions(state: AgentState, scope: DiscoveryScope) -> list[str]:
     """Keep material unanswered decisions visible when the founder chooses to compile."""
     scope_value = scope.value
     boundaries = state.get("discovery_boundaries", []) or []
-    blocked_types = {"rejected_inquiry", "product_scope_closed"}
-    deferred_types = {"decision_deferral", "implementation_deferred"}
+    blocked_types = {
+        "decision_deferral",
+        "implementation_deferred",
+        "rejected_inquiry",
+        "product_scope_closed",
+    }
     questions: list[str] = []
     seen: set[str] = set()
 
@@ -236,9 +240,8 @@ def build_open_questions(state: AgentState, scope: DiscoveryScope) -> list[str]:
         item_scope = item.get("scope")
         if item_scope and getattr(item_scope, "value", item_scope) != scope_value:
             return
-        deferred_label = ""
         for boundary in boundaries:
-            if not isinstance(boundary, dict) or boundary.get("type") not in (blocked_types | deferred_types):
+            if not isinstance(boundary, dict) or boundary.get("type") not in blocked_types:
                 continue
             if boundary.get("scope") and boundary.get("scope") != scope_value:
                 continue
@@ -247,18 +250,9 @@ def build_open_questions(state: AgentState, scope: DiscoveryScope) -> list[str]:
                  and (not boundary.get("thread_id") or boundary.get("thread_id") == item.get("thread_id")))
                 or (boundary.get("objective") and boundary.get("objective") == item.get("objective"))
             ):
-                if boundary.get("type") in blocked_types:
-                    return
-                boundary_kind = boundary.get("kind")
-                if boundary.get("type") == "implementation_deferred" or boundary_kind == "design_implementation":
-                    deferred_label = "Deferred to implementation: "
-                elif boundary_kind == "release_scope":
-                    deferred_label = "Deferred to a later release: "
-                else:
-                    deferred_label = "Deferred product decision: "
-                break
+                return
 
-        hint = str(item.get("question_hint") or item.get("question") or "").strip()
+        hint = str(item.get("question_hint") or "").strip()
         if hint and "?" in hint and not hint.lower().startswith("ask "):
             question = hint
         else:
@@ -279,8 +273,6 @@ def build_open_questions(state: AgentState, scope: DiscoveryScope) -> list[str]:
             else:
                 question = "What remains undecided about " + objective.rstrip(".?") + "?"
 
-        if deferred_label:
-            question = deferred_label + question
         identity = re.sub(r"s+", " ", question.lower()).strip()
         if identity not in seen:
             seen.add(identity)
@@ -290,11 +282,6 @@ def build_open_questions(state: AgentState, scope: DiscoveryScope) -> list[str]:
         add(inquiry)
     for frontier in state.get("deferred_discovery_frontiers", []) or []:
         add(frontier)
-    # A deferred decision is no longer asked again, but must remain visible in
-    # the generated PRD as an explicitly deferred open question.
-    for boundary in boundaries:
-        if isinstance(boundary, dict) and boundary.get("type") in deferred_types:
-            add(boundary)
 
     return questions
 
