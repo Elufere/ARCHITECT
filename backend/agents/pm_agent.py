@@ -249,18 +249,22 @@ def build_open_questions(state: AgentState, scope: DiscoveryScope) -> list[str]:
             ):
                 if boundary.get("type") in blocked_types:
                     return
-                deferred_label = (
-                    "Deferred product decision: "
-                    if boundary.get("type") == "decision_deferral"
-                    else "Deferred to implementation: "
-                )
+                boundary_kind = boundary.get("kind")
+                if boundary.get("type") == "implementation_deferred" or boundary_kind == "design_implementation":
+                    deferred_label = "Deferred to implementation: "
+                elif boundary_kind == "release_scope":
+                    deferred_label = "Deferred to a later release: "
+                else:
+                    deferred_label = "Deferred product decision: "
                 break
 
-        hint = str(item.get("question_hint") or "").strip()
+        hint = str(item.get("question_hint") or item.get("question") or "").strip()
         if hint and "?" in hint and not hint.lower().startswith("ask "):
             question = hint
         else:
-            objective = str(item.get("objective") or "").strip().rstrip(".?")
+            objective = str(
+                item.get("objective") or item.get("decision_summary") or item.get("decision_key") or ""
+            ).strip().rstrip(".?")
             if not objective:
                 return
             lowered = objective.lower()
