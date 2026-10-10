@@ -542,8 +542,19 @@ def all_discovery_resolved(state: AgentState) -> bool:
             state.get("completion_arbitration_complete")
             and consistency_resolved(state)
         )
+
+    # A raw inquiry can remain in the derived backlog after the founder has
+    # explicitly deferred/rejected it or after its thread decision was already
+    # answered. Such terminally blocked inquiries are not material work left
+    # for the interview. Keep unexpected blockers and eligible-but-unranked
+    # candidates unresolved so planner bugs still fail closed.
+    open_inquiries = state.get("open_inquiries", [])
+    inquiries_resolved = (
+        not open_inquiries
+        or _all_remaining_inquiries_terminally_blocked(state)
+    )
     return (
-        not state.get("open_inquiries", [])
+        inquiries_resolved
         and active_requirements_resolved(state)
         and consistency_resolved(state)
     )
